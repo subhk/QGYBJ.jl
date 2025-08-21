@@ -11,6 +11,6 @@ function setup_model(; par=default_params())
     G = init_grid(par)
     S = init_state(G)
     plans = plan_transforms!(G)
-    return G, S, plans
+    a = a_ell_ut(par, G)
+    return G, S, plans, a
 end
-
