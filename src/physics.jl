@@ -30,6 +30,29 @@ function a_ell_ut(par::QGParams, G::Grid)
 end
 
 """
+    N2_ut(par, G) -> Vector
+
+Unstaggered Brunt–Väisälä frequency squared N^2(z) matching the chosen
+stratification (used by the normal YBJ integration method).
+"""
+function N2_ut(par::QGParams, G::Grid)
+    nz = G.nz
+    N2 = similar(G.z)
+    if par.stratification === :constant_N
+        @inbounds fill!(N2, 1.0)
+    elseif par.stratification === :skewed_gaussian
+        N02 = par.N02_sg; N12 = par.N12_sg; σ = par.sigma_sg; z0 = par.z0_sg; α = par.alpha_sg
+        @inbounds for k in 1:nz
+            z = G.z[k]
+            N2[k] = N12*exp(-((z - z0)^2)/(σ^2))*(1 + erf(α*(z - z0)/(σ*sqrt(2.0)))) + N02
+        end
+    else
+        error("Unsupported stratification: $(par.stratification)")
+    end
+    return N2
+end
+
+"""
     dealias_mask(G) -> Matrix{Bool}
 
 2/3-rule horizontal dealiasing mask `L(i,j)` modeled after Fortran `init_arrays`.
@@ -51,4 +74,3 @@ function dealias_mask(G::Grid)
     # Remove the special ky = -N/2 duplicate if even: handled by FFT indexing; keep as is
     return keep
 end
-

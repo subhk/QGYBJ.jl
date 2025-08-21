@@ -117,8 +117,14 @@ function leapfrog_step!(Snp1::State, Sn::State, Snm1::State,
     rBRk = similar(Sn.B)
     rBIk = similar(Sn.B)
     dqk  = similar(Sn.B)
-    convol_waqg!(nqk, nBRk, nBIk, Sn.u, Sn.v, Sn.q, real.(Sn.B), imag.(Sn.B), G, plans; Lmask=L)
-    refraction_waqg!(rBRk, rBIk, real.(Sn.B), imag.(Sn.B), Sn.psi, G, plans; Lmask=L)
+    # Build BRk, BIk for Sn
+    BRk = similar(Sn.B); BIk = similar(Sn.B)
+    @inbounds for k in 1:nz, j in 1:ny, i in 1:nx
+        BRk[i,j,k] = Complex(real(Sn.B[i,j,k]), 0)
+        BIk[i,j,k] = Complex(imag(Sn.B[i,j,k]), 0)
+    end
+    convol_waqg!(nqk, nBRk, nBIk, Sn.u, Sn.v, Sn.q, BRk, BIk, G, plans; Lmask=L)
+    refraction_waqg!(rBRk, rBIk, BRk, BIk, Sn.psi, G, plans; Lmask=L)
     dissipation_q_nv!(dqk, Snm1.q, par, G)
     # Special cases
     if par.inviscid; dqk .= 0; end
@@ -127,15 +133,15 @@ function leapfrog_step!(Snp1::State, Sn::State, Snm1::State,
     if par.passive_scalar; Sn.A .= 0; rBRk .= 0; rBIk .= 0; end
     # Leapfrog with integrating factors and full YBJ+ terms
     qtemp = similar(Sn.q)
-    BRtemp = similar(real.(Sn.B)); BItemp = similar(imag.(Sn.B))
+    BRtemp = similar(Sn.B); BItemp = similar(Sn.B)
     @inbounds for k in 1:nz, j in 1:ny, i in 1:nx
         if L[i,j]
             kx = G.kx[i]; ky = G.ky[j]; kh2 = G.kh2[i,j]
             If  = int_factor(kx, ky, par; waves=false)
             Ifw = int_factor(kx, ky, par; waves=true)
             qtemp[i,j,k]  = Snm1.q[i,j,k]*exp(-2If) - 2*par.dt*nqk[i,j,k]*exp(-If) + 2*par.dt*dqk[i,j,k]*exp(-2If)
-            BRtemp[i,j,k] = real(Snm1.B[i,j,k])*exp(-2Ifw) - 2*par.dt*( nBRk[i,j,k] + (0.5/(par.Bu*par.Ro))*kh2*imag(Sn.A[i,j,k]) - 0.5*rBIk[i,j,k] )*exp(-Ifw)
-            BItemp[i,j,k] = imag(Snm1.B[i,j,k])*exp(-2Ifw) - 2*par.dt*( nBIk[i,j,k] - (0.5/(par.Bu*par.Ro))*kh2*real(Sn.A[i,j,k]) + 0.5*rBRk[i,j,k] )*exp(-Ifw)
+            BRtemp[i,j,k] = Complex(real(Snm1.B[i,j,k]),0)*exp(-2Ifw) - 2*par.dt*( nBRk[i,j,k] + (0.5/(par.Bu*par.Ro))*kh2*Complex(imag(Sn.A[i,j,k]),0) - 0.5*rBIk[i,j,k] )*exp(-Ifw)
+            BItemp[i,j,k] = Complex(imag(Snm1.B[i,j,k]),0)*exp(-2Ifw) - 2*par.dt*( nBIk[i,j,k] - (0.5/(par.Bu*par.Ro))*kh2*Complex(real(Sn.A[i,j,k]),0) + 0.5*rBRk[i,j,k] )*exp(-Ifw)
         else
             qtemp[i,j,k] = 0; BRtemp[i,j,k] = 0; BItemp[i,j,k] = 0
         end
@@ -145,7 +151,7 @@ function leapfrog_step!(Snp1::State, Sn::State, Snm1::State,
     @inbounds for k in 1:nz, j in 1:ny, i in 1:nx
         if L[i,j]
             Snm1.q[i,j,k] = Sn.q[i,j,k] + γ*( Snm1.q[i,j,k] - 2Sn.q[i,j,k] + qtemp[i,j,k] )
-            Snm1.B[i,j,k] = Sn.B[i,j,k] + γ*( Snm1.B[i,j,k] - 2Sn.B[i,j,k] + (BRtemp[i,j,k] + im*BItemp[i,j,k]) )
+            Snm1.B[i,j,k] = Sn.B[i,j,k] + γ*( Snm1.B[i,j,k] - 2Sn.B[i,j,k] + (Complex(real(BRtemp[i,j,k]),0) + im*Complex(real(BItemp[i,j,k]),0)) )
         else
             Snm1.q[i,j,k] = 0; Snm1.B[i,j,k] = 0
         end
@@ -153,12 +159,18 @@ function leapfrog_step!(Snp1::State, Sn::State, Snm1::State,
     # Accept
     Snp1.q .= qtemp
     @inbounds for k in 1:nz, j in 1:ny, i in 1:nx
-        Snp1.B[i,j,k] = BRtemp[i,j,k] + im*BItemp[i,j,k]
+        Snp1.B[i,j,k] = Complex(real(BRtemp[i,j,k]),0) + im*Complex(real(BItemp[i,j,k]),0)
     end
     # Feedback q* = q - qw then ψ, A, velocities
     if !par.no_feedback
         qwk = similar(Snp1.q)
-        compute_qw!(qwk, real.(Snp1.B), imag.(Snp1.B), par, G, plans; Lmask=L)
+        # Rebuild BRk/BIk from Snp1.B for qw
+        BRk2 = similar(Snp1.B); BIk2 = similar(Snp1.B)
+        @inbounds for kk in 1:nz, jj in 1:ny, ii in 1:nx
+            BRk2[ii,jj,kk] = Complex(real(Snp1.B[ii,jj,kk]),0)
+            BIk2[ii,jj,kk] = Complex(imag(Snp1.B[ii,jj,kk]),0)
+        end
+        compute_qw!(qwk, BRk2, BIk2, par, G, plans; Lmask=L)
         @inbounds for k in 1:nz, j in 1:ny, i in 1:nx
             if L[i,j]
                 Snp1.q[i,j,k] -= qwk[i,j,k]
