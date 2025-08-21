@@ -18,9 +18,10 @@ export QGParams, Grid, State,
        compute_wavenumbers!,
        invert_q_to_psi!, compute_velocities!,
        default_params, setup_model,
-        a_ell_ut, dealias_mask,
+       a_ell_ut, dealias_mask,
         invert_B_to_A!,
-        jacobian_spectral!, init_random_psi!,
+        jacobian_spectral!, convol_waqg!, refraction_waqg!, compute_qw!, dissipation_q_nv!, int_factor,
+        init_random_psi!,
         first_projection_step!, leapfrog_step!
 
 include("parameters.jl")

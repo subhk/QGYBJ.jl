@@ -15,6 +15,74 @@ Projection step (Forward Euler) example: given q^n, invert to ψ^n, compute
 diagnostics. Extend to compute B and apply LA->A inversion similarly to Fortran.
 """
 function first_projection_step!(S::State, G::Grid, par::QGParams, plans; a, dealias_mask=nothing)
+    # Nonlinear terms
+    L = isnothing(dealias_mask) ? trues(G.nx,G.ny) : dealias_mask
+    nqk  = similar(S.q)
+    nBRk = similar(S.B)
+    nBIk = similar(S.B)
+    rBRk = similar(S.B)
+    rBIk = similar(S.B)
+    dqk  = similar(S.B)
+
+    # Compute diagnostics first
+    invert_q_to_psi!(S, G; a)
+    compute_velocities!(S, G; plans)
+
+    # J terms
+    convol_waqg!(nqk, nBRk, nBIk, S.u, S.v, S.q, real.(S.B), imag.(S.B), G, plans; Lmask=L)
+    # Refraction B*zeta
+    refraction_waqg!(rBRk, rBIk, real.(S.B), imag.(S.B), S.psi, G, plans; Lmask=L)
+    # Vertical diffusion
+    dissipation_q_nv!(dqk, S.q, par, G)
+
+    # Special cases (follow test1 switches)
+    if par.inviscid; dqk .= 0; end
+    if par.linear
+        nqk .= 0; nBRk .= 0; nBIk .= 0
+    end
+    if par.no_dispersion
+        S.A .= 0; S.C .= 0
+    end
+    if par.passive_scalar
+        S.A .= 0; S.C .= 0; rBRk .= 0; rBIk .= 0
+    end
+
+    # Store old fields
+    qok  = copy(S.q)
+    BRok = copy(real.(S.B))
+    BIok = copy(imag.(S.B))
+
+    # Forward Euler with integrating factors (test1 form)
+    @inbounds for k in 1:G.nz, j in 1:G.ny, i in 1:G.nx
+        if L[i,j]
+            kx = G.kx[i]; ky = G.ky[j]; kh2 = G.kh2[i,j]
+            If = int_factor(kx, ky, par; waves=false)
+            Ifw = int_factor(kx, ky, par; waves=true)
+            S.q[i,j,k] = ( qok[i,j,k] - par.dt*nqk[i,j,k] + par.dt*dqk[i,j,k] ) * exp(-If)
+            # YBJ+ terms use A from B; ensure it’s current
+            # A was computed previously; use its components
+            S.B[i,j,k] = ( BRok[i,j,k] - par.dt*nBRk[i,j,k] - par.dt*(0.5/(par.Bu*par.Ro))*kh2*imag(S.A[i,j,k]) + par.dt*0.5*rBIk[i,j,k] ) * exp(-Ifw) +
+                         im*( BIok[i,j,k] - par.dt*nBIk[i,j,k] + par.dt*(0.5/(par.Bu*par.Ro))*kh2*real(S.A[i,j,k]) - par.dt*0.5*rBRk[i,j,k] ) * exp(-Ifw)
+        else
+            S.q[i,j,k] = 0
+            S.B[i,j,k] = 0
+        end
+    end
+
+    # Feedback q* = q - qw
+    if !par.no_feedback
+        qwk = similar(S.q)
+        compute_qw!(qwk, real.(S.B), imag.(S.B), par, G, plans; Lmask=L)
+        @inbounds for k in 1:G.nz, j in 1:G.ny, i in 1:G.nx
+            if L[i,j]
+                S.q[i,j,k] -= qwk[i,j,k]
+            else
+                S.q[i,j,k] = 0
+            end
+        end
+    end
+
+    # Recover psi, A, velocities
     invert_q_to_psi!(S, G; a)
     invert_B_to_A!(S, G, par, a)
     compute_velocities!(S, G; plans)
@@ -30,51 +98,67 @@ Here just carries ψ diagnostic refresh.
 function leapfrog_step!(Snp1::State, Sn::State, Snm1::State,
                         G::Grid, par::QGParams, plans; a, dealias_mask=nothing)
     nx, ny, nz = G.nx, G.ny, G.nz
-    # Dealiasing mask
-    Lmask = isnothing(dealias_mask) ? trues(nx,ny) : dealias_mask
+    L = isnothing(dealias_mask) ? trues(nx,ny) : dealias_mask
+    # Ensure ψ and velocities for Sn are updated
+    invert_q_to_psi!(Sn, G; a)
+    compute_velocities!(Sn, G; plans)
     # Nonlinear terms
-    nqk = similar(Sn.q)
-    nBk = similar(Sn.B)
-    jacobian_spectral!(nqk, Sn.psi, Sn.q, G, plans)      # J(psi, q)
-    jacobian_spectral!(nBk, Sn.psi, Sn.B, G, plans)      # J(psi, B)
-    # Refraction term placeholder (rBk): set zero; user to extend
-    rBk = fill!(similar(Sn.B), 0)
-    # Hyperdiffusion integrating factors
-    int_q   = zeros(Float64, nx, ny)
-    int_B   = zeros(Float64, nx, ny)
-    @inbounds for j in 1:ny, i in 1:nx
-        int_q[i,j] = par.dt * ( par.nu_h * (abs(G.kx[i])^(2) + abs(G.ky[j])^(2)) )
-        int_B[i,j] = par.dt * ( par.nu_h * (abs(G.kx[i])^(2) + abs(G.ky[j])^(2)) )
-    end
-    # Leapfrog formula with integrating factor and 2/3 dealiasing on horizontal modes
+    nqk  = similar(Sn.q)
+    nBRk = similar(Sn.B)
+    nBIk = similar(Sn.B)
+    rBRk = similar(Sn.B)
+    rBIk = similar(Sn.B)
+    dqk  = similar(Sn.B)
+    convol_waqg!(nqk, nBRk, nBIk, Sn.u, Sn.v, Sn.q, real.(Sn.B), imag.(Sn.B), G, plans; Lmask=L)
+    refraction_waqg!(rBRk, rBIk, real.(Sn.B), imag.(Sn.B), Sn.psi, G, plans; Lmask=L)
+    dissipation_q_nv!(dqk, Snm1.q, par, G)
+    # Special cases
+    if par.inviscid; dqk .= 0; end
+    if par.linear; nqk .= 0; nBRk .= 0; nBIk .= 0; end
+    if par.no_dispersion; Sn.A .= 0; end
+    if par.passive_scalar; Sn.A .= 0; rBRk .= 0; rBIk .= 0; end
+    # Leapfrog with integrating factors and full YBJ+ terms
     qtemp = similar(Sn.q)
-    Btemp = similar(Sn.B)
+    BRtemp = similar(real.(Sn.B)); BItemp = similar(imag.(Sn.B))
     @inbounds for k in 1:nz, j in 1:ny, i in 1:nx
-        if Lmask[i,j]
-            efq = exp(-int_q[i,j])
-            efB = exp(-int_B[i,j])
-            qtemp[i,j,k] = Snm1.q[i,j,k]*exp(-2*int_q[i,j]) - 2*par.dt*nqk[i,j,k]*efq
-            Btemp[i,j,k] = Snm1.B[i,j,k]*exp(-2*int_B[i,j]) - 2*par.dt*( nBk[i,j,k] )*efB
+        if L[i,j]
+            kx = G.kx[i]; ky = G.ky[j]; kh2 = G.kh2[i,j]
+            If  = int_factor(kx, ky, par; waves=false)
+            Ifw = int_factor(kx, ky, par; waves=true)
+            qtemp[i,j,k]  = Snm1.q[i,j,k]*exp(-2If) - 2*par.dt*nqk[i,j,k]*exp(-If) + 2*par.dt*dqk[i,j,k]*exp(-2If)
+            BRtemp[i,j,k] = real(Snm1.B[i,j,k])*exp(-2Ifw) - 2*par.dt*( nBRk[i,j,k] + (0.5/(par.Bu*par.Ro))*kh2*imag(Sn.A[i,j,k]) - 0.5*rBIk[i,j,k] )*exp(-Ifw)
+            BItemp[i,j,k] = imag(Snm1.B[i,j,k])*exp(-2Ifw) - 2*par.dt*( nBIk[i,j,k] - (0.5/(par.Bu*par.Ro))*kh2*real(Sn.A[i,j,k]) + 0.5*rBRk[i,j,k] )*exp(-Ifw)
         else
-            qtemp[i,j,k] = 0
-            Btemp[i,j,k] = 0
+            qtemp[i,j,k] = 0; BRtemp[i,j,k] = 0; BItemp[i,j,k] = 0
         end
     end
     # Robert–Asselin filter
-    γ = 1e-3
+    γ = par.gamma
     @inbounds for k in 1:nz, j in 1:ny, i in 1:nx
-        if Lmask[i,j]
+        if L[i,j]
             Snm1.q[i,j,k] = Sn.q[i,j,k] + γ*( Snm1.q[i,j,k] - 2Sn.q[i,j,k] + qtemp[i,j,k] )
-            Snm1.B[i,j,k] = Sn.B[i,j,k] + γ*( Snm1.B[i,j,k] - 2Sn.B[i,j,k] + Btemp[i,j,k] )
+            Snm1.B[i,j,k] = Sn.B[i,j,k] + γ*( Snm1.B[i,j,k] - 2Sn.B[i,j,k] + (BRtemp[i,j,k] + im*BItemp[i,j,k]) )
         else
-            Snm1.q[i,j,k] = 0
-            Snm1.B[i,j,k] = 0
+            Snm1.q[i,j,k] = 0; Snm1.B[i,j,k] = 0
         end
     end
-    # Accept the new fields
+    # Accept
     Snp1.q .= qtemp
-    Snp1.B .= Btemp
-    # Recover ψ and A, velocities
+    @inbounds for k in 1:nz, j in 1:ny, i in 1:nx
+        Snp1.B[i,j,k] = BRtemp[i,j,k] + im*BItemp[i,j,k]
+    end
+    # Feedback q* = q - qw then ψ, A, velocities
+    if !par.no_feedback
+        qwk = similar(Snp1.q)
+        compute_qw!(qwk, real.(Snp1.B), imag.(Snp1.B), par, G, plans; Lmask=L)
+        @inbounds for k in 1:nz, j in 1:ny, i in 1:nx
+            if L[i,j]
+                Snp1.q[i,j,k] -= qwk[i,j,k]
+            else
+                Snp1.q[i,j,k] = 0
+            end
+        end
+    end
     invert_q_to_psi!(Snp1, G; a)
     invert_B_to_A!(Snp1, G, par, a)
     compute_velocities!(Snp1, G; plans)
