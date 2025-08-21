@@ -13,12 +13,14 @@ end
 
 # Public API
 export QGParams, Grid, State,
-       init_grid, init_state,
+       init_grid, init_state, init_pencil_decomposition!,
        plan_transforms!, fft_forward!, fft_backward!,
        compute_wavenumbers!,
        invert_q_to_psi!, compute_velocities!,
        default_params, setup_model,
-        a_ell_ut,
+        a_ell_ut, dealias_mask,
+        invert_B_to_A!,
+        jacobian_spectral!, init_random_psi!,
         first_projection_step!, leapfrog_step!
 
 include("parameters.jl")
@@ -28,6 +30,8 @@ include("operators.jl")
 include("elliptic.jl")
 include("physics.jl")
 include("runtime.jl")
+include("nonlinear.jl")
 include("timestep.jl")
+include("initconds.jl")
 
 end # module

@@ -8,6 +8,7 @@ for each (kx,ky) independently.
 module Elliptic
 
 using ..QGYBJ: Grid, State
+using ..QGYBJ: a_ell_ut
 
 """
     invert_q_to_psi!(S, G; a)
@@ -69,6 +70,63 @@ function invert_q_to_psi!(S::State, G::Grid; a::AbstractVector)
         @inbounds for k in 1:nz
             ψ[i,j,k] = solr[k] + im*soli[k]
         end
+    end
+    return S
+end
+
+"""
+    invert_B_to_A!(S, G, par, a)
+
+YBJ+ inversion: for each (kx,ky), solve along z the system for A with
+Neumann A_z=0 top/bottom and diagonal terms including (kh^2/4) like the
+Fortran A_solver_ybj_plus. Also returns C = A_z with top value 0.
+"""
+function invert_B_to_A!(S::State, G::Grid, par, a::AbstractVector)
+    nx, ny, nz = G.nx, G.ny, G.nz
+    A = S.A
+    B = S.B
+    C = S.C
+    dl = zeros(eltype(a), nz)
+    d  = zeros(eltype(a), nz)
+    du = zeros(eltype(a), nz)
+    Δ = nz > 1 ? (G.z[2]-G.z[1]) : 1.0
+    Δ2 = Δ^2
+    for j in 1:ny, i in 1:nx
+        kh2 = G.kh2[i,j]
+        if kh2 == 0
+            @inbounds A[i,j,:] .= 0
+            @inbounds C[i,j,:] .= 0
+            continue
+        end
+        fill!(dl, 0); fill!(d, 0); fill!(du, 0)
+        d[1]  = -(a[1] + (kh2*Δ2)/4)
+        du[1] =  a[1]
+        @inbounds for k in 2:nz-1
+            dl[k] = a[k-1]
+            d[k]  = -(a[k] + a[k-1] + (kh2*Δ2)/4)
+            du[k] = a[k]
+        end
+        dl[nz] = a[nz-1]
+        d[nz]  = -(a[nz-1] + (kh2*Δ2)/4)
+        # RHS = Δ2 * Bu * B
+        rhs_r = similar(dl)
+        rhs_i = similar(dl)
+        @inbounds for k in 1:nz
+            rhs_r[k] = Δ2 * par.Bu * real(B[i,j,k])
+            rhs_i[k] = Δ2 * par.Bu * imag(B[i,j,k])
+        end
+        solr = copy(rhs_r)
+        soli = copy(rhs_i)
+        thomas_solve!(solr, dl, d, du, rhs_r)
+        thomas_solve!(soli, dl, d, du, rhs_i)
+        @inbounds for k in 1:nz
+            A[i,j,k] = solr[k] + im*soli[k]
+        end
+        # C = A_z, set top C=0 and interior forward diff
+        @inbounds for k in 1:nz-1
+            C[i,j,k] = (A[i,j,k+1] - A[i,j,k])/Δ
+        end
+        C[i,j,nz] = 0
     end
     return S
 end

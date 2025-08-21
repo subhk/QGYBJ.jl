@@ -99,7 +99,9 @@ Base.@kwdef mutable struct State{T, RT<:AbstractArray{T,3}, CT<:AbstractArray{Co
     # Prognostic fields
     q::CT           # potential vorticity in spectral space
     psi::CT         # QG streamfunction in spectral space
-    A::CT           # YBJ wave amplitude (spectral)
+    A::CT           # YBJ wave amplitude A (spectral)
+    B::CT           # YBJ L+A combined field (spectral)
+    C::CT           # A_z diagnostic (spectral)
 
     # Diagnostics (optional; can be allocated lazily)
     u::RT           # u in real space
@@ -136,8 +138,10 @@ function init_state(G::Grid; T=Float64)
     q   = allocate_field(T, G; complex=true);    fill!(q, 0)
     psi = allocate_field(T, G; complex=true);    fill!(psi, 0)
     A   = allocate_field(T, G; complex=true);    fill!(A, 0)
+    B   = allocate_field(T, G; complex=true);    fill!(B, 0)
+    C   = allocate_field(T, G; complex=true);    fill!(C, 0)
     u   = allocate_field(T, G; complex=false);   fill!(u, 0)
     v   = allocate_field(T, G; complex=false);   fill!(v, 0)
     w   = allocate_field(T, G; complex=false);   fill!(w, 0)
-    return State{T, typeof(u), typeof(q)}(q, psi, A, u, v, w)
+    return State{T, typeof(u), typeof(q)}(q, psi, A, B, C, u, v, w)
 end

@@ -15,6 +15,9 @@ This repository includes an in-progress Julia port using PencilArrays and Pencil
 - FFT planning and wrappers using PencilFFTs when available, otherwise FFTW in serial (`plan_transforms!`, `fft_forward!`, `fft_backward!`).
 - Spectral operators for basic diagnostics (`compute_velocities!`).
 - Elliptic inversion along the vertical for each horizontal wavenumber (`invert_q_to_psi!`).
+- YBJ+ inversion from B to A and C=A_z (`invert_B_to_A!`).
+- Nonlinear Jacobians in spectral space (`jacobian_spectral!`) and 2/3 dealias helper (`dealias_mask`).
+- Leapfrog time step with Robert filter and horizontal hyperdiffusion (`first_projection_step!`, `leapfrog_step!`).
 
 Getting started in Julia
 ------------------------
@@ -26,10 +29,14 @@ Getting started in Julia
   using QGYBJ
   par = default_params(nx=128, ny=128, nz=64, Lx=2π, Ly=2π)
   G, S, plans, a = setup_model(; par)
-  # supply a(z), b(z) for the elliptic operator and invert:
-  # Build a_ell_ut(z) from chosen stratification
-  invert_q_to_psi!(S, G; a)
+  invert_q_to_psi!(S, G; a)            # ψ from q
   compute_velocities!(S, G; plans)
+  S.B .= 0                             # set initial B spectrum as needed
+  invert_B_to_A!(S, G, par, a)         # A and C=A_z from B (YBJ+)
+  L = dealias_mask(G)
+  first_projection_step!(S, G, par, plans; a, dealias_mask=L)
+  Snp1 = deepcopy(S); Snm1 = deepcopy(S)
+  leapfrog_step!(Snp1, S, Snm1, G, par, plans; a, dealias_mask=L)
   ```
 
 Porting roadmap
