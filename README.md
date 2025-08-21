@@ -18,6 +18,7 @@ This repository includes an in-progress Julia port using PencilArrays and Pencil
 - YBJ+ inversion from B to A and C=A_z (`invert_B_to_A!`).
 - Nonlinear Jacobians in spectral space (`jacobian_spectral!`) and 2/3 dealias helper (`dealias_mask`).
 - Leapfrog time step with Robert filter and horizontal hyperdiffusion (`first_projection_step!`, `leapfrog_step!`).
+- Diagnostics: omega RHS (`omega_eqn_rhs!`), flow kinetic energy (`flow_kinetic_energy`), wave energy (`wave_energy`, `wave_energy_vavg`), horizontal/vertical slices (`slice_horizontal`, `slice_vertical_xz`).
 
 Getting started in Julia
 ------------------------

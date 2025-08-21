@@ -24,7 +24,8 @@ export QGParams, Grid, State,
        init_random_psi!,
         first_projection_step!, leapfrog_step!,
         sumB!, compute_sigma, compute_A!,
-        ncdump_psi, ncdump_la, ncread_psi!, ncread_la!
+        ncdump_psi, ncdump_la, ncread_psi!, ncread_la!,
+        omega_eqn_rhs!, wave_energy, flow_kinetic_energy, wave_energy_vavg, slice_horizontal, slice_vertical_xz
 
 include("parameters.jl")
 include("grid.jl")
