@@ -1,10 +1,27 @@
 module QGYBJ
 
-"""
-    QGYBJ
+using LinearAlgebra
 
-A skeleton Julia package module. Add your public API here.
-"""
+# External backends (declared here; the user should add them to the project)
+try
+    import MPI
+    using PencilArrays
+    using PencilFFTs
+catch
+    @info "MPI/PencilArrays/PencilFFTs not loaded yet. You can still use serial mode."
+end
+
+# Public API
+export QGParams, Grid, State,
+       init_grid, init_state,
+       plan_transforms!, fft_forward!, fft_backward!,
+       compute_wavenumbers!,
+       invert_q_to_psi!, compute_velocities!
+
+include("parameters.jl")
+include("grid.jl")
+include("transforms.jl")
+include("operators.jl")
+include("elliptic.jl")
 
 end # module
-
