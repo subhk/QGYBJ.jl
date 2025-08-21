@@ -25,10 +25,10 @@ Getting started in Julia
   ```julia
   using QGYBJ
   par = default_params(nx=128, ny=128, nz=64, Lx=2π, Ly=2π)
-  G, S, plans = setup_model(; par)
+  G, S, plans, a = setup_model(; par)
   # supply a(z), b(z) for the elliptic operator and invert:
-  a = ones(G.nz); b = zeros(G.nz)
-  invert_q_to_psi!(S, G; a, b)
+  # Build a_ell_ut(z) from chosen stratification
+  invert_q_to_psi!(S, G; a)
   compute_velocities!(S, G; plans)
   ```
 
