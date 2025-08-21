@@ -29,9 +29,9 @@ function first_projection_step!(S::State, G::Grid, par::QGParams, plans; a, deal
     compute_velocities!(S, G; plans)
 
     # J terms
-    convol_waqg!(nqk, nBRk, nBIk, S.u, S.v, S.q, real.(S.B), imag.(S.B), G, plans; Lmask=L)
+    convol_waqg!(nqk, nBRk, nBIk, S.u, S.v, S.q, BRk, BIk, G, plans; Lmask=L)
     # Refraction B*zeta
-    refraction_waqg!(rBRk, rBIk, real.(S.B), imag.(S.B), S.psi, G, plans; Lmask=L)
+    refraction_waqg!(rBRk, rBIk, BRk, BIk, S.psi, G, plans; Lmask=L)
     # Vertical diffusion
     dissipation_q_nv!(dqk, S.q, par, G)
 
@@ -49,8 +49,11 @@ function first_projection_step!(S::State, G::Grid, par::QGParams, plans; a, deal
 
     # Store old fields
     qok  = copy(S.q)
-    BRok = copy(real.(S.B))
-    BIok = copy(imag.(S.B))
+    BRok = similar(S.B); BIok = similar(S.B)
+    @inbounds for k in 1:G.nz, j in 1:G.ny, i in 1:G.nx
+        BRok[i,j,k] = Complex(real(S.B[i,j,k]), 0)
+        BIok[i,j,k] = Complex(imag(S.B[i,j,k]), 0)
+    end
 
     # Forward Euler with integrating factors (test1 form)
     @inbounds for k in 1:G.nz, j in 1:G.ny, i in 1:G.nx
@@ -59,10 +62,10 @@ function first_projection_step!(S::State, G::Grid, par::QGParams, plans; a, deal
             If = int_factor(kx, ky, par; waves=false)
             Ifw = int_factor(kx, ky, par; waves=true)
             S.q[i,j,k] = ( qok[i,j,k] - par.dt*nqk[i,j,k] + par.dt*dqk[i,j,k] ) * exp(-If)
-            # YBJ+ terms use A from B; ensure it’s current
-            # A was computed previously; use its components
-            S.B[i,j,k] = ( BRok[i,j,k] - par.dt*nBRk[i,j,k] - par.dt*(0.5/(par.Bu*par.Ro))*kh2*imag(S.A[i,j,k]) + par.dt*0.5*rBIk[i,j,k] ) * exp(-Ifw) +
-                         im*( BIok[i,j,k] - par.dt*nBIk[i,j,k] + par.dt*(0.5/(par.Bu*par.Ro))*kh2*real(S.A[i,j,k]) - par.dt*0.5*rBRk[i,j,k] ) * exp(-Ifw)
+            # Combine real/imag updates into complex B
+            BRnew = ( BRok[i,j,k] - par.dt*nBRk[i,j,k] - par.dt*(0.5/(par.Bu*par.Ro))*kh2*Complex(imag(S.A[i,j,k]),0) + par.dt*0.5*rBIk[i,j,k] ) * exp(-Ifw)
+            BInew = ( BIok[i,j,k] - par.dt*nBIk[i,j,k] + par.dt*(0.5/(par.Bu*par.Ro))*kh2*Complex(real(S.A[i,j,k]),0) - par.dt*0.5*rBRk[i,j,k] ) * exp(-Ifw)
+            S.B[i,j,k] = Complex(real(BRnew), 0) + im*Complex(real(BInew), 0)
         else
             S.q[i,j,k] = 0
             S.B[i,j,k] = 0
@@ -72,7 +75,12 @@ function first_projection_step!(S::State, G::Grid, par::QGParams, plans; a, deal
     # Feedback q* = q - qw
     if !par.no_feedback
         qwk = similar(S.q)
-        compute_qw!(qwk, real.(S.B), imag.(S.B), par, G, plans; Lmask=L)
+        # Rebuild BRk/BIk from updated S.B for qw
+        @inbounds for k in 1:G.nz, j in 1:G.ny, i in 1:G.nx
+            BRk[i,j,k] = Complex(real(S.B[i,j,k]), 0)
+            BIk[i,j,k] = Complex(imag(S.B[i,j,k]), 0)
+        end
+        compute_qw!(qwk, BRk, BIk, par, G, plans; Lmask=L)
         @inbounds for k in 1:G.nz, j in 1:G.ny, i in 1:G.nx
             if L[i,j]
                 S.q[i,j,k] -= qwk[i,j,k]
