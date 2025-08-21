@@ -16,12 +16,14 @@ export QGParams, Grid, State,
        init_grid, init_state,
        plan_transforms!, fft_forward!, fft_backward!,
        compute_wavenumbers!,
-       invert_q_to_psi!, compute_velocities!
+       invert_q_to_psi!, compute_velocities!,
+       default_params, setup_model
 
 include("parameters.jl")
 include("grid.jl")
 include("transforms.jl")
 include("operators.jl")
 include("elliptic.jl")
+include("runtime.jl")
 
 end # module
