@@ -37,7 +37,10 @@ mutable struct QGYBJSimulation{T}
     plans
     
     # Output management
-    output_manager::OutputManager{T}
+    output_manager
+    
+    # Parallel configuration
+    parallel_config::ParallelConfig
     
     # Stratification
     stratification_profile
@@ -52,26 +55,49 @@ mutable struct QGYBJSimulation{T}
 end
 
 """
-    setup_simulation(config::ModelConfig)
+    setup_simulation(config::ModelConfig; use_mpi::Bool=false)
 
 Set up a complete QG-YBJ simulation from configuration.
 """
-function setup_simulation(config::ModelConfig{T}) where T
+function setup_simulation(config::ModelConfig{T}; use_mpi::Bool=false) where T
     @info "Setting up QG-YBJ simulation"
     
-    # Validate configuration
-    errors, warnings = validate_config(config)
-    
-    if !isempty(errors)
-        error("Configuration errors:\n" * join(errors, "\n"))
+    # Initialize parallel environment
+    parallel_config = if use_mpi
+        setup_parallel_environment()
+    else
+        ParallelConfig(use_mpi=false)
     end
     
-    if !isempty(warnings)
-        @warn "Configuration warnings:\n" * join(warnings, "\n")
+    # Print parallel info
+    if parallel_config.use_mpi
+        import MPI
+        rank = MPI.Comm_rank(parallel_config.comm)
+        nprocs = MPI.Comm_size(parallel_config.comm)
+        if rank == 0
+            @info "Running with MPI: $nprocs processes"
+        end
+    else
+        @info "Running in serial mode"
     end
     
-    # Print configuration summary
-    print_config_summary(config)
+    # Validate configuration (only on rank 0 to avoid spam)
+    should_print = !parallel_config.use_mpi || (MPI.Comm_rank(parallel_config.comm) == 0)
+    
+    if should_print
+        errors, warnings = validate_config(config)
+        
+        if !isempty(errors)
+            error("Configuration errors:\n" * join(errors, "\n"))
+        end
+        
+        if !isempty(warnings)
+            @warn "Configuration warnings:\n" * join(warnings, "\n")
+        end
+        
+        # Print configuration summary
+        print_config_summary(config)
+    end
     
     # Create QGParams from configuration
     params = QGParams{T}(;
