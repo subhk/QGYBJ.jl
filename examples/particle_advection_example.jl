@@ -1,18 +1,36 @@
 """
-Comprehensive example of particle advection in QG-YBJ simulation.
+Comprehensive example of unified particle advection in QG-YBJ simulation.
 
-This example demonstrates:
+This example demonstrates the unified particle advection system that automatically
+handles both serial and parallel execution:
+
 1. Setting up particles on a horizontal region at constant z-level
-2. Advecting particles using total velocity (QG + YBJ)
+2. Advecting particles using total velocity (QG + YBJ) 
 3. Comparing QG vs YBJ vertical velocity effects on particles
 4. Saving particle trajectories to NetCDF files
+5. Automatic MPI detection and domain decomposition
+6. Particle migration between MPI domains
 """
 
 using QGYBJ
 
 function particle_advection_example()
-    println("QG-YBJ Particle Advection Example")
-    println("=================================")
+    println("QG-YBJ Unified Particle Advection Example") 
+    println("==========================================")
+    
+    # Detect execution mode
+    try
+        import MPI
+        if MPI.Initialized()
+            rank = MPI.Comm_rank(MPI.COMM_WORLD)
+            nprocs = MPI.Comm_size(MPI.COMM_WORLD)
+            println("Running in PARALLEL mode: rank $rank of $nprocs")
+        else
+            println("Running in SERIAL mode")
+        end
+    catch
+        println("Running in SERIAL mode (MPI not available)")
+    end
     
     # 1. Create model configuration
     println("Setting up QG-YBJ simulation...")
@@ -88,8 +106,8 @@ function particle_advection_example()
         integration_method=:rk4
     )
     
-    # 3. Initialize particle trackers
-    println("Initializing particle trackers...")
+    # 3. Initialize unified particle trackers (automatically handles serial/parallel)
+    println("Initializing unified particle trackers...")
     
     tracker_qg = ParticleTracker(particle_config_qg, sim.grid)
     tracker_ybj = ParticleTracker(particle_config_ybj, sim.grid)
@@ -99,9 +117,17 @@ function particle_advection_example()
     initialize_particles!(tracker_ybj, particle_config_ybj)
     initialize_particles!(tracker_2d, particle_config_2d)
     
-    println("  QG particles: $(tracker_qg.particles.np)")
-    println("  YBJ particles: $(tracker_ybj.particles.np)")
-    println("  2D particles: $(tracker_2d.particles.np)")
+    # Report local particle counts (in parallel, each rank reports its local count)
+    println("  QG particles (local): $(tracker_qg.particles.np)")
+    println("  YBJ particles (local): $(tracker_ybj.particles.np)")
+    println("  2D particles (local): $(tracker_2d.particles.np)")
+    
+    if tracker_qg.is_parallel
+        println("  Running in parallel mode with $(tracker_qg.nprocs) processes")
+        println("  This is rank $(tracker_qg.rank)")
+    else
+        println("  Running in serial mode")
+    end
     
     # 4. Create output files
     create_particle_output_file("particles_qg.nc", tracker_qg)

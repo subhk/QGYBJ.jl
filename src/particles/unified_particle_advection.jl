@@ -1,0 +1,770 @@
+"""
+Unified particle advection module for QG-YBJ simulations.
+
+This module provides Lagrangian particle tracking that automatically handles
+both serial and parallel execution. Particles are advected using the total 
+velocity field (QG + YBJ) with options for vertical velocity from either 
+QG omega equation or YBJ formulation.
+
+The system automatically detects MPI availability and handles:
+- Domain decomposition and particle migration  
+- Periodic boundary conditions
+- Distributed I/O
+- Load balancing
+"""
+
+module UnifiedParticleAdvection
+
+using ..QGYBJ: Grid, State, compute_velocities!
+
+export ParticleConfig, ParticleState, ParticleTracker,
+       create_particle_config, initialize_particles!, 
+       advect_particles!, interpolate_velocity_at_position
+
+"""
+Configuration for particle initialization and advection.
+"""
+Base.@kwdef struct ParticleConfig{T<:AbstractFloat}
+    # Spatial domain for particle initialization
+    x_min::T = 0.0
+    x_max::T = 2π
+    y_min::T = 0.0  
+    y_max::T = 2π
+    z_level::T = π/2  # Constant z-level for initialization
+    
+    # Number of particles
+    nx_particles::Int = 10
+    ny_particles::Int = 10
+    
+    # Physics options
+    use_ybj_w::Bool = false           # Use YBJ vs QG vertical velocity
+    use_3d_advection::Bool = true     # Include vertical advection
+    
+    # Integration method
+    integration_method::Symbol = :rk4  # :euler, :rk2, :rk4
+    
+    # Boundary conditions
+    periodic_x::Bool = true
+    periodic_y::Bool = true
+    reflect_z::Bool = true            # Reflect at vertical boundaries
+    
+    # I/O configuration
+    save_interval::T = 0.1           # Time interval for saving trajectories
+    max_save_points::Int = 1000      # Maximum trajectory points to save
+end
+
+"""
+    create_particle_config(; kwargs...)
+
+Convenience constructor for ParticleConfig.
+"""
+function create_particle_config(::Type{T}=Float64; kwargs...) where T
+    return ParticleConfig{T}(; kwargs...)
+end
+
+"""
+Particle state including positions, velocities, and trajectory history.
+"""
+mutable struct ParticleState{T<:AbstractFloat}
+    # Current state
+    x::Vector{T}
+    y::Vector{T} 
+    z::Vector{T}
+    u::Vector{T}
+    v::Vector{T}
+    w::Vector{T}
+    time::T
+    np::Int
+    
+    # Trajectory history
+    x_history::Vector{Vector{T}}
+    y_history::Vector{Vector{T}}
+    z_history::Vector{Vector{T}}
+    time_history::Vector{T}
+    
+    function ParticleState{T}(np::Int) where T
+        new{T}(
+            Vector{T}(undef, np), Vector{T}(undef, np), Vector{T}(undef, np),
+            Vector{T}(undef, np), Vector{T}(undef, np), Vector{T}(undef, np),
+            zero(T), np,
+            Vector{T}[], Vector{T}[], Vector{T}[], T[]
+        )
+    end
+end
+
+"""
+Main particle tracker that handles both serial and parallel execution.
+"""
+mutable struct ParticleTracker{T<:AbstractFloat}
+    config::ParticleConfig{T}
+    particles::ParticleState{T}
+    
+    # Grid information
+    nx::Int; ny::Int; nz::Int
+    Lx::T; Ly::T; Lz::T
+    dx::T; dy::T; dz::T
+    
+    # Velocity field workspace (real space)
+    u_field::Array{T,3}
+    v_field::Array{T,3}
+    w_field::Array{T,3}
+    
+    # Parallel information (automatically detected)
+    comm::Any           # MPI communicator (nothing for serial)
+    rank::Int          # MPI rank (0 for serial)
+    nprocs::Int        # Number of MPI processes (1 for serial)
+    is_parallel::Bool  # True if running in parallel
+    
+    # Domain decomposition info (for parallel)
+    local_domain::Union{Nothing,NamedTuple}  # Local domain bounds
+    
+    # Particle migration buffers (for parallel)
+    send_buffers::Vector{Vector{T}}
+    recv_buffers::Vector{Vector{T}}
+    
+    # I/O settings
+    save_counter::Int
+    last_save_time::T
+    is_io_rank::Bool
+    gather_for_io::Bool
+    
+    function ParticleTracker{T}(config::ParticleConfig{T}, grid::Grid) where T
+        np = config.nx_particles * config.ny_particles
+        particles = ParticleState{T}(np)
+        
+        # Detect parallel environment
+        comm, rank, nprocs, is_parallel = detect_parallel_environment()
+        
+        # Set up domain decomposition if parallel
+        local_domain = is_parallel ? compute_local_domain(grid, rank, nprocs) : nothing
+        
+        # Initialize buffers
+        send_buffers = [T[] for _ in 1:nprocs]
+        recv_buffers = [T[] for _ in 1:nprocs]
+        
+        # Velocity field workspace
+        u_field = zeros(T, grid.nx, grid.ny, grid.nz)
+        v_field = zeros(T, grid.nx, grid.ny, grid.nz)
+        w_field = zeros(T, grid.nx, grid.ny, grid.nz)
+        
+        new{T}(
+            config, particles,
+            grid.nx, grid.ny, grid.nz,
+            grid.Lx, grid.Ly, grid.Lz,
+            grid.Lx/grid.nx, grid.Ly/grid.ny, grid.Lz/grid.nz,
+            u_field, v_field, w_field,
+            comm, rank, nprocs, is_parallel,
+            local_domain,
+            send_buffers, recv_buffers,
+            0, zero(T), rank == 0, true
+        )
+    end
+end
+
+ParticleTracker(config::ParticleConfig{T}, grid::Grid) where T = ParticleTracker{T}(config, grid)
+
+"""
+    detect_parallel_environment()
+
+Automatically detect if running in parallel and get MPI information.
+"""
+function detect_parallel_environment()
+    comm = nothing
+    rank = 0
+    nprocs = 1
+    is_parallel = false
+    
+    try
+        import MPI
+        if MPI.Initialized()
+            comm = MPI.COMM_WORLD
+            rank = MPI.Comm_rank(comm)
+            nprocs = MPI.Comm_size(comm)
+            is_parallel = nprocs > 1
+        end
+    catch
+        # MPI not available or not initialized
+    end
+    
+    return comm, rank, nprocs, is_parallel
+end
+
+"""
+    compute_local_domain(grid, rank, nprocs)
+
+Compute local domain bounds for MPI rank (1D decomposition in x).
+"""
+function compute_local_domain(grid::Grid, rank::Int, nprocs::Int)
+    # Simple 1D decomposition in x-direction
+    nx_local = grid.nx ÷ nprocs
+    remainder = grid.nx % nprocs
+    
+    if rank < remainder
+        nx_local += 1
+        x_start = rank * nx_local
+    else
+        x_start = remainder * (nx_local + 1) + (rank - remainder) * nx_local
+    end
+    
+    x_end = x_start + nx_local - 1
+    
+    # Convert to physical coordinates  
+    dx = grid.Lx / grid.nx
+    x_start_phys = x_start * dx
+    x_end_phys = (x_end + 1) * dx
+    
+    return (x_start=x_start_phys, x_end=x_end_phys,
+            y_start=0.0, y_end=grid.Ly,
+            z_start=0.0, z_end=grid.Lz,
+            nx_local=nx_local)
+end
+
+"""
+    initialize_particles!(tracker, config)
+
+Initialize particles uniformly in specified region, handling both serial and parallel.
+"""
+function initialize_particles!(tracker::ParticleTracker{T}, 
+                              config::ParticleConfig{T}) where T
+    
+    if tracker.is_parallel
+        # Initialize only particles in local domain
+        initialize_particles_parallel!(tracker, config)
+    else
+        # Initialize all particles (serial case)
+        initialize_particles_serial!(tracker, config)
+    end
+    
+    # Save initial state
+    save_particle_state!(tracker)
+    
+    return tracker
+end
+
+"""
+Initialize particles for serial execution.
+"""
+function initialize_particles_serial!(tracker::ParticleTracker{T}, 
+                                     config::ParticleConfig{T}) where T
+    particles = tracker.particles
+    
+    # Create uniform grid of particles
+    x_range = range(config.x_min, config.x_max, length=config.nx_particles+1)[1:end-1]
+    y_range = range(config.y_min, config.y_max, length=config.ny_particles+1)[1:end-1]
+    
+    idx = 1
+    for y in y_range, x in x_range
+        particles.x[idx] = x
+        particles.y[idx] = y
+        particles.z[idx] = config.z_level
+        particles.u[idx] = 0.0
+        particles.v[idx] = 0.0
+        particles.w[idx] = 0.0
+        idx += 1
+    end
+    
+    particles.time = 0.0
+    particles.np = length(particles.x)
+    
+    return tracker
+end
+
+"""
+Initialize particles for parallel execution (only in local domain).
+"""
+function initialize_particles_parallel!(tracker::ParticleTracker{T},
+                                       config::ParticleConfig{T}) where T
+    local_domain = tracker.local_domain
+    
+    # Find intersection of particle region with local domain
+    x_min = max(config.x_min, local_domain.x_start)
+    x_max = min(config.x_max, local_domain.x_end)
+    
+    if x_min >= x_max
+        # No particles in this domain
+        resize!(tracker.particles.x, 0)
+        resize!(tracker.particles.y, 0)
+        resize!(tracker.particles.z, 0)
+        resize!(tracker.particles.u, 0)
+        resize!(tracker.particles.v, 0)
+        resize!(tracker.particles.w, 0)
+        tracker.particles.np = 0
+        return tracker
+    end
+    
+    # Calculate local particle distribution
+    x_frac = (x_max - x_min) / (config.x_max - config.x_min)
+    nx_local = max(1, round(Int, config.nx_particles * x_frac))
+    
+    # Create local particle grid
+    x_range = range(x_min, x_max, length=nx_local+1)[1:end-1]
+    y_range = range(config.y_min, config.y_max, length=config.ny_particles+1)[1:end-1]
+    
+    n_local = nx_local * config.ny_particles
+    
+    # Resize arrays to actual local particle count
+    resize!(tracker.particles.x, n_local)
+    resize!(tracker.particles.y, n_local)
+    resize!(tracker.particles.z, n_local)
+    resize!(tracker.particles.u, n_local)
+    resize!(tracker.particles.v, n_local)
+    resize!(tracker.particles.w, n_local)
+    
+    # Initialize local particles
+    idx = 1
+    for y in y_range, x in x_range
+        tracker.particles.x[idx] = x
+        tracker.particles.y[idx] = y
+        tracker.particles.z[idx] = config.z_level
+        tracker.particles.u[idx] = 0.0
+        tracker.particles.v[idx] = 0.0
+        tracker.particles.w[idx] = 0.0
+        idx += 1
+    end
+    
+    tracker.particles.time = 0.0
+    tracker.particles.np = n_local
+    
+    return tracker
+end
+
+"""
+    advect_particles!(tracker, state, grid, dt)
+
+Advect particles using unified serial/parallel interface.
+"""
+function advect_particles!(tracker::ParticleTracker{T}, 
+                          state::State, grid::Grid, dt::T) where T
+    
+    # Update velocity fields
+    update_velocity_fields!(tracker, state, grid)
+    
+    # Advect particles using chosen integration method
+    if tracker.config.integration_method == :euler
+        advect_euler!(tracker, dt)
+    elseif tracker.config.integration_method == :rk2
+        advect_rk2!(tracker, dt)
+    elseif tracker.config.integration_method == :rk4
+        advect_rk4!(tracker, dt)
+    else
+        error("Unknown integration method: $(tracker.config.integration_method)")
+    end
+    
+    # Handle particle migration in parallel
+    if tracker.is_parallel
+        migrate_particles!(tracker)
+    end
+    
+    # Apply boundary conditions
+    apply_boundary_conditions!(tracker)
+    
+    # Update time
+    tracker.particles.time += dt
+    
+    # Save state if needed
+    if should_save_particles(tracker)
+        save_particle_state!(tracker)
+    end
+    
+    return tracker
+end
+
+"""
+    update_velocity_fields!(tracker, state, grid)
+
+Update velocity fields from fluid state.
+"""
+function update_velocity_fields!(tracker::ParticleTracker{T}, 
+                                state::State, grid::Grid) where T
+    # Compute velocities with chosen vertical velocity formulation
+    compute_velocities!(state, grid; 
+                       compute_w=true,
+                       use_ybj_w=tracker.config.use_ybj_w)
+    
+    # Copy to tracker workspace
+    tracker.u_field .= state.u
+    tracker.v_field .= state.v
+    tracker.w_field .= state.w
+    
+    return tracker
+end
+
+"""
+    interpolate_velocity_at_position(x, y, z, tracker)
+
+Interpolate velocity at particle position with proper boundary handling.
+"""
+function interpolate_velocity_at_position(x::T, y::T, z::T, 
+                                        tracker::ParticleTracker{T}) where T
+    
+    # Handle periodic boundaries
+    x_periodic = tracker.config.periodic_x ? mod(x, tracker.Lx) : x
+    y_periodic = tracker.config.periodic_y ? mod(y, tracker.Ly) : y
+    z_clamped = clamp(z, 0, tracker.Lz)
+    
+    # Convert to grid indices (0-based for interpolation)
+    fx = x_periodic / tracker.dx
+    fy = y_periodic / tracker.dy  
+    fz = z_clamped / tracker.dz
+    
+    # Get integer and fractional parts
+    ix = floor(Int, fx)
+    iy = floor(Int, fy)
+    iz = floor(Int, fz)
+    
+    rx = fx - ix
+    ry = fy - iy
+    rz = fz - iz
+    
+    # Handle boundary indices with proper periodic wrapping
+    if tracker.config.periodic_x
+        ix1 = mod(ix, tracker.nx) + 1
+        ix2 = mod(ix + 1, tracker.nx) + 1
+    else
+        ix1 = max(1, min(tracker.nx, ix + 1))
+        ix2 = max(1, min(tracker.nx, ix + 2))
+    end
+    
+    if tracker.config.periodic_y
+        iy1 = mod(iy, tracker.ny) + 1
+        iy2 = mod(iy + 1, tracker.ny) + 1
+    else
+        iy1 = max(1, min(tracker.ny, iy + 1))
+        iy2 = max(1, min(tracker.ny, iy + 2))
+    end
+    
+    # Z is never periodic
+    iz1 = max(1, min(tracker.nz, iz + 1))
+    iz2 = max(1, min(tracker.nz, iz + 2))
+    
+    # Trilinear interpolation
+    # Bottom face (z1)
+    u_z1_y1 = (1-rx) * tracker.u_field[ix1,iy1,iz1] + rx * tracker.u_field[ix2,iy1,iz1]
+    u_z1_y2 = (1-rx) * tracker.u_field[ix1,iy2,iz1] + rx * tracker.u_field[ix2,iy2,iz1]
+    u_z1 = (1-ry) * u_z1_y1 + ry * u_z1_y2
+    
+    v_z1_y1 = (1-rx) * tracker.v_field[ix1,iy1,iz1] + rx * tracker.v_field[ix2,iy1,iz1]
+    v_z1_y2 = (1-rx) * tracker.v_field[ix1,iy2,iz1] + rx * tracker.v_field[ix2,iy2,iz1]
+    v_z1 = (1-ry) * v_z1_y1 + ry * v_z1_y2
+    
+    w_z1_y1 = (1-rx) * tracker.w_field[ix1,iy1,iz1] + rx * tracker.w_field[ix2,iy1,iz1]
+    w_z1_y2 = (1-rx) * tracker.w_field[ix1,iy2,iz1] + rx * tracker.w_field[ix2,iy2,iz1]
+    w_z1 = (1-ry) * w_z1_y1 + ry * w_z1_y2
+    
+    # Top face (z2)
+    u_z2_y1 = (1-rx) * tracker.u_field[ix1,iy1,iz2] + rx * tracker.u_field[ix2,iy1,iz2]
+    u_z2_y2 = (1-rx) * tracker.u_field[ix1,iy2,iz2] + rx * tracker.u_field[ix2,iy2,iz2]
+    u_z2 = (1-ry) * u_z2_y1 + ry * u_z2_y2
+    
+    v_z2_y1 = (1-rx) * tracker.v_field[ix1,iy1,iz2] + rx * tracker.v_field[ix2,iy1,iz2]
+    v_z2_y2 = (1-rx) * tracker.v_field[ix1,iy2,iz2] + rx * tracker.v_field[ix2,iy2,iz2]
+    v_z2 = (1-ry) * v_z2_y1 + ry * v_z2_y2
+    
+    w_z2_y1 = (1-rx) * tracker.w_field[ix1,iy1,iz2] + rx * tracker.w_field[ix2,iy1,iz2]
+    w_z2_y2 = (1-rx) * tracker.w_field[ix1,iy2,iz2] + rx * tracker.w_field[ix2,iy2,iz2]
+    w_z2 = (1-ry) * w_z2_y1 + ry * w_z2_y2
+    
+    # Final interpolation in z
+    u_interp = (1-rz) * u_z1 + rz * u_z2
+    v_interp = (1-rz) * v_z1 + rz * v_z2
+    w_interp = (1-rz) * w_z1 + rz * w_z2
+    
+    # For 2D advection, set w to zero
+    if !tracker.config.use_3d_advection
+        w_interp = 0.0
+    end
+    
+    return u_interp, v_interp, w_interp
+end
+
+# Integration methods
+function advect_euler!(tracker::ParticleTracker{T}, dt::T) where T
+    particles = tracker.particles
+    
+    @inbounds for i in 1:particles.np
+        x, y, z = particles.x[i], particles.y[i], particles.z[i]
+        
+        u, v, w = interpolate_velocity_at_position(x, y, z, tracker)
+        
+        particles.x[i] = x + dt * u
+        particles.y[i] = y + dt * v
+        particles.z[i] = z + dt * w
+        
+        particles.u[i] = u
+        particles.v[i] = v
+        particles.w[i] = w
+    end
+end
+
+function advect_rk2!(tracker::ParticleTracker{T}, dt::T) where T
+    particles = tracker.particles
+    
+    @inbounds for i in 1:particles.np
+        x0, y0, z0 = particles.x[i], particles.y[i], particles.z[i]
+        
+        # First stage
+        u1, v1, w1 = interpolate_velocity_at_position(x0, y0, z0, tracker)
+        
+        # Midpoint
+        x_mid = x0 + 0.5 * dt * u1
+        y_mid = y0 + 0.5 * dt * v1
+        z_mid = z0 + 0.5 * dt * w1
+        
+        # Second stage
+        u2, v2, w2 = interpolate_velocity_at_position(x_mid, y_mid, z_mid, tracker)
+        
+        # Final update
+        particles.x[i] = x0 + dt * u2
+        particles.y[i] = y0 + dt * v2
+        particles.z[i] = z0 + dt * w2
+        
+        particles.u[i] = u2
+        particles.v[i] = v2
+        particles.w[i] = w2
+    end
+end
+
+function advect_rk4!(tracker::ParticleTracker{T}, dt::T) where T
+    particles = tracker.particles
+    
+    @inbounds for i in 1:particles.np
+        x0, y0, z0 = particles.x[i], particles.y[i], particles.z[i]
+        
+        # Stage 1
+        u1, v1, w1 = interpolate_velocity_at_position(x0, y0, z0, tracker)
+        
+        # Stage 2
+        x_temp = x0 + 0.5 * dt * u1
+        y_temp = y0 + 0.5 * dt * v1
+        z_temp = z0 + 0.5 * dt * w1
+        u2, v2, w2 = interpolate_velocity_at_position(x_temp, y_temp, z_temp, tracker)
+        
+        # Stage 3
+        x_temp = x0 + 0.5 * dt * u2
+        y_temp = y0 + 0.5 * dt * v2
+        z_temp = z0 + 0.5 * dt * w2
+        u3, v3, w3 = interpolate_velocity_at_position(x_temp, y_temp, z_temp, tracker)
+        
+        # Stage 4
+        x_temp = x0 + dt * u3
+        y_temp = y0 + dt * v3
+        z_temp = z0 + dt * w3
+        u4, v4, w4 = interpolate_velocity_at_position(x_temp, y_temp, z_temp, tracker)
+        
+        # Final update
+        particles.x[i] = x0 + dt * (u1 + 2*u2 + 2*u3 + u4) / 6
+        particles.y[i] = y0 + dt * (v1 + 2*v2 + 2*v3 + v4) / 6
+        particles.z[i] = z0 + dt * (w1 + 2*w2 + 2*w3 + w4) / 6
+        
+        particles.u[i] = (u1 + 2*u2 + 2*u3 + u4) / 6
+        particles.v[i] = (v1 + 2*v2 + 2*v3 + v4) / 6
+        particles.w[i] = (w1 + 2*w2 + 2*w3 + w4) / 6
+    end
+end
+
+"""
+    migrate_particles!(tracker)
+
+Handle particles that have moved outside local domain (parallel only).
+"""
+function migrate_particles!(tracker::ParticleTracker{T}) where T
+    
+    if !tracker.is_parallel || tracker.comm === nothing
+        return tracker
+    end
+    
+    try
+        import MPI
+        
+        particles = tracker.particles
+        local_domain = tracker.local_domain
+        
+        # Clear send buffers
+        for i in 1:tracker.nprocs
+            empty!(tracker.send_buffers[i])
+        end
+        
+        # Find particles that need migration
+        keep_indices = Int[]
+        
+        for i in 1:particles.np
+            x = particles.x[i]
+            target_rank = find_target_rank(x, tracker)
+            
+            if target_rank == tracker.rank
+                push!(keep_indices, i)
+            else
+                # Package particle for sending
+                particle_data = [particles.x[i], particles.y[i], particles.z[i],
+                               particles.u[i], particles.v[i], particles.w[i]]
+                append!(tracker.send_buffers[target_rank + 1], particle_data)
+            end
+        end
+        
+        # Keep only local particles
+        particles.x = particles.x[keep_indices]
+        particles.y = particles.y[keep_indices]
+        particles.z = particles.z[keep_indices]
+        particles.u = particles.u[keep_indices]
+        particles.v = particles.v[keep_indices]
+        particles.w = particles.w[keep_indices]
+        particles.np = length(keep_indices)
+        
+        # Exchange particles between ranks
+        exchange_particles!(tracker)
+        
+    catch e
+        @warn "Particle migration failed: $e"
+    end
+    
+    return tracker
+end
+
+"""
+Find which rank should own a particle at position x.
+"""
+function find_target_rank(x::T, tracker::ParticleTracker{T}) where T
+    x_periodic = tracker.config.periodic_x ? mod(x, tracker.Lx) : x
+    dx_rank = tracker.Lx / tracker.nprocs
+    rank = min(tracker.nprocs - 1, floor(Int, x_periodic / dx_rank))
+    return rank
+end
+
+"""
+Exchange particles between ranks using MPI.
+"""
+function exchange_particles!(tracker::ParticleTracker{T}) where T
+    try
+        import MPI
+        
+        comm = tracker.comm
+        nprocs = tracker.nprocs
+        
+        # Send/receive particle counts
+        send_counts = [length(tracker.send_buffers[i]) ÷ 6 for i in 1:nprocs]
+        recv_counts = MPI.Alltoall(send_counts, comm)
+        
+        # Exchange particle data
+        for other_rank in 0:nprocs-1
+            if other_rank == tracker.rank
+                continue
+            end
+            
+            # Send to other_rank
+            if !isempty(tracker.send_buffers[other_rank + 1])
+                MPI.Send(tracker.send_buffers[other_rank + 1], other_rank, 0, comm)
+            end
+            
+            # Receive from other_rank
+            if recv_counts[other_rank + 1] > 0
+                recv_data = Vector{T}(undef, recv_counts[other_rank + 1] * 6)
+                MPI.Recv!(recv_data, other_rank, 0, comm)
+                tracker.recv_buffers[other_rank + 1] = recv_data
+            end
+        end
+        
+        # Add received particles
+        add_received_particles!(tracker)
+        
+    catch e
+        @warn "Particle exchange failed: $e"
+    end
+end
+
+"""
+Add received particles to local collection.
+"""
+function add_received_particles!(tracker::ParticleTracker{T}) where T
+    particles = tracker.particles
+    
+    for rank_data in tracker.recv_buffers
+        if !isempty(rank_data)
+            n_new = length(rank_data) ÷ 6
+            
+            for i in 1:n_new
+                idx = (i-1) * 6
+                push!(particles.x, rank_data[idx + 1])
+                push!(particles.y, rank_data[idx + 2])
+                push!(particles.z, rank_data[idx + 3])
+                push!(particles.u, rank_data[idx + 4])
+                push!(particles.v, rank_data[idx + 5])
+                push!(particles.w, rank_data[idx + 6])
+            end
+            
+            particles.np += n_new
+        end
+    end
+    
+    # Clear receive buffers
+    for i in 1:tracker.nprocs
+        empty!(tracker.recv_buffers[i])
+    end
+end
+
+"""
+Apply boundary conditions to particles.
+"""
+function apply_boundary_conditions!(tracker::ParticleTracker{T}) where T
+    particles = tracker.particles
+    config = tracker.config
+    
+    @inbounds for i in 1:particles.np
+        # Horizontal boundaries
+        if config.periodic_x
+            particles.x[i] = mod(particles.x[i], tracker.Lx)
+        else
+            particles.x[i] = clamp(particles.x[i], 0, tracker.Lx)
+        end
+        
+        if config.periodic_y
+            particles.y[i] = mod(particles.y[i], tracker.Ly)
+        else
+            particles.y[i] = clamp(particles.y[i], 0, tracker.Ly)
+        end
+        
+        # Vertical boundaries
+        if config.reflect_z
+            if particles.z[i] < 0
+                particles.z[i] = -particles.z[i]
+                particles.w[i] = -particles.w[i]
+            elseif particles.z[i] > tracker.Lz
+                particles.z[i] = 2*tracker.Lz - particles.z[i]
+                particles.w[i] = -particles.w[i]
+            end
+        else
+            particles.z[i] = clamp(particles.z[i], 0, tracker.Lz)
+        end
+    end
+end
+
+"""
+Save current particle state to trajectory history.
+"""
+function save_particle_state!(tracker::ParticleTracker{T}) where T
+    particles = tracker.particles
+    
+    if length(particles.time_history) >= tracker.config.max_save_points
+        return tracker
+    end
+    
+    push!(particles.x_history, copy(particles.x))
+    push!(particles.y_history, copy(particles.y))
+    push!(particles.z_history, copy(particles.z))
+    push!(particles.time_history, particles.time)
+    
+    tracker.save_counter += 1
+    tracker.last_save_time = particles.time
+    
+    return tracker
+end
+
+"""
+Check if it's time to save particle state.
+"""
+function should_save_particles(tracker::ParticleTracker{T}) where T
+    return (tracker.particles.time - tracker.last_save_time) >= tracker.config.save_interval
+end
+
+end # module UnifiedParticleAdvection
+
+using .UnifiedParticleAdvection
