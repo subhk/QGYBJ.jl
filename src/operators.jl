@@ -126,5 +126,5 @@ end
 
 end # module
 
-using .Operators: compute_velocities!
+using .Operators: compute_velocities!, compute_vertical_velocity!
 

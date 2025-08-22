@@ -102,6 +102,7 @@ Base.@kwdef struct OutputConfig{T}
     save_psi::Bool = true
     save_waves::Bool = true
     save_velocities::Bool = true
+    save_vertical_velocity::Bool = false
     save_vorticity::Bool = false
     save_diagnostics::Bool = true
 end
