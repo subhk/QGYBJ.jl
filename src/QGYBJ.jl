@@ -44,7 +44,10 @@ export DomainConfig, StratificationConfig, InitialConditionConfig, OutputConfig,
        ParticleConfig, ParticleState, ParticleTracker, create_particle_config,
        initialize_particles!, advect_particles!, interpolate_velocity_at_position,
        write_particle_trajectories, read_particle_trajectories, write_particle_snapshot, 
-       create_particle_output_file
+       create_particle_output_file,
+       # Parallel particle advection
+       ParallelParticleTracker, setup_parallel_particles!, advect_particles_parallel!,
+       migrate_particles!, gather_particles_for_io, write_parallel_particle_trajectories
 
 include("parameters.jl")
 include("grid.jl")
@@ -66,5 +69,6 @@ include("netcdf_io.jl")  # Enhanced NetCDF I/O with legacy compatibility
 # Particle advection system
 include("particles/particle_advection.jl")
 include("particles/particle_io.jl")
+include("particles/parallel_particle_advection.jl")
 
 end # module
