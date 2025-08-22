@@ -210,6 +210,10 @@ function particle_advection_example()
     write_particle_trajectories("trajectories_2d.nc", tracker_2d,
                                 metadata=Dict("vertical_velocity" => "none (2D advection)"))
     
+    # BONUS: If particles were initialized at multiple z-levels, you can save each depth separately:
+    # z_level_files = write_particle_trajectories_by_zlevel("particles_by_depth", tracker_qg)
+    # This creates: particles_by_depth_z1.571.nc (one file per z-level)
+    
     # 7. Analysis and comparison
     println("Particle trajectory analysis:")
     

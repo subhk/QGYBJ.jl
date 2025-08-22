@@ -106,7 +106,8 @@ Base.@kwdef struct ParticleConfig{T<:AbstractFloat}
     
     # I/O configuration - Controls particle trajectory saving rate
     save_interval::T = 0.1           # Time interval for saving trajectories (e.g., 0.1 = save every 0.1 time units)
-    max_save_points::Int = 1000      # Maximum trajectory points to save (prevents memory overflow)
+    max_save_points::Int = 1000      # Maximum trajectory points to save per file
+    auto_split_files::Bool = false   # Automatically create new files when max_save_points is reached
 end
 
 """
@@ -222,6 +223,11 @@ mutable struct ParticleTracker{T<:AbstractFloat}
     is_io_rank::Bool
     gather_for_io::Bool
     
+    # File splitting for large simulations
+    output_file_sequence::Int          # Current file sequence number (0, 1, 2, ...)
+    base_output_filename::String       # Base filename for automatic file splitting
+    auto_file_splitting::Bool          # Enable automatic file splitting when max_save_points reached
+    
     function ParticleTracker{T}(config::ParticleConfig{T}, grid::Grid, parallel_config=nothing) where T
         np = config.nx_particles * config.ny_particles
         particles = ParticleState{T}(np)
@@ -270,7 +276,8 @@ mutable struct ParticleTracker{T<:AbstractFloat}
             local_domain,
             send_buffers, recv_buffers,
             halo_info,
-            0, zero(T), rank == 0, true
+            0, zero(T), rank == 0, true,
+            0, "", false  # output_file_sequence, base_output_filename, auto_file_splitting
         )
     end
 end
@@ -1044,14 +1051,33 @@ end
 
 """
 Save current particle state to trajectory history.
+
+If auto_split_files is enabled and max_save_points is reached, automatically
+creates a new file and resets the trajectory history to continue saving.
 """
 function save_particle_state!(tracker::ParticleTracker{T}) where T
     particles = tracker.particles
     
+    # Check if we've reached max_save_points
     if length(particles.time_history) >= tracker.config.max_save_points
-        return tracker
+        if tracker.config.auto_split_files && !isempty(tracker.base_output_filename)
+            # Save current trajectory segment to file
+            split_and_save_trajectory_segment!(tracker)
+            
+            # Reset trajectory history for next segment
+            empty!(particles.x_history)
+            empty!(particles.y_history) 
+            empty!(particles.z_history)
+            empty!(particles.time_history)
+            
+            tracker.output_file_sequence += 1
+        else
+            # Traditional behavior: stop saving when max reached
+            return tracker
+        end
     end
     
+    # Save current state to history
     push!(particles.x_history, copy(particles.x))
     push!(particles.y_history, copy(particles.y))
     push!(particles.z_history, copy(particles.z))
@@ -1059,6 +1085,56 @@ function save_particle_state!(tracker::ParticleTracker{T}) where T
     
     tracker.save_counter += 1
     tracker.last_save_time = particles.time
+    
+    return tracker
+end
+
+"""
+    split_and_save_trajectory_segment!(tracker)
+
+Save current trajectory history to a sequentially numbered file and prepare for next segment.
+Used internally by save_particle_state! when auto_split_files is enabled.
+"""
+function split_and_save_trajectory_segment!(tracker::ParticleTracker{T}) where T
+    if isempty(tracker.particles.time_history)
+        return tracker
+    end
+    
+    # Create filename with sequence number
+    base_name = tracker.base_output_filename
+    if tracker.output_file_sequence == 0
+        filename = "$(base_name).nc"
+    else
+        filename = "$(base_name)_part$(tracker.output_file_sequence).nc"
+    end
+    
+    # Calculate time range for this segment
+    start_time = tracker.particles.time_history[1]
+    end_time = tracker.particles.time_history[end]
+    n_points = length(tracker.particles.time_history)
+    
+    println("Auto-splitting: Saving trajectory segment to $filename")
+    println("  Time range: $(round(start_time, digits=4)) - $(round(end_time, digits=4))")
+    println("  Points: $n_points / $(tracker.config.max_save_points) (max)")
+    
+    # Create metadata for this segment
+    metadata = Dict(
+        "segment_number" => tracker.output_file_sequence,
+        "start_time" => start_time,
+        "end_time" => end_time,
+        "points_in_segment" => n_points,
+        "max_points_per_file" => tracker.config.max_save_points,
+        "auto_split_enabled" => true
+    )
+    
+    # Save this segment using existing I/O function
+    try
+        # Import the I/O module function
+        write_particle_trajectories(filename, tracker; metadata=metadata)
+        println("  ✅ Successfully saved segment $(tracker.output_file_sequence)")
+    catch e
+        @warn "Failed to save trajectory segment: $e"
+    end
     
     return tracker
 end
