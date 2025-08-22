@@ -223,13 +223,25 @@ function interpolate_velocity(x::T, y::T, z::T,
     ry = fy - iy
     rz = fz - iz
     
-    # Handle boundary indices (1-based indexing in Julia)
-    ix1 = max(1, min(tracker.nx, ix + 1))
-    iy1 = max(1, min(tracker.ny, iy + 1))
-    iz1 = max(1, min(tracker.nz, iz + 1))
+    # Handle boundary indices with proper periodic wrapping (1-based indexing in Julia)
+    if tracker.config.periodic_x
+        ix1 = mod(ix, tracker.nx) + 1
+        ix2 = mod(ix + 1, tracker.nx) + 1
+    else
+        ix1 = max(1, min(tracker.nx, ix + 1))
+        ix2 = max(1, min(tracker.nx, ix + 2))
+    end
     
-    ix2 = max(1, min(tracker.nx, ix + 2))
-    iy2 = max(1, min(tracker.ny, iy + 2))
+    if tracker.config.periodic_y
+        iy1 = mod(iy, tracker.ny) + 1
+        iy2 = mod(iy + 1, tracker.ny) + 1
+    else
+        iy1 = max(1, min(tracker.ny, iy + 1))
+        iy2 = max(1, min(tracker.ny, iy + 2))
+    end
+    
+    # Z is never periodic (vertical boundaries)
+    iz1 = max(1, min(tracker.nz, iz + 1))
     iz2 = max(1, min(tracker.nz, iz + 2))
     
     # Trilinear interpolation
