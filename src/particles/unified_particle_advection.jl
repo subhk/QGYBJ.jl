@@ -138,6 +138,12 @@ config = create_particle_config(
     save_interval=0.1,       # Save particle positions every 0.1 time units
     max_save_points=500      # Limit trajectory length to prevent memory overflow
 )
+
+# Multiple z-levels with automatic file separation by depth
+layered_config = create_layered_distribution(
+    0.0, 2π, 0.0, 2π, [π/4, π/2, 3π/4], 6, 6  # 3 z-levels, 6x6 particles each
+)
+# After simulation: use write_particle_trajectories_by_zlevel() to save each depth separately
 ```
 """
 function create_particle_config(::Type{T}=Float64; kwargs...) where T
