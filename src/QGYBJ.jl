@@ -14,7 +14,7 @@ end
 # Public API - Core functionality
 export QGParams, Grid, State,
        init_grid, init_state, init_pencil_decomposition!,
-       plan_transforms!, fft_forward!, fft_backward!,
+       plan_transforms!, setup_parallel_transforms, fft_forward!, fft_backward!,
        compute_wavenumbers!,
        invert_q_to_psi!, compute_velocities!, compute_vertical_velocity!, compute_ybj_vertical_velocity!,
        default_params, setup_model,

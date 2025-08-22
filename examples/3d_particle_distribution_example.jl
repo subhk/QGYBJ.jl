@@ -106,7 +106,7 @@ function test_uniform_3d_grid(sim)
     println("  Grid dimensions: 6×6×4 = 144 particles")
     
     # Initialize tracker
-    tracker = ParticleTracker(config_3d, sim.grid)
+    tracker = ParticleTracker(config_3d, sim.grid, sim.parallel_config)
     initialize_particles!(tracker, config_3d)
     
     println("  Initialized $(tracker.particles.np) particles")
@@ -147,7 +147,7 @@ function test_layered_distribution(sim)
     println("  Z-levels: $z_levels")
     println("  Particles per level: 8×8 = 64")
     
-    tracker = ParticleTracker(config_3d, sim.grid)
+    tracker = ParticleTracker(config_3d, sim.grid, sim.parallel_config)
     initialize_particles!(tracker, config_3d)
     
     println("  Initialized $(tracker.particles.np) particles across $(length(z_levels)) layers")
@@ -184,7 +184,7 @@ function test_random_3d_distribution(sim)
     println("  Spatial region: [0,2π] × [0,2π] × [π/4,3π/4]")
     println("  Total particles: 200 (randomly placed)")
     
-    tracker = ParticleTracker(config_3d, sim.grid)
+    tracker = ParticleTracker(config_3d, sim.grid, sim.parallel_config)
     initialize_particles!(tracker, config_3d)
     
     println("  Initialized $(tracker.particles.np) particles")
@@ -244,7 +244,7 @@ function test_custom_distributions(sim)
     println("  Patterns: Vertical line + horizontal circle + spiral")
     println("  Total particles: $(length(custom_positions))")
     
-    tracker = ParticleTracker(config_3d, sim.grid)
+    tracker = ParticleTracker(config_3d, sim.grid, sim.parallel_config)
     initialize_particles!(tracker, config_3d)
     
     println("  Initialized $(tracker.particles.np) particles")
@@ -343,7 +343,7 @@ function demonstrate_layered_vs_3d_comparison()
         nx_particles=6, ny_particles=6
     )
     
-    tracker_single = ParticleTracker(config_single, sim.grid)
+    tracker_single = ParticleTracker(config_single, sim.grid, sim.parallel_config)
     initialize_particles!(tracker_single, config_single)
     
     println("   Particles: $(tracker_single.particles.np)")
@@ -357,7 +357,7 @@ function demonstrate_layered_vs_3d_comparison()
         z_levels, 6, 6
     )
     
-    tracker_layered = ParticleTracker(config_layered, sim.grid)
+    tracker_layered = ParticleTracker(config_layered, sim.grid, sim.parallel_config)
     initialize_particles!(tracker_layered, config_layered)
     
     println("   Particles: $(tracker_layered.particles.np)")
@@ -370,7 +370,7 @@ function demonstrate_layered_vs_3d_comparison()
         6, 6, 3
     )
     
-    tracker_3d = ParticleTracker(config_3d, sim.grid)
+    tracker_3d = ParticleTracker(config_3d, sim.grid, sim.parallel_config)
     initialize_particles!(tracker_3d, config_3d)
     
     println("   Particles: $(tracker_3d.particles.np)")

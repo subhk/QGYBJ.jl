@@ -15,7 +15,7 @@ The system automatically detects MPI availability and handles:
 
 module UnifiedParticleAdvection
 
-using ..QGYBJ: Grid, State, compute_velocities!
+using ..QGYBJ: Grid, State, compute_velocities!, ParallelConfig, plan_transforms!
 
 export ParticleConfig, ParticleState, ParticleTracker,
        create_particle_config, initialize_particles!, 

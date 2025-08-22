@@ -69,7 +69,7 @@ function interpolation_comparison_example()
         )
         
         # Initialize tracker
-        tracker = ParticleTracker(particle_config, sim.grid)
+        tracker = ParticleTracker(particle_config, sim.grid, sim.parallel_config)
         initialize_particles!(tracker, particle_config)
         
         println("  Initialized $(tracker.particles.np) particles")
@@ -259,7 +259,7 @@ function simple_interpolation_test()
             use_ybj_w=true
         )
         
-        tracker = ParticleTracker(particle_config, sim.grid)
+        tracker = ParticleTracker(particle_config, sim.grid, sim.parallel_config)
         initialize_particles!(tracker, particle_config)
         
         println("  Initial position: ($(tracker.particles.x[1]), $(tracker.particles.y[1]), $(tracker.particles.z[1]))")
