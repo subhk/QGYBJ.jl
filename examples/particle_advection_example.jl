@@ -77,13 +77,15 @@ function particle_advection_example()
     # Test region: central part of domain at mid-depth
     z_level = π/2  # Mid-depth
     
-    # Particle configuration with QG vertical velocity
+    # Particle configuration with QG vertical velocity  
+    # Note: All configurations use TOTAL velocity = QG + wave velocities
+    # The use_ybj_w flag only affects vertical velocity computation
     particle_config_qg = create_particle_config(
         x_min=π/2, x_max=3π/2,
         y_min=π/2, y_max=3π/2,
         z_level=z_level,
         nx_particles=8, ny_particles=8,
-        use_ybj_w=false,      # Use QG omega equation
+        use_ybj_w=false,      # Use QG omega equation for w
         use_3d_advection=true,
         integration_method=:rk4
     )
@@ -94,7 +96,7 @@ function particle_advection_example()
         y_min=π/2, y_max=3π/2,
         z_level=z_level,
         nx_particles=8, ny_particles=8,
-        use_ybj_w=true,       # Use YBJ formulation
+        use_ybj_w=true,       # Use YBJ formulation for w
         use_3d_advection=true,
         integration_method=:rk4
     )
