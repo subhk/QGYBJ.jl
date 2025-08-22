@@ -12,9 +12,12 @@ using ..QGYBJ: fft_forward!, fft_backward!, plan_transforms!, compute_wavenumber
 """
     compute_velocities!(S, G)
 
-Given spectral streamfunction `psi(kx,ky,z)`, compute velocities:
+Given spectral streamfunction `psi(kx,ky,z)`, compute QG velocities only:
 - Horizontal: `u = -∂ψ/∂y`, `v = ∂ψ/∂x` using spectral differentiation
 - Vertical: `w` from either QG omega equation or YBJ formulation
+
+This computes ONLY QG velocities. For particle advection, use `compute_total_velocities!`
+to get the full QG + wave velocity field.
 
 Vertical velocity options:
 1. QG omega equation: ∇²w + (N²/f²)(∂²w/∂z²) = 2 J(ψ_z, ∇²ψ)
