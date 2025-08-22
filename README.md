@@ -1,24 +1,34 @@
-QG-YBJ+ model
-=============
+QG-YBJ+ Model
+==============
 
-This is a numerical model for the two-way interaction of near-inertial waves with (Lagrangian-mean) balanced eddies. Wave evolution is governed by the YBJ+ equation (Asselin & Young 2019). The traditional quasigeostrophic equation dictates the evolution of potential vorticity, which includes the wave feedback term of Xie & Vanneste (2015). The model is pseudo-spectral in the horizontal and uses second-order finite differences to evaluate vertical and time derivatives. 
+This is a numerical model for the two-way interaction of near-inertial waves with (Lagrangian-mean) balanced eddies. Wave evolution is governed by the YBJ+ equation (Asselin & Young 2019). The traditional quasigeostrophic equation dictates the evolution of potential vorticity, which includes the wave feedback term of Xie & Vanneste (2015). The model is pseudo-spectral in the horizontal and uses second-order finite differences to evaluate vertical and time derivatives.
 
-Code written by Olivier Asselin
+**Original code by Olivier Asselin**
 
+## Julia Implementation
 
-Julia rewrite (WIP)
-===================
+This repository provides a comprehensive Julia implementation with modern features including distributed computing, advanced particle advection, and high-order interpolation schemes. The Julia package `QGYBJ.jl` offers:
 
-This repository includes an in-progress Julia port using PencilArrays and PencilFFTs for distributed horizontal FFTs and pencil (slab) decompositions. The Julia package lives under `src/` as `QGYBJ.jl` and currently provides:
+### Core Numerical Methods
+- **Grid and parameter setup**: `Grid`, `QGParams`, with automatic parallel domain decomposition
+- **Distributed FFTs**: PencilFFTs for parallel transforms, FFTW fallback for serial
+- **Spectral operators**: High-order differentiation and velocity computation
+- **Elliptic solvers**: Vertical inversion with multiple boundary condition options
+- **YBJ+ formulation**: Complete wave-mean flow interaction with configurable feedback
+- **Time integration**: Forward Euler and Leapfrog with Robert filter and hyperdiffusion
 
-- Grid and parameter setup (`Grid`, `QGParams`, `init_grid`, `default_params`).
-- FFT planning and wrappers using PencilFFTs when available, otherwise FFTW in serial (`plan_transforms!`, `fft_forward!`, `fft_backward!`).
-- Spectral operators for basic diagnostics (`compute_velocities!`).
-- Elliptic inversion along the vertical for each horizontal wavenumber (`invert_q_to_psi!`).
-- YBJ+ inversion from B to A and C=A_z (`invert_B_to_A!`).
-- Nonlinear Jacobians in spectral space (`jacobian_spectral!`) and 2/3 dealias helper (`dealias_mask`).
-- Leapfrog time step with Robert filter and horizontal hyperdiffusion (`first_projection_step!`, `leapfrog_step!`).
-- Diagnostics: omega RHS (`omega_eqn_rhs!`), flow kinetic energy (`flow_kinetic_energy`), wave energy (`wave_energy`, `wave_energy_vavg`), horizontal/vertical slices (`slice_horizontal`, `slice_vertical_xz`).
+### Advanced Particle Advection System 🚀 **NEW**
+- **Unified serial/parallel**: Automatic MPI detection and domain decomposition
+- **Multiple vertical levels**: 3D particle distributions with layered, random, and custom patterns
+- **High-order interpolation**: Trilinear (O(h²)), Tricubic (O(h⁴)), and adaptive schemes
+- **Cross-domain interpolation**: Halo exchange for accurate particle tracking across MPI boundaries
+- **QG + YBJ vertical velocities**: Choose between omega equation and YBJ formulation
+- **Multiple integration methods**: Euler, RK2, RK4 with automatic boundary conditions
+
+### Wave-Mean Flow Interaction Controls
+- **Configurable feedback**: Options to disable wave feedback or fix mean flow evolution
+- **Physics validation**: Separate controls for wave-mean flow coupling terms
+- **Parameter studies**: Systematic exploration of interaction strength effects
 
 Getting started in Julia
 ------------------------
