@@ -19,9 +19,15 @@ The system automatically detects MPI availability and handles:
 
 Advanced features:
 - Delayed particle release: Use particle_advec_time to control when particles start moving
+- Time synchronization: Particles sync with simulation time when current_time is provided
 - Multiple integration schemes: Euler, RK2, RK4 with adjustable interpolation methods
 - Flexible I/O: Configurable save intervals and trajectory tracking
 - Boundary handling: Periodic and reflective boundary conditions
+
+Time synchronization:
+- Pass current_time to advect_particles! for proper synchronization with fluid simulation
+- particle_advec_time is compared against simulation time, not particle internal time
+- Ensures particles respond to flow conditions at the correct simulation time
 """
 
 module UnifiedParticleAdvection
@@ -88,7 +94,7 @@ Base.@kwdef struct ParticleConfig{T<:AbstractFloat}
     particle_advec_time::T = 0.0      # Start advecting particles at this time (0.0 = from beginning)
     
     # Integration method
-    integration_method::Symbol = :rk4  # :euler, :rk2, :rk4
+    integration_method::Symbol = :euler  # :euler, :rk2, :rk4
     
     # Interpolation method
     interpolation_method::InterpolationMethod = TRILINEAR  # TRILINEAR, TRICUBIC, ADAPTIVE
@@ -98,9 +104,9 @@ Base.@kwdef struct ParticleConfig{T<:AbstractFloat}
     periodic_y::Bool = true
     reflect_z::Bool = true            # Reflect at vertical boundaries
     
-    # I/O configuration
-    save_interval::T = 0.1           # Time interval for saving trajectories
-    max_save_points::Int = 1000      # Maximum trajectory points to save
+    # I/O configuration - Controls particle trajectory saving rate
+    save_interval::T = 0.1           # Time interval for saving trajectories (e.g., 0.1 = save every 0.1 time units)
+    max_save_points::Int = 1000      # Maximum trajectory points to save (prevents memory overflow)
 end
 
 """
@@ -123,6 +129,14 @@ config = create_particle_config(
     nx_particles=8, ny_particles=8,
     particle_advec_time=0.5,  # Wait 0.5 time units
     use_ybj_w=true           # Use YBJ vertical velocity
+)
+
+# Control trajectory saving rate (independent of simulation timestep)
+config = create_particle_config(
+    x_min=0.0, x_max=2π, y_min=0.0, y_max=2π,
+    nx_particles=10, ny_particles=10,
+    save_interval=0.1,       # Save particle positions every 0.1 time units
+    max_save_points=500      # Limit trajectory length to prevent memory overflow
 )
 ```
 """
@@ -749,6 +763,19 @@ function interpolate_velocity_local(x::T, y::T, z::T,
 end
 
 # Integration methods
+
+"""
+    advect_euler!(tracker, dt)
+
+Advect particles using simple Euler integration method: x = x + dt*u
+
+This implements the basic Euler timestep:
+- x_new = x_old + dt * u
+- y_new = y_old + dt * v  
+- z_new = z_old + dt * w
+
+where (u,v,w) is the interpolated velocity at the current particle position.
+"""
 function advect_euler!(tracker::ParticleTracker{T}, dt::T) where T
     particles = tracker.particles
     
@@ -757,6 +784,7 @@ function advect_euler!(tracker::ParticleTracker{T}, dt::T) where T
         
         u, v, w = interpolate_velocity_at_position(x, y, z, tracker)
         
+        # Euler timestep: x = x + dt*u
         particles.x[i] = x + dt * u
         particles.y[i] = y + dt * v
         particles.z[i] = z + dt * w
@@ -1030,7 +1058,17 @@ function save_particle_state!(tracker::ParticleTracker{T}) where T
 end
 
 """
-Check if it's time to save particle state.
+    should_save_particles(tracker)
+
+Check if it's time to save particle state based on save_interval.
+
+Particles are advected every simulation timestep (dt), but positions are only 
+saved to trajectory history at save_interval intervals. This provides:
+- Independent control of simulation accuracy (via dt) and output frequency (via save_interval)
+- Memory management for long simulations with many particles
+- Reduced I/O overhead while maintaining high simulation fidelity
+
+Returns true when: (current_time - last_save_time) >= save_interval
 """
 function should_save_particles(tracker::ParticleTracker{T}) where T
     return (tracker.particles.time - tracker.last_save_time) >= tracker.config.save_interval

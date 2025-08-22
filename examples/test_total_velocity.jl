@@ -97,6 +97,10 @@ function test_total_velocity()
     # Update velocity fields (this uses compute_total_velocities!)
     update_velocity_fields!(tracker, sim.state, sim.grid)
     
+    # Test one step of advection with simulation time
+    test_time = 0.01
+    advect_particles!(tracker, sim.state, sim.grid, test_time, test_time)
+    
     println("   Particle tracker initialized with $(tracker.particles.np) particles")
     println("   Velocity fields updated with total velocities")
     

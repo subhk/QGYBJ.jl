@@ -93,7 +93,9 @@ function particle_advection_example()
         particle_advec_time=0.0,  # Start advecting immediately
         use_ybj_w=false,      # Use QG omega equation for w
         use_3d_advection=true,
-        integration_method=:rk4
+        integration_method=:euler,  # Simple timestep: x = x + dt*u
+        save_interval=0.05,   # Save particle positions every 0.05 time units
+        max_save_points=500   # Limit trajectory length
     )
     
     # Particle configuration with YBJ vertical velocity
@@ -105,7 +107,9 @@ function particle_advection_example()
         particle_advec_time=0.0,  # Start advecting immediately
         use_ybj_w=true,       # Use YBJ formulation for w
         use_3d_advection=true,
-        integration_method=:rk4
+        integration_method=:euler,  # Simple timestep: x = x + dt*u
+        save_interval=0.05,   # Save particle positions every 0.05 time units
+        max_save_points=500   # Limit trajectory length
     )
     
     # 2D advection for comparison
@@ -117,7 +121,9 @@ function particle_advection_example()
         particle_advec_time=0.0,  # Start advecting immediately
         use_ybj_w=false,
         use_3d_advection=false,  # Pure 2D advection (w=0)
-        integration_method=:rk4
+        integration_method=:euler,  # Simple timestep: x = x + dt*u
+        save_interval=0.05,   # Save particle positions every 0.05 time units
+        max_save_points=500   # Limit trajectory length
     )
     
     # 3. Initialize unified particle trackers (automatically handles serial/parallel)
@@ -304,6 +310,8 @@ function simple_particle_test()
     
     # Run a few steps
     for step in 1:10
+        current_time = step * sim.config.dt
+        
         if step == 1
             first_projection_step!(sim.state, sim.grid, sim.params, sim.plans)
         else
@@ -316,7 +324,7 @@ function simple_particle_test()
                            compute_w=true, 
                            use_ybj_w=true)
         
-        advect_particles!(tracker, sim.state, sim.grid, sim.config.dt)
+        advect_particles!(tracker, sim.state, sim.grid, sim.config.dt, current_time)
         
         if step % 5 == 0
             spread = compute_particle_spread(tracker)
