@@ -41,6 +41,7 @@ mutable struct OutputManager{T}
     save_psi::Bool
     save_waves::Bool
     save_velocities::Bool
+    save_vertical_velocity::Bool
     save_vorticity::Bool
     save_diagnostics::Bool
     
@@ -83,6 +84,7 @@ function OutputManager(config, params::QGParams{T}) where T
         config.save_psi,
         config.save_waves,
         config.save_velocities,
+        hasfield(typeof(config), :save_vertical_velocity) ? config.save_vertical_velocity : false,
         config.save_vorticity,
         config.save_diagnostics,
         run_info
@@ -193,7 +195,7 @@ function write_state_file(manager::OutputManager, S::State, G::Grid, plans, time
             LAi_var.attrib["long_name"] = "L+A imaginary part"
         end
         
-        # Velocities (if requested)
+        # Horizontal velocities (if requested)
         if manager.save_velocities && hasfield(typeof(S), :u) && hasfield(typeof(S), :v)
             ur = similar(S.u)
             vr = similar(S.v)
@@ -210,6 +212,16 @@ function write_state_file(manager::OutputManager, S::State, G::Grid, plans, time
             u_var.attrib["long_name"] = "zonal velocity"
             v_var.attrib["units"] = "m/s" 
             v_var.attrib["long_name"] = "meridional velocity"
+        end
+        
+        # Vertical velocity (if requested)
+        if manager.save_vertical_velocity && hasfield(typeof(S), :w)
+            w_var = defVar(ds, "w", Float64, ("x", "y", "z"))
+            w_var[:,:,:] = S.w  # w is already in real space
+            
+            w_var.attrib["units"] = "m/s"
+            w_var.attrib["long_name"] = "vertical velocity (QG ageostrophic)"
+            w_var.attrib["description"] = "Diagnostic vertical velocity from omega equation"
         end
         
         # Global attributes
