@@ -26,7 +26,7 @@ function first_projection_step!(S::State, G::Grid, par::QGParams, plans; a, deal
 
     # Compute diagnostics first
     invert_q_to_psi!(S, G; a)
-    compute_velocities!(S, G; plans)
+    compute_velocities!(S, G; plans, params=par)
 
     # J terms
     convol_waqg!(nqk, nBRk, nBIk, S.u, S.v, S.q, BRk, BIk, G, plans; Lmask=L)
@@ -119,7 +119,7 @@ function first_projection_step!(S::State, G::Grid, par::QGParams, plans; a, deal
         sigma = compute_sigma(par, G, nBRk, nBIk, rBRk, rBIk; Lmask=L)
         compute_A!(S.A, S.C, BRk2, BIk2, sigma, par, G; Lmask=L)
     end
-    compute_velocities!(S, G; plans)
+    compute_velocities!(S, G; plans, params=par)
     return S
 end
 
@@ -137,7 +137,7 @@ function leapfrog_step!(Snp1::State, Sn::State, Snm1::State,
     if !par.fixed_flow
         invert_q_to_psi!(Sn, G; a)
     end
-    compute_velocities!(Sn, G; plans)
+    compute_velocities!(Sn, G; plans, params=par)
     # Nonlinear terms
     nqk  = similar(Sn.q)
     nBRk = similar(Sn.B)
