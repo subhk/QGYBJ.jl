@@ -68,9 +68,7 @@ function test_ybj_vs_qg_vertical_velocity()
                        plans=sim.plans, 
                        params=sim.params, 
                        compute_w=true, 
-                       use_ybj_w=true,
-                       S_old=S_old,
-                       dt=sim.params.dt)
+                       use_ybj_w=true)
     
     w_ybj_rms = sqrt(sum(S_ybj.w.^2) / length(S_ybj.w))
     w_ybj_max = maximum(abs.(S_ybj.w))
@@ -142,9 +140,7 @@ function test_ybj_velocity_scaling()
                            plans=sim.plans, 
                            params=sim.params, 
                            compute_w=true, 
-                           use_ybj_w=true,
-                           S_old=S_old,
-                           dt=sim.params.dt)
+                           use_ybj_w=true)
         
         w_rms = sqrt(sum(sim.state.w.^2) / length(sim.state.w))
         
@@ -169,8 +165,8 @@ function test_ybj_velocity_scaling()
     return results
 end
 
-function test_ybj_material_derivative()
-    println("Testing YBJ material derivative computation...")
+function test_ybj_wave_dependence()
+    println("Testing YBJ wave field dependence...")
     
     # Create a simple test with known flow
     domain = create_domain_config(nx=16, ny=16, nz=8)
@@ -201,25 +197,26 @@ function test_ybj_material_derivative()
                        compute_w=false)  # Don't compute w yet
     
     # Now compute YBJ vertical velocity
-    compute_ybj_vertical_velocity!(sim.state, S_old, sim.grid, 
-                                  sim.plans, sim.params, sim.params.dt)
+    compute_ybj_vertical_velocity!(sim.state, sim.grid, 
+                                  sim.plans, sim.params)
     
     w_with_changes = sqrt(sum(sim.state.w.^2) / length(sim.state.w))
     
-    # Test with no time change (should be much smaller)
-    S_old_same = deepcopy(sim.state)
-    compute_ybj_vertical_velocity!(sim.state, S_old_same, sim.grid, 
-                                  sim.plans, sim.params, sim.params.dt)
+    # For YBJ equation (4), the test is different - it depends on wave field A, not time changes
+    # Test that vertical velocity depends on wave amplitude
     
-    w_no_time_change = sqrt(sum(sim.state.w.^2) / length(sim.state.w))
+    # Test with zero wave field
+    sim.state.A .= 0.0
+    compute_ybj_vertical_velocity!(sim.state, sim.grid, sim.plans, sim.params)
+    w_no_waves = sqrt(sum(sim.state.w.^2) / length(sim.state.w))
     
-    println("    W with psi time changes: $w_with_changes")
-    println("    W with no time changes: $w_no_time_change")
-    println("    Ratio: $(w_with_changes / max(w_no_time_change, 1e-12))")
+    println("    W with wave field: $w_with_changes")
+    println("    W with no waves: $w_no_waves")
+    println("    Ratio: $(w_with_changes / max(w_no_waves, 1e-12))")
     
     println("  ✓ YBJ material derivative test completed")
     
-    return (w_with_changes, w_no_time_change)
+    return (w_with_changes, w_no_waves)
 end
 
 function run_all_ybj_tests()

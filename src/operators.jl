@@ -18,9 +18,9 @@ Given spectral streamfunction `psi(kx,ky,z)`, compute velocities:
 
 Vertical velocity options:
 1. QG omega equation: ∇²w + (N²/f²)(∂²w/∂z²) = 2 J(ψ_z, ∇²ψ)
-2. YBJ formulation: w₁ = -(1/(r₁r₂))(Fr/Ro)² D/Dt ψ_z
+2. YBJ formulation: w₀ = -(f²/N²)[(∂A/∂x)_z - i(∂A/∂y)_z] (equation 4)
 
-Set `use_ybj_w=true` and provide `S_old` and `dt` for YBJ vertical velocity.
+Set `use_ybj_w=true` for YBJ vertical velocity from wave envelope gradients.
 """
 function compute_velocities!(S::State, G::Grid; plans=nothing, params=nothing, compute_w=true, use_ybj_w=false)
     # Spectral differentiation: û = -i ky ψ̂, v̂ = i kx ψ̂
@@ -51,9 +51,9 @@ function compute_velocities!(S::State, G::Grid; plans=nothing, params=nothing, c
     
     # Compute vertical velocity if requested
     if compute_w
-        if use_ybj_w && S_old !== nothing && dt !== nothing
-            # Use YBJ vertical velocity formulation
-            compute_ybj_vertical_velocity!(S, S_old, G, plans, params, dt)
+        if use_ybj_w
+            # Use YBJ vertical velocity formulation (equation 4)
+            compute_ybj_vertical_velocity!(S, G, plans, params)
         else
             # Use standard QG omega equation
             compute_vertical_velocity!(S, G, plans, params)
