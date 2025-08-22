@@ -30,30 +30,86 @@ This repository provides a comprehensive Julia implementation with modern featur
 - **Physics validation**: Separate controls for wave-mean flow coupling terms
 - **Parameter studies**: Systematic exploration of interaction strength effects
 
-Getting started in Julia
-------------------------
+## Quick Start
 
-- Add dependencies in your Julia environment: `MPI`, `PencilArrays`, `PencilFFTs`, `FFTW`.
-- Load the package and set up a model:
+### Dependencies
+Add to your Julia environment:
+```julia
+using Pkg
+Pkg.add(["MPI", "PencilArrays", "PencilFFTs", "FFTW", "NCDatasets"])
+```
 
-  ```julia
-  using QGYBJ
-  par = default_params(nx=128, ny=128, nz=64, Lx=2π, Ly=2π)
-  G, S, plans, a = setup_model(; par)
-  invert_q_to_psi!(S, G; a)            # ψ from q
-  compute_velocities!(S, G; plans)
-  S.B .= 0                             # set initial B spectrum as needed
-  invert_B_to_A!(S, G, par, a)         # A and C=A_z from B (YBJ+)
-  L = dealias_mask(G)
-  first_projection_step!(S, G, par, plans; a, dealias_mask=L)
-  Snp1 = deepcopy(S); Snm1 = deepcopy(S)
-  leapfrog_step!(Snp1, S, Snm1, G, par, plans; a, dealias_mask=L)
+### Basic Usage
 
-Examples
---------
+#### Simple QG-YBJ Simulation
+```julia
+using QGYBJ
 
-- Run `examples/demo_ybj_plus.jl` for a short YBJ+ run that writes NetCDF outputs.
-- Run `examples/demo_ybj_normal.jl` to use the normal YBJ branch (`ybj_plus=false`).
+# Create simulation configuration
+domain = create_domain_config(nx=64, ny=64, nz=32, Lx=2π, Ly=2π, Lz=π)
+stratification = create_stratification_config(:constant_N, N0=1.0)
+initial_conditions = create_initial_condition_config(:random, :random)
+output = create_output_config(output_dir="./results", save_interval=0.1)
+
+config = create_model_config(domain, stratification, initial_conditions, output,
+                           total_time=2.0, dt=1e-3, Ro=0.1, Fr=0.1)
+
+# Run simulation  
+sim = setup_simulation(config)
+run_simulation!(sim)
+```
+
+#### Advanced Particle Advection
+```julia
+# 3D particle distribution with multiple z-levels
+particle_config = create_layered_distribution(
+    π/2, 3π/2, π/2, 3π/2,              # Horizontal region
+    [π/8, π/4, π/2, 3π/4, 7π/8],       # 5 depth layers
+    10, 10,                            # 10×10 particles per layer
+    use_ybj_w=true,                    # YBJ vertical velocity
+    interpolation_method=TRICUBIC       # High-accuracy interpolation
+)
+
+# Initialize and run with particle tracking
+tracker = ParticleTracker(particle_config, sim.grid)
+initialize_particles!(tracker, particle_config)
+
+# Simulation loop with particle advection
+for step in 1:1000
+    leapfrog_step!(sim.state, sim.grid, sim.params, sim.plans)
+    advect_particles!(tracker, sim.state, sim.grid, sim.config.dt)
+    
+    if step % 100 == 0
+        write_particle_snapshot("particles_$(step).nc", tracker, step * sim.config.dt)
+    end
+end
+```
+
+#### Parallel Execution
+```bash
+# Serial execution
+julia examples/particle_advection_example.jl
+
+# Parallel execution (automatic detection)
+mpiexec -n 4 julia examples/particle_advection_example.jl
+```
+
+## Examples
+
+### Core Model Examples
+- **`examples/demo_ybj_plus.jl`**: YBJ+ simulation with NetCDF output
+- **`examples/demo_ybj_normal.jl`**: Standard YBJ formulation
+- **`examples/test_ybj_vertical_velocity.jl`**: Compare QG vs YBJ vertical velocities
+
+### Particle Advection Examples 🆕
+- **`examples/particle_advection_example.jl`**: Comprehensive particle tracking demonstration
+- **`examples/3d_particle_distribution_example.jl`**: Multiple z-level and 3D distribution patterns
+- **`examples/interpolation_comparison_example.jl`**: Performance comparison of interpolation methods
+
+### Advanced Features
+- **Wave-mean flow interaction controls**: Disable feedback or fix mean flow
+- **High-order interpolation schemes**: Tricubic for improved accuracy
+- **Parallel particle migration**: Seamless cross-domain particle tracking
 
 MPI/PencilArrays
 ----------------
