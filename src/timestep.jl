@@ -236,6 +236,6 @@ function leapfrog_step!(Snp1::State, Sn::State, Snm1::State,
         sigma2 = compute_sigma(par, G, nBRk, nBIk, rBRk, rBIk; Lmask=L)
         compute_A!(Snp1.A, Snp1.C, BRk3, BIk3, sigma2, par, G; Lmask=L)
     end
-    compute_velocities!(Snp1, G; plans)
+    compute_velocities!(Snp1, G; plans, params=par)
     return Snp1
 end
