@@ -499,7 +499,7 @@ function setup_model_with_config(config::ModelConfig{T}) where T
     
     grid = init_grid(params)
     state = init_state(params)
-    plans = plan_transforms!(grid, state)
+    plans = plan_transforms!(grid)
     
     return params, grid, state, plans
 end
