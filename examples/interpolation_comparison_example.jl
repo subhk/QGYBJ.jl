@@ -36,8 +36,6 @@ function interpolation_comparison_example()
         domain, stratification, initial_conditions, output,
         total_time=0.2,  # Short time for accuracy testing
         dt=1e-3,
-        Ro=0.1,
-        Fr=0.1
     )
     
     sim = setup_simulation(config)

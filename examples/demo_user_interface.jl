@@ -190,11 +190,10 @@ end
 function demo_parameter_sweep()
     println("\n=== Parameter Sweep Demo ===")
     
-    # Run simulations with different Rossby numbers
-    Ro_values = [0.05, 0.1, 0.2, 0.3]
+    # Run simulations with different time steps
+    dt_values = [5e-4, 1e-3, 2e-3]
     
-    for (i, Ro) in enumerate(Ro_values)
-        println("Running simulation $i/$(length(Ro_values)) with Ro=$Ro")
+    for (i, dt_val) in enumerate(dt_values)
         
         domain = create_domain_config(nx=32, ny=32, nz=16)  # Smaller for speed
         stratification = create_stratification_config(:constant_N, N0=1.0)
@@ -204,16 +203,14 @@ function demo_parameter_sweep()
             random_seed=1234  # Same initial conditions for comparison
         )
         output = create_output_config(
-            output_dir="./demo_sweep_Ro_$(Int(round(100*Ro)))",
+            output_dir="./demo_sweep_dt_$(Int(round(1e6*dt_val)))",
             psi_interval=1.0,
             wave_interval=1.0
         )
         
         config = create_model_config(
             domain, stratification, initial_conditions, output,
-            Ro=Ro,
-            Fr=0.1,
-            dt=1e-3,
+            dt=dt_val,
             total_time=3.0  # Shorter runs for parameter sweep
         )
         

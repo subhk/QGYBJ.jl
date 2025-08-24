@@ -45,8 +45,6 @@ function demo_coupled_wave_mean_flow()
     
     config = create_model_config(
         domain, stratification, initial_conditions, output,
-        Ro=0.1,
-        Fr=0.15,
         dt=5e-4,
         total_time=20.0,
         
@@ -91,8 +89,6 @@ function demo_fixed_mean_flow()
     
     config = create_model_config(
         domain, stratification, initial_conditions, output,
-        Ro=0.05,
-        Fr=0.1,
         dt=1e-3,
         total_time=15.0,
         
@@ -135,8 +131,6 @@ function demo_no_wave_feedback()
     
     config = create_model_config(
         domain, stratification, initial_conditions, output,
-        Ro=0.08,
-        Fr=0.12,
         dt=8e-4,
         total_time=25.0,
         
@@ -181,8 +175,6 @@ function demo_wave_only_dynamics()
     
     config = create_model_config(
         domain, stratification, initial_conditions, output,
-        Ro=0.1,
-        Fr=0.2,
         dt=1e-3,
         total_time=10.0,
         
@@ -232,8 +224,6 @@ function demo_linear_wave_evolution()
     
     config = create_model_config(
         domain, stratification, initial_conditions, output,
-        Ro=0.05,
-        Fr=0.08,
         dt=5e-4,
         total_time=12.0,
         

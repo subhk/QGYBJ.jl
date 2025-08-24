@@ -55,8 +55,6 @@ function demo_parallel_basic()
     # Model configuration
     config = create_model_config(
         domain, stratification, initial_conditions, output,
-        Ro=0.05,                       # Smaller Rossby number for more interesting dynamics
-        Fr=0.15,
         dt=5e-4,                       # Smaller time step for stability
         total_time=20.0,
         linear=false,

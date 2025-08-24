@@ -42,8 +42,6 @@ function demonstrate_3d_distributions()
         domain, stratification, initial_conditions, output,
         total_time=0.5,
         dt=2e-3,
-        Ro=0.1,
-        Fr=0.1
     )
     
     sim = setup_simulation(config)
