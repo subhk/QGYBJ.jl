@@ -240,39 +240,138 @@ w = -(f²/N²)[(∂A/∂x)_z - i(∂A/∂y)_z]
 
 where A is the wave envelope and the subscript z denotes vertical derivative.
 """
-function compute_ybj_vertical_velocity!(S::State, G::Grid, plans, params)
+function compute_ybj_vertical_velocity!(S::State, G::Grid, plans, params; N2_profile=nothing, L=nothing)
     nx, ny, nz = G.nx, G.ny, G.nz
     
     # Get parameters - need f and N² profile
     if params !== nothing && hasfield(typeof(params), :f0)
         f = params.f0
-        # Get N² profile (simplified - would use actual stratification)
-        N2 = ones(nz)  # Would be actual N²(z) profile
     else
         f = 1.0  # Default
-        N2 = ones(nz)
+    end
+    
+    # Get N² profile - use provided profile or default to constant
+    if N2_profile === nothing
+        N2_profile = ones(eltype(S.psi), nz)
+    else
+        # Ensure N2_profile has correct length and type
+        if length(N2_profile) != nz
+            @warn "N2_profile length ($(length(N2_profile))) != nz ($nz), using constant N²=1.0"
+            N2_profile = ones(eltype(S.psi), nz)
+        end
     end
     
     dz = nz > 1 ? (G.z[2] - G.z[1]) : 1.0
     
-    # Need to recover A from B = L⁺A
-    # For now, use A ≈ B for simplicity (this would be improved)
-    # In full implementation, would solve L⁺A = B for A
-    Ak = S.A  # Wave envelope in spectral space
+    # Step 1: Recover A from B = L⁺A using YBJ+ elliptic solver
+    # This solves: a_ell(z) d²A/dz² + b_ell(z) dA/dz - kh²A/4 = B
+    # where B is stored in S.A (confusing naming in original code)
+    Bk = S.A  # Actually B = L⁺A in spectral space
+    Ak = similar(Bk)  # True A will be computed here
     
-    # Compute vertical derivative of A: A_z
-    Ask_z = similar(Ak, Complex{eltype(Ak)}, nx, ny, nz-1)
+    f2 = f^2
     
-    # Vertical finite difference for A_z (on intermediate levels)
-    @inbounds for k in 1:nz-1, j in 1:ny, i in 1:nx
-        if G.kh2[i,j] > 0  # Dealias
-            Ask_z[i,j,k] = (Ak[i,j,k+1] - Ak[i,j,k]) / dz
+    # Solve for A from B using tridiagonal system (following A_solver_ybj_plus)
+    @inbounds for j in 1:ny, i in 1:nx
+        kh2 = G.kh2[i,j]
+        
+        # Check dealiasing mask if provided
+        if L !== nothing && size(L) == (nx, ny)
+            dealias = (L[i,j] == 1)
         else
-            Ask_z[i,j,k] = 0.0
+            dealias = true  # No dealiasing mask provided
+        end
+        
+        if kh2 > 0 && dealias && nz > 2
+            # Set up tridiagonal system for A recovery
+            d = zeros(eltype(S.psi), nz)      # diagonal
+            dl = zeros(eltype(S.psi), nz-1)   # lower diagonal
+            du = zeros(eltype(S.psi), nz-1)   # upper diagonal
+            rhs = zeros(Complex{eltype(S.psi)}, nz)  # RHS vector
+            
+            # Fill tridiagonal system (YBJ+ version with kh²/4 factor)
+            for k in 1:nz
+                # Coefficient: a_ell_ut = 1.0/N² (normalized)
+                a_ell = 1.0 / N2_profile[k]
+                
+                if k == 1
+                    # Bottom boundary
+                    d[k] = -(a_ell + kh2 * dz^2 / 4.0)
+                    if nz > 1
+                        du[k] = a_ell
+                    end
+                elseif k == nz
+                    # Top boundary
+                    d[k] = -(a_ell + kh2 * dz^2 / 4.0)
+                    dl[k-1] = a_ell
+                else
+                    # Interior points
+                    a_ell_k = 1.0 / N2_profile[k]
+                    d[k] = -(a_ell_k + kh2 * dz^2 / 4.0)
+                    du[k] = a_ell_k
+                    dl[k-1] = a_ell_k
+                end
+                
+                # RHS = B (normalized by Bu, but Bu=1 in normalized system)
+                rhs[k] = dz^2 * Bk[i,j,k]  # Factor from Fortran: dz*dz*Bu*B
+            end
+            
+            # Solve tridiagonal system using LAPACK
+            # For complex RHS, solve real and imaginary parts separately
+            
+            # Prepare arrays for LAPACK gtsv! (modifies input arrays)
+            dl_work = copy(dl)
+            d_work = copy(d) 
+            du_work = copy(du)
+            
+            # Split complex RHS into real and imaginary parts
+            rhs_real = real.(rhs)
+            rhs_imag = imag.(rhs)
+            
+            # Solve real part
+            try
+                LinearAlgebra.LAPACK.gtsv!(dl_work, d_work, du_work, rhs_real)
+                sol_real = rhs_real
+            catch e
+                @warn "LAPACK gtsv failed for YBJ A recovery (real): $e, using zeros"
+                sol_real = zeros(eltype(d), nz)
+            end
+            
+            # Reset arrays for imaginary part
+            dl_work = copy(dl)
+            d_work = copy(d)
+            du_work = copy(du)
+            
+            # Solve imaginary part
+            try
+                LinearAlgebra.LAPACK.gtsv!(dl_work, d_work, du_work, rhs_imag)
+                sol_imag = rhs_imag
+            catch e
+                @warn "LAPACK gtsv failed for YBJ A recovery (imag): $e, using zeros"
+                sol_imag = zeros(eltype(d), nz)
+            end
+            
+            # Store recovered A
+            for k in 1:nz
+                Ak[i,j,k] = complex(sol_real[k], sol_imag[k])
+            end
+            
+        else
+            # Set to zero for kh²=0 modes or when dealiased
+            for k in 1:nz
+                Ak[i,j,k] = 0.0
+            end
         end
     end
     
-    # Compute horizontal derivatives of A_z: (∂A/∂x)_z and (∂A/∂y)_z
+    # Step 2: Compute vertical derivative A_z using finite differences
+    Ask_z = similar(Ak, Complex{eltype(Ak)}, nx, ny, nz-1)
+    
+    @inbounds for k in 1:nz-1, j in 1:ny, i in 1:nx
+        Ask_z[i,j,k] = (Ak[i,j,k+1] - Ak[i,j,k]) / dz
+    end
+    
+    # Step 3: Compute horizontal derivatives of A_z
     dAz_dx_k = similar(Ask_z)
     dAz_dy_k = similar(Ask_z)
     
@@ -283,8 +382,9 @@ function compute_ybj_vertical_velocity!(S::State, G::Grid, plans, params)
         dAz_dy_k[i,j,k] = iky * Ask_z[i,j,k]
     end
     
-    # Compute YBJ vertical velocity in spectral space
-    # w = -(f²/N²)[(∂A/∂x)_z - i(∂A/∂y)_z]
+    # Step 4: Compute YBJ vertical velocity
+    # w = -(f²/N²)[(∂A/∂x)_z - i(∂A/∂y)_z] + c.c.
+    # The c.c. (complex conjugate) makes the result real
     wk_ybj = similar(S.psi)
     fill!(wk_ybj, 0.0)
     
@@ -292,14 +392,14 @@ function compute_ybj_vertical_velocity!(S::State, G::Grid, plans, params)
         k_out = k + 1  # Shift to match output grid (intermediate to full levels)
         if k_out <= nz
             # Get N² at this level
-            N2_level = N2[k_out]
+            N2_level = N2_profile[k_out]
             
-            # YBJ formula: w = -(f²/N²)[(∂A/∂x)_z - i(∂A/∂y)_z]
+            # YBJ formula: w = -(f²/N²)[(∂A/∂x)_z - i(∂A/∂y)_z] + c.c.
             ybj_factor = -(f^2) / N2_level
-            complex_deriv = dAz_dx_k[i,j,k] - im * dAz_dy_k[i,j,k]
+            complex_term = dAz_dx_k[i,j,k] - im * dAz_dy_k[i,j,k]
             
-            # Take real part (the c.c. in equation 4 makes it real)
-            wk_ybj[i,j,k_out] = ybj_factor * real(complex_deriv)
+            # Apply the + c.c. operation to get real result
+            wk_ybj[i,j,k_out] = ybj_factor * (complex_term + conj(complex_term))
         end
     end
     
