@@ -230,15 +230,24 @@ function compute_vertical_velocity!(S::State, G::Grid, plans, params; N2_profile
 end
 
 """
-    compute_ybj_vertical_velocity!(S, G, plans, params)
+    compute_ybj_vertical_velocity!(S, G, plans, params; N2_profile=nothing, L=nothing)
 
-Compute YBJ vertical velocity using equation (4) from QG_YBJp.pdf:
-w₀ = -(f²/N²)e^(-ift)(∂ₓ - i∂ᵧ)Aᵤ + c.c.
+Compute YBJ vertical velocity using the complete YBJ+ formulation:
 
-This simplifies to the real part of:
-w = -(f²/N²)[(∂A/∂x)_z - i(∂A/∂y)_z]
+1. **A Recovery**: Solve L⁺A = B for the true wave envelope A
+   - Uses tridiagonal solver: a_ell(z) d²A/dz² + b_ell(z) dA/dz - kh²A/4 = B
+   - Based on A_solver_ybj_plus from Fortran implementation
 
-where A is the wave envelope and the subscript z denotes vertical derivative.
+2. **Vertical Velocity**: Apply YBJ equation (4)
+   - w = -(f²/N²)[(∂A/∂x)_z - i(∂A/∂y)_z] + c.c.
+   - where A_z is the vertical derivative of the recovered A
+
+This is the complete YBJ vertical velocity including proper A recovery
+from the evolved field B = L⁺A, matching the Fortran implementation.
+
+Optional parameters:
+- N2_profile: Vector of N²(z) values. If not provided, uses constant N² = 1.0
+- L: Dealiasing mask. If not provided, no dealiasing applied
 """
 function compute_ybj_vertical_velocity!(S::State, G::Grid, plans, params; N2_profile=nothing, L=nothing)
     nx, ny, nz = G.nx, G.ny, G.nz
