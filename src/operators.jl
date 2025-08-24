@@ -162,7 +162,6 @@ function compute_vertical_velocity!(S::State, G::Grid, plans, params; N2_profile
                 
                 # Solve tridiagonal system using LAPACK (same as Fortran code)
                 # For complex RHS, solve real and imaginary parts separately
-                using LinearAlgebra.LAPACK: gtsv!
                 
                 # Prepare arrays for LAPACK gtsv! (modifies input arrays)
                 dl_work = copy(dl)  # Sub-diagonal
@@ -175,7 +174,7 @@ function compute_vertical_velocity!(S::State, G::Grid, plans, params; N2_profile
                 
                 # Solve real part: A * x_real = rhs_real
                 try
-                    gtsv!(dl_work, d_work, du_work, rhs_real)
+                    LinearAlgebra.LAPACK.gtsv!(dl_work, d_work, du_work, rhs_real)
                     sol_real = rhs_real  # gtsv! overwrites RHS with solution
                 catch e
                     @warn "LAPACK gtsv failed for real part: $e, using zeros"
@@ -189,7 +188,7 @@ function compute_vertical_velocity!(S::State, G::Grid, plans, params; N2_profile
                 
                 # Solve imaginary part: A * x_imag = rhs_imag  
                 try
-                    gtsv!(dl_work, d_work, du_work, rhs_imag)
+                    LinearAlgebra.LAPACK.gtsv!(dl_work, d_work, du_work, rhs_imag)
                     sol_imag = rhs_imag  # gtsv! overwrites RHS with solution
                 catch e
                     @warn "LAPACK gtsv failed for imaginary part: $e, using zeros"
