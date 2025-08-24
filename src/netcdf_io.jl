@@ -71,8 +71,6 @@ function OutputManager(config, params::QGParams{T}, parallel_config=nothing) whe
         "Lx" => params.Lx,
         "Ly" => params.Ly,
         "dt" => params.dt,
-        "Ro" => params.Ro,
-        "Fr" => params.Fr,
         "f0" => params.f0
     )
     
@@ -259,8 +257,7 @@ function write_serial_state_file(manager::OutputManager, S::State, G::Grid, plan
             ds.attrib["nx"] = params.nx
             ds.attrib["ny"] = params.ny
             ds.attrib["nz"] = params.nz
-            ds.attrib["Ro"] = params.Ro
-            ds.attrib["Fr"] = params.Fr
+            ds.attrib["f0"] = params.f0
             ds.attrib["dt"] = params.dt
         end
         

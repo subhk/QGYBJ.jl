@@ -119,8 +119,6 @@ Base.@kwdef struct ModelConfig{T}
     output::OutputConfig{T}
     
     # Physical parameters
-    Ro::T = 0.1        # Rossby number
-    Fr::T = 0.1        # Froude number
     f0::T = 1.0        # Coriolis parameter
     
     # Time stepping
@@ -310,12 +308,8 @@ function validate_config(config::ModelConfig)
     end
     
     # Physical parameter validation
-    if config.Ro <= 0 || config.Fr <= 0
-        push!(errors, "Rossby and Froude numbers must be positive")
-    end
-    
-    if config.Ro > 1.0
-        push!(warnings, "Large Rossby number (Ro > 1) - geostrophic balance may break down")
+    if config.f0 <= 0
+        push!(errors, "Coriolis parameter f0 must be positive")
     end
     
     # File existence checks
@@ -383,7 +377,7 @@ function print_config_summary(config::ModelConfig)
     println()
     
     println("Parameters:")
-    println("  Ro = $(config.Ro), Fr = $(config.Fr)")
+    println("  f0 = $(config.f0)")
     println("  dt = $(config.dt), T_total = $(config.total_time)")
     println()
     

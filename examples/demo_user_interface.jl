@@ -47,8 +47,6 @@ function demo_basic_simulation()
     # Create complete model configuration
     config = create_model_config(
         domain, stratification, initial_conditions, output,
-        Ro=0.1,                        # Rossby number
-        Fr=0.1,                        # Froude number
         f0=1.0,                        # Coriolis parameter
         dt=1e-3,                       # Time step
         total_time=5.0,                # Total simulation time
@@ -101,8 +99,6 @@ function demo_stratified_simulation()
     
     config = create_model_config(
         domain, stratification, initial_conditions, output,
-        Ro=0.05,                       # Smaller Rossby number
-        Fr=0.2,                        # Larger Froude number
         dt=5e-4,                       # Smaller time step for stability
         total_time=10.0
     )

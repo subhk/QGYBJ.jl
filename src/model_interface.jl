@@ -108,13 +108,10 @@ function setup_simulation(config::ModelConfig{T}; use_mpi::Bool=false) where T
         Ly = config.domain.Ly,
         dt = config.dt,
         nt = ceil(Int, config.total_time / config.dt),
-        Ro = config.Ro,
-        Fr = config.Fr,
         f0 = config.f0,
         nu_h = config.nu_h,
         nu_v = config.nu_v,
         linear_vert_structure = 0,
-        Bu = (config.Fr^2) / (config.Ro^2),
         stratification = config.stratification.type,
         W2F = T(1e-6),  # Default wave-to-flow energy ratio
         gamma = T(1e-3),  # Robert-Asselin filter
@@ -484,8 +481,6 @@ function setup_model_with_config(config::ModelConfig{T}) where T
         Ly = config.domain.Ly,
         dt = config.dt,
         nt = ceil(Int, config.total_time / config.dt),
-        Ro = config.Ro,
-        Fr = config.Fr,
         f0 = config.f0
     )
     

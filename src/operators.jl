@@ -92,17 +92,8 @@ function compute_vertical_velocity!(S::State, G::Grid, plans, params)
     # For now, implement a simplified version focusing on horizontal structure
     wk = similar(S.psi)
     
-    # Get stratification parameters
-    if params !== nothing && hasfield(typeof(params), :Bu)
-        Bu = params.Bu  # Burger number = N²H²/(f²L²)
-        Ro = params.Ro  # Rossby number
-        Fr = params.Fr  # Froude number
-    else
-        # Default values if params not provided
-        Bu = 1.0
-        Ro = 0.1
-        Fr = 0.1
-    end
+    # Use normalized parameters (dimensionless)
+    # All non-dimensional parameters set to unity for simplified oceanographic model
     
     dz = nz > 1 ? (G.z[2] - G.z[1]) : 1.0
     
