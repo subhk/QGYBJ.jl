@@ -115,7 +115,10 @@ function exchange_velocity_halos!(halo_info::HaloInfo{T},
     end
     
     try
-        import MPI
+        if !(@isdefined MPI)
+            @warn "MPI not available; skipping halo exchange"
+            return halo_info
+        end
         
         # Copy local data to extended arrays
         copy_local_to_extended!(halo_info, u_field, v_field, w_field)
