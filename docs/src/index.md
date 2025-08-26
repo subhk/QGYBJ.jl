@@ -4,16 +4,20 @@
 CurrentModule = QGYBJ
 ```
 
-Welcome to the documentation for QGYBJ.jl.
+QGYBJ.jl is a Julia implementation of a quasi‑geostrophic (QG) model
+coupled with the Young–Ben Jelloul (YBJ) wave envelope dynamics (YBJ+).
+It mirrors the structure of a reference Fortran code, providing:
 
-## Overview
+- Spectral 2D FFTs per vertical level and vertical tridiagonal solvers
+- QG streamfunction inversion (q → ψ) and YBJ+ recovery (B=L⁺A → A)
+- Nonlinear advection, refraction, and wave feedback operators
+- Diagnostics, vertical velocity (QG omega or YBJ form)
+- A high‑level configuration API + examples
+- Optional NetCDF I/O for state and diagnostics
+- Hooks for parallel execution and particle advection
 
-- Minimal package scaffold with CI and docs automation.
-- Start adding your API and docstrings under `src/`.
+Use the left‑hand navigation to dive into setup, configuration, I/O,
+and a complete API reference.
 
-## API
-
-```@autodocs
-Modules = [QGYBJ]
-```
+If you’re new, start with Getting Started.
 
