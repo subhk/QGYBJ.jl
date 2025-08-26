@@ -169,6 +169,15 @@ function setup_simulation(config::ModelConfig{T}; use_mpi::Bool=false) where T
         @warn "Stratification warnings:\n" * join(strat_warnings, "\n")
     end
     
+    # Derive density-like vertical profiles from N² and populate params
+    rho_ut_prof, rho_st_prof = derive_density_profiles(params, grid; N2_profile=N2_profile)
+    params = QGParams{T}(;
+        (name => getfield(params, name) for name in fieldnames(typeof(params)) if !(name in (:rho_ut_profile, :rho_st_profile, :b_ell_profile)))...,
+        rho_ut_profile = rho_ut_prof,
+        rho_st_profile = rho_st_prof,
+        b_ell_profile = nothing,
+    )
+
     # Initialize fields
     if should_print
         @info "Initializing model fields"

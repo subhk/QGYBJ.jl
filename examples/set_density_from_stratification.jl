@@ -13,15 +13,10 @@ function main()
     par = default_params(nx=32, ny=32, nz=16, stratification=:constant_N)
     G, S, plans, a = setup_model(; par)
 
-    # Compute N² profile from config/params (here constant 1)
-    using .QGYBJ: N2_ut
+    # Compute N² profile and derive density-like profiles
+    using .QGYBJ: N2_ut, derive_density_profiles
     N2 = N2_ut(par, G)
-
-    # Map N² to density-like weights (placeholder mapping)
-    rho_ut_profile = ones(eltype(N2), length(N2))
-    rho_st_profile = ones(eltype(N2), length(N2))
-
-    # Build a params copy with profiles
+    rho_ut_profile, rho_st_profile = derive_density_profiles(par, G; N2_profile=N2)
     par2 = with_density_profiles(par; rho_ut=rho_ut_profile, rho_st=rho_st_profile)
 
     # Fill a simple q mode and invert to ψ with density-weighted operator
@@ -31,4 +26,3 @@ function main()
 end
 
 abspath(PROGRAM_FILE) == @__FILE__ && main()
-
