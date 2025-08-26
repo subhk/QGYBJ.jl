@@ -70,16 +70,27 @@ function setup_simulation(config::ModelConfig{T}; use_mpi::Bool=false) where T
     end
     
     # Print parallel info
-    if parallel_config.use_mpi && @isdefined MPI
-        rank = MPI.Comm_rank(parallel_config.comm)
-        nprocs = MPI.Comm_size(parallel_config.comm)
-        if rank == 0; @info "Running with MPI: $nprocs processes"; end
+    if parallel_config.use_mpi
+        try
+            M = Base.require(:MPI)
+            rank = M.Comm_rank(parallel_config.comm)
+            nprocs = M.Comm_size(parallel_config.comm)
+            if rank == 0; @info "Running with MPI: $nprocs processes"; end
+        catch
+            @info "Running with MPI (rank unknown)"
+        end
     else
         @info "Running in serial mode"
     end
     
     # Validate configuration (only on rank 0 to avoid spam)
-    should_print = !parallel_config.use_mpi || (@isdefined MPI && MPI.Comm_rank(parallel_config.comm) == 0)
+    should_print = !parallel_config.use_mpi || begin
+        try
+            M = Base.require(:MPI); M.Comm_rank(parallel_config.comm) == 0
+        catch
+            true
+        end
+    end
     
     if should_print
         errors, warnings = validate_config(config)

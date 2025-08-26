@@ -8,7 +8,6 @@ for each (kx,ky) independently.
 module Elliptic
 
 using ..QGYBJ: Grid, State
-using ..QGYBJ: a_ell_ut, rho_ut, rho_st
 
 """
     invert_q_to_psi!(S, G; a)
@@ -34,9 +33,9 @@ function invert_q_to_psi!(S::State, G::Grid; a::AbstractVector, par=nothing)
     Δ = nz > 1 ? (G.z[2]-G.z[1]) : 1.0
     Δ2 = Δ^2
 
-    # Density-like weights (unity if not provided)
-    r_ut = (par === nothing) ? ones(eltype(a), nz) : rho_ut(par, G)
-    r_st = (par === nothing) ? ones(eltype(a), nz) : rho_st(par, G)
+    # Density-like weights (unity if not provided or functions unavailable)
+    r_ut = (par === nothing) ? ones(eltype(a), nz) : (isdefined(QGYBJ, :rho_ut) ? QGYBJ.rho_ut(par, G) : ones(eltype(a), nz))
+    r_st = (par === nothing) ? ones(eltype(a), nz) : (isdefined(QGYBJ, :rho_st) ? QGYBJ.rho_st(par, G) : ones(eltype(a), nz))
 
     for j in 1:ny, i in 1:nx
         kh2 = G.kh2[i,j]
@@ -178,9 +177,9 @@ function invert_B_to_A!(S::State, G::Grid, par, a::AbstractVector)
     du = zeros(eltype(a), nz)
     Δ = nz > 1 ? (G.z[2]-G.z[1]) : 1.0
     Δ2 = Δ^2
-    # Density-like weights (unity in current nondimensionalization)
-    r_ut = rho_ut(par, G)
-    r_st = rho_st(par, G)
+    # Density-like weights (unity in current nondimensionalization if functions unavailable)
+    r_ut = isdefined(QGYBJ, :rho_ut) ? QGYBJ.rho_ut(par, G) : ones(eltype(a), nz)
+    r_st = isdefined(QGYBJ, :rho_st) ? QGYBJ.rho_st(par, G) : ones(eltype(a), nz)
 
     for j in 1:ny, i in 1:nx
         kh2 = G.kh2[i,j]

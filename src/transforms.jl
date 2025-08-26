@@ -7,17 +7,10 @@ module Transforms
 
 using ..QGYBJ: Grid
 using LinearAlgebra
-import FFTW
 
-const HAS_PENCILFFTS = let ok = true
-    try
-        @eval import PencilFFTs
-    catch
-        ok = false
-        @info "PencilFFTs not available; using FFTW"
-    end
-    ok
-end
+const HAS_PENCILFFTS = Base.find_package("PencilFFTs") !== nothing
+ensure_pencil() = HAS_PENCILFFTS ? Base.require(:PencilFFTs) : nothing
+ensure_fftw() = Base.require(:FFTW)
 
 Base.@kwdef mutable struct Plans
     backend::Symbol                  # :pencil or :fftw
@@ -44,8 +37,9 @@ function plan_transforms!(G::Grid, parallel_config=nothing)
     # Try PencilFFTs for serial case if decomp exists
     if HAS_PENCILFFTS && G.decomp !== nothing
         try
-            p = PencilFFTs.plan_fft((G.nx, G.ny); dims=(1,2))
-            ip = PencilFFTs.plan_ifft((G.nx, G.ny); dims=(1,2))
+            PF = ensure_pencil()
+            p = PF.plan_fft((G.nx, G.ny); dims=(1,2))
+            ip = PF.plan_ifft((G.nx, G.ny); dims=(1,2))
             return Plans(backend=:pencil, p_forward=p, p_backward=ip)
         catch err
             @info "PencilFFTs planning fallback", err
@@ -61,18 +55,19 @@ end
 Set up FFT plans for parallel execution (called from unified interface).
 """
 function setup_parallel_transforms(grid::Grid, pconfig)
-    if grid.decomp !== nothing
+    if grid.decomp !== nothing && HAS_PENCILFFTS
         try
+            PF = ensure_pencil()
             # Create plans for the pencil decomposition
             # Transform in x and y dimensions (dims 1 and 2)
-            forward_plan = PencilFFTs.PencilFFTPlan(grid.decomp, Complex{Float64}; 
-                                                   transform=(PencilFFTs.Transforms.FFT(),
-                                                            PencilFFTs.Transforms.FFT()),
+            forward_plan = PF.PencilFFTPlan(grid.decomp, Complex{Float64}; 
+                                                   transform=(PF.Transforms.FFT(),
+                                                            PF.Transforms.FFT()),
                                                    transform_dims=(1, 2))
             
-            backward_plan = PencilFFTs.PencilIFFTPlan(grid.decomp, Complex{Float64};
-                                                     transform=(PencilFFTs.Transforms.IFFT(),
-                                                              PencilFFTs.Transforms.IFFT()),
+            backward_plan = PF.PencilIFFTPlan(grid.decomp, Complex{Float64};
+                                                     transform=(PF.Transforms.IFFT(),
+                                                              PF.Transforms.IFFT()),
                                                      transform_dims=(1, 2))
             
             return Plans(backend=:pencil, p_forward=forward_plan, p_backward=backward_plan)
@@ -93,11 +88,13 @@ Compute horizontal forward FFT (complex-to-complex) for each z-plane.
 """
 function fft_forward!(dst, src, P::Plans)
     if P.backend === :pencil
-        PencilFFTs.fft!(dst, src; plan=P.p_forward)
+        PF = ensure_pencil()
+        PF.fft!(dst, src; plan=P.p_forward)
     else
         # src, dst: Array{Complex,3}; transform x,y per z index
         @inbounds for k in axes(src,3)
-            dst[:,:,k] .= FFTW.fft(src[:,:,k])
+            FF = ensure_fftw()
+            dst[:,:,k] .= FF.fft(src[:,:,k])
         end
     end
     return dst
@@ -110,10 +107,12 @@ Compute horizontal inverse FFT (complex-to-complex) for each z-plane.
 """
 function fft_backward!(dst, src, P::Plans)
     if P.backend === :pencil
-        PencilFFTs.ifft!(dst, src; plan=P.p_backward)
+        PF = ensure_pencil()
+        PF.ifft!(dst, src; plan=P.p_backward)
     else
         @inbounds for k in axes(src,3)
-            dst[:,:,k] .= FFTW.ifft(src[:,:,k])
+            FF = ensure_fftw()
+            dst[:,:,k] .= FF.ifft(src[:,:,k])
         end
     end
     return dst

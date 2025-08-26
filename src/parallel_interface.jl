@@ -35,21 +35,17 @@ Initialize MPI and return parallel configuration.
 """
 function setup_parallel_environment()
     config = ParallelConfig()
-    if @isdefined MPI
-        try
-            if !MPI.Initialized(); MPI.Init(); end
-            comm = MPI.COMM_WORLD
-            rank = MPI.Comm_rank(comm)
-            nprocs = MPI.Comm_size(comm)
-            if rank == 0; @info "MPI initialized with $nprocs processes"; end
-            config = ParallelConfig(use_mpi=true, comm=comm, n_processes=nprocs, parallel_io=true)
-        catch e
-            @info "MPI failed to initialize: $e"; config = ParallelConfig(use_mpi=false)
-        end
-    else
-        @info "MPI not available; running in serial"; config = ParallelConfig(use_mpi=false)
+    try
+        M = Base.require(:MPI)
+        if !M.Initialized(); M.Init(); end
+        comm = M.COMM_WORLD
+        rank = M.Comm_rank(comm)
+        nprocs = M.Comm_size(comm)
+        if rank == 0; @info "MPI initialized with $nprocs processes"; end
+        config = ParallelConfig(use_mpi=true, comm=comm, n_processes=nprocs, parallel_io=true)
+    catch e
+        @info "MPI not available or failed to initialize: $e"; config = ParallelConfig(use_mpi=false)
     end
-    
     return config
 end
 
@@ -74,7 +70,7 @@ function init_parallel_grid(params::QGParams, pconfig::ParallelConfig)
     decomp = nothing
     kh2 = Array{T}(undef, nx, ny)
     
-    if pconfig.use_mpi && @isdefined PencilArrays
+    if pconfig.use_mpi
         try
             
             # Create pencil decomposition
@@ -158,9 +154,9 @@ function gather_array_for_io(arr, grid::Grid, pconfig::ParallelConfig)
     end
     
     try
-        
+        PA = Base.require(:PencilArrays)
         # Gather to a global array on rank 0
-        gathered = PencilArrays.gather(arr)
+        gathered = PA.gather(arr)
         
         return gathered
     catch e

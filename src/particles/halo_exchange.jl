@@ -115,9 +115,8 @@ function exchange_velocity_halos!(halo_info::HaloInfo{T},
     end
     
     try
-        if !(@isdefined MPI)
-            @warn "MPI not available; skipping halo exchange"
-            return halo_info
+        if Base.find_package("MPI") === nothing
+            @warn "MPI not available; skipping halo exchange"; return halo_info
         end
         
         # Copy local data to extended arrays

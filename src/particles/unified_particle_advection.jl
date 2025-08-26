@@ -242,11 +242,16 @@ mutable struct ParticleTracker{T<:AbstractFloat}
         particles = ParticleState{T}(np)
         
         # Use provided parallel config or detect environment
-        if parallel_config !== nothing && parallel_config.use_mpi && @isdefined MPI
-            comm = parallel_config.comm
-            rank = MPI.Comm_rank(comm)
-            nprocs = MPI.Comm_size(comm)
-            is_parallel = true
+        if parallel_config !== nothing && parallel_config.use_mpi
+            try
+                M = Base.require(:MPI)
+                comm = parallel_config.comm
+                rank = M.Comm_rank(comm)
+                nprocs = M.Comm_size(comm)
+                is_parallel = true
+            catch
+                comm, rank, nprocs, is_parallel = detect_parallel_environment()
+            end
         else
             comm, rank, nprocs, is_parallel = detect_parallel_environment()
         end
@@ -312,11 +317,16 @@ function detect_parallel_environment()
     nprocs = 1
     is_parallel = false
     
-    if @isdefined MPI && MPI.Initialized()
-            comm = MPI.COMM_WORLD
-            rank = MPI.Comm_rank(comm)
-            nprocs = MPI.Comm_size(comm)
+    try
+        M = Base.require(:MPI)
+        if M.Initialized()
+            comm = M.COMM_WORLD
+            rank = M.Comm_rank(comm)
+            nprocs = M.Comm_size(comm)
             is_parallel = nprocs > 1
+        end
+    catch
+        # MPI not available
     end
     
     return comm, rank, nprocs, is_parallel
@@ -883,12 +893,12 @@ function migrate_particles!(tracker::ParticleTracker{T}) where T
         return tracker
     end
     
-    if !(@isdefined MPI)
+    if Base.find_package("MPI") === nothing
         @warn "MPI not available; cannot migrate particles"
         return tracker
     end
     try
-        
+        M = Base.require(:MPI)
         particles = tracker.particles
         local_domain = tracker.local_domain
         
@@ -947,12 +957,12 @@ end
 Exchange particles between ranks using MPI.
 """
 function exchange_particles!(tracker::ParticleTracker{T}) where T
-    if !(@isdefined MPI)
+    if Base.find_package("MPI") === nothing
         @warn "MPI not available; cannot exchange particles"
         return
     end
     try
-        
+        M = Base.require(:MPI)
         comm = tracker.comm
         nprocs = tracker.nprocs
         

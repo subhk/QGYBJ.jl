@@ -78,10 +78,10 @@ available. Safe to call even without MPI; leaves `G.decomp` as `nothing`.
 """
 function init_pencil_decomposition!(G::Grid)
     try
-        if @isdefined MPI && @isdefined PencilArrays
-            comm = MPI.COMM_WORLD
-            G.decomp = PencilArrays.PencilDecomposition((G.nx, G.ny, G.nz), comm)
-        end
+        M = Base.require(:MPI)
+        PA = Base.require(:PencilArrays)
+        comm = M.COMM_WORLD
+        G.decomp = PA.PencilDecomposition((G.nx, G.ny, G.nz), comm)
     catch
         # stay in serial mode
     end

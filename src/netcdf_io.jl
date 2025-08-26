@@ -9,7 +9,7 @@ This module provides comprehensive NetCDF input/output capabilities including:
 """
 
 const HAS_NCDS = Base.find_package("NCDatasets") !== nothing
-ensure_ncds_loaded() = (HAS_NCDS && !(@isdefined NCDatasets)) ? Base.require(:NCDatasets) : nothing
+ensure_ncds_loaded() = (HAS_NCDS ? Base.require(:NCDatasets) : nothing)
 using Printf
 using Dates
 using ..QGYBJ: Grid, State, QGParams
@@ -152,8 +152,10 @@ Write state file in serial mode.
 """
 function write_serial_state_file(manager::OutputManager, S::State, G::Grid, plans, time::Real; params=nothing)
     ensure_ncds_loaded()
-    # Generate filename
-    filename = @sprintf(manager.state_file_pattern, manager.psi_counter)
+    # Generate filename (printf-style pattern supported)
+    io = IOBuffer()
+    Printf.format(io, Printf.Format(manager.state_file_pattern), manager.psi_counter)
+    filename = String(take!(io))
     filepath = joinpath(manager.output_dir, filename)
     
     # Convert spectral fields to real space
@@ -287,7 +289,9 @@ Write state file using parallel NetCDF I/O.
 """
 function write_parallel_state_file(manager::OutputManager, S::State, G::Grid, plans, time::Real, parallel_config; params=nothing)
     # Generate filename
-    filename = @sprintf(manager.state_file_pattern, manager.psi_counter)
+    io = IOBuffer()
+    Printf.format(io, Printf.Format(manager.state_file_pattern), manager.psi_counter)
+    filename = String(take!(io))
     filepath = joinpath(manager.output_dir, filename)
     
     if parallel_config.use_mpi && G.decomp !== nothing

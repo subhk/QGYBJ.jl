@@ -88,10 +88,8 @@ function compute_vertical_velocity!(S::State, G::Grid, plans, params; N2_profile
     nx, ny, nz = G.nx, G.ny, G.nz
     
     # Get RHS of omega equation
-    using ..QGYBJ: omega_eqn_rhs!
-    
     rhsk = similar(S.psi)
-    omega_eqn_rhs!(rhsk, S.psi, G, plans)
+    ..Diagnostics.omega_eqn_rhs!(rhsk, S.psi, G, plans)
     
     # Get stratification parameters
     if params !== nothing && hasfield(typeof(params), :f0)
