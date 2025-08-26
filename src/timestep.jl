@@ -25,7 +25,7 @@ function first_projection_step!(S::State, G::Grid, par::QGParams, plans; a, deal
     dqk  = similar(S.B)
 
     # Compute diagnostics first
-    invert_q_to_psi!(S, G; a)
+    invert_q_to_psi!(S, G; a, par=par)
     compute_velocities!(S, G; plans, params=par)
 
     # J terms
@@ -103,7 +103,7 @@ function first_projection_step!(S::State, G::Grid, par::QGParams, plans; a, deal
     # Recover psi, A (YBJ+ or normal), velocities
     # Only update psi if mean flow is not fixed
     if !par.fixed_flow
-        invert_q_to_psi!(S, G; a)
+        invert_q_to_psi!(S, G; a, par=par)
     end
     if par.ybj_plus
         invert_B_to_A!(S, G, par, a)
@@ -135,7 +135,7 @@ function leapfrog_step!(Snp1::State, Sn::State, Snm1::State,
     L = isnothing(dealias_mask) ? trues(nx,ny) : dealias_mask
     # Ensure ψ and velocities for Sn are updated (only if mean flow evolves)
     if !par.fixed_flow
-        invert_q_to_psi!(Sn, G; a)
+        invert_q_to_psi!(Sn, G; a, par=par)
     end
     compute_velocities!(Sn, G; plans, params=par)
     # Nonlinear terms
@@ -221,7 +221,7 @@ function leapfrog_step!(Snp1::State, Sn::State, Snm1::State,
     
     # Only update psi if mean flow is not fixed
     if !par.fixed_flow
-        invert_q_to_psi!(Snp1, G; a)
+        invert_q_to_psi!(Snp1, G; a, par=par)
     end
     if par.ybj_plus
         invert_B_to_A!(Snp1, G, par, a)

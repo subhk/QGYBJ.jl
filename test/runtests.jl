@@ -6,7 +6,7 @@ using QGYBJ
     G, S, plans, a = setup_model(; par)
     @test size(S.q) == (par.nx, par.ny, par.nz)
     # Invert q->psi (all zeros)
-    invert_q_to_psi!(S, G; a)
+    invert_q_to_psi!(S, G; a, par=par)
     @test all(isfinite, real.(S.psi))
     # Put a simple B mode and invert to A (YBJ+)
     S.B[2,2,3] = 1 + 0im
@@ -41,7 +41,7 @@ end
     end
     # kh=0 psi inversion should zero the whole vertical column for that (i,j)
     S.q[1,1,3] = 1 + 0im
-    invert_q_to_psi!(S, G; a)
+    invert_q_to_psi!(S, G; a, par=par)
     @test all(iszero, S.psi[1,1,:])
     # Run one normal-branch step to ensure it executes
     S.B[3,3,4] = 0.5 + 0.2im
