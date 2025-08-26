@@ -274,8 +274,8 @@ function compute_ybj_vertical_velocity!(S::State, G::Grid, plans, params; N2_pro
     
     # Step 1: Recover A from B = L⁺A using YBJ+ elliptic solver
     # This solves: a_ell(z) d²A/dz² + b_ell(z) dA/dz - kh²A/4 = B
-    # where B is stored in S.A (confusing naming in original code)
-    Bk = S.A  # Actually B = L⁺A in spectral space
+    # B is stored in S.B in spectral space
+    Bk = S.B
     Ak = similar(Bk)  # True A will be computed here
     
     f2 = f^2
@@ -529,4 +529,3 @@ end
 end # module
 
 using .Operators: compute_velocities!, compute_vertical_velocity!, compute_ybj_vertical_velocity!, compute_total_velocities!, compute_wave_velocities!
-
