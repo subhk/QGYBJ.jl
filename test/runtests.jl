@@ -31,10 +31,13 @@ end
     L = dealias_mask(G)
     # Dealias property checks for a few indices
     let keep = L, nx = par.nx, ny = par.ny
-        # center should be kept
+        # center should be kept (kx=ky=0)
         @test keep[1,1]
-        # a far corner should be dropped (heuristic)
-        @test !keep[nx, ny]
+        # pick a point beyond radial 2/3 cutoff
+        kmax = min(nx, ny) ÷ 3
+        i_bad = min(nx, kmax + 3)
+        j_bad = min(ny, kmax + 3)
+        @test !keep[i_bad, j_bad]
     end
     # kh=0 psi inversion should zero the whole vertical column for that (i,j)
     S.q[1,1,3] = 1 + 0im
