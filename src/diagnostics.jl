@@ -431,7 +431,7 @@ Extract a horizontal (x-y) slice from a spectral 3D field.
 
 # Description
 Transforms a spectral field to physical space and extracts the horizontal
-slice at vertical index k.
+slice at LOCAL vertical index k.
 
 # Use Cases
 - Surface vorticity plots (k=nz for surface)
@@ -442,21 +442,33 @@ slice at vertical index k.
 - `field::Array{Complex,3}`: Spectral field (nx, ny, nz)
 - `G::Grid`: Grid structure
 - `plans`: FFT plans
-- `k::Int`: Vertical index for slice (1 ≤ k ≤ nz)
+- `k::Int`: LOCAL vertical index for slice (1 ≤ k ≤ nz_local)
 
 # Returns
-2D real array (nx, ny) with values at z = G.z[k].
+2D real array (nx_local, ny_local) with values at local z[k].
+
+# Note
+In MPI mode with 2D decomposition, k is a LOCAL index.
+For full domain slices, gather data to root first.
 """
 function slice_horizontal(field, G::Grid, plans; k::Int)
     nx, ny, nz = G.nx, G.ny, G.nz
-    @assert 1 <= k <= nz
+
+    # Get local dimensions
+    field_arr = parent(field)
+    nx_local, ny_local, nz_local = size(field_arr)
+
+    @assert 1 <= k <= nz_local "k=$k must be within local range 1:$nz_local"
+
     # Inverse FFT entire field to get real slice
     Xr = similar(field)
     fft_backward!(Xr, field, plans)
+    Xr_arr = parent(Xr)
+
     norm = nx*ny
-    sl = Array{Float64}(undef, nx, ny)
-    @inbounds for j in 1:ny, i in 1:nx
-        sl[i,j] = real(Xr[i,j,k]) / norm
+    sl = Array{Float64}(undef, nx_local, ny_local)
+    @inbounds for j in 1:ny_local, i in 1:nx_local
+        sl[i,j] = real(Xr_arr[i,j,k]) / norm
     end
     return sl
 end
