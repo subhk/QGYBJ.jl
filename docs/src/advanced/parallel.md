@@ -4,24 +4,39 @@
 CurrentModule = QGYBJ
 ```
 
-This page describes how to run QGYBJ.jl on distributed memory systems using MPI.
+This page describes how to run QGYBJ.jl on distributed memory systems using MPI with **2D pencil decomposition** via PencilArrays and PencilFFTs.
 
 ## Overview
 
-QGYBJ.jl uses **pencil decomposition** for MPI parallelization:
+QGYBJ.jl uses **2D pencil decomposition** for optimal parallel scalability:
 
 ```
-              Full Domain                    Pencil Decomposition
+           Serial (Full Domain)                2D Pencil Decomposition
         ┌─────────────────────┐         ┌───────┬───────┬───────┐
-        │                     │         │ P0    │ P1    │ P2    │
-        │                     │         │───────┼───────┼───────│
-        │    nx × ny × nz     │   →     │ P3    │ P4    │ P5    │
-        │                     │         │───────┼───────┼───────│
-        │                     │         │ P6    │ P7    │ P8    │
+        │                     │         │  P0   │  P1   │  P2   │
+        │                     │         ├───────┼───────┼───────┤
+        │    nx × ny × nz     │   →     │  P3   │  P4   │  P5   │
+        │                     │         ├───────┼───────┼───────┤
+        │                     │         │  P6   │  P7   │  P8   │
         └─────────────────────┘         └───────┴───────┴───────┘
+                                              9 processes in 3×3 grid
 ```
 
-Each MPI rank owns a "pencil" of data spanning one full dimension.
+The domain is distributed across a 2D process grid (px × py), allowing scaling to O(N²) processes for an N³ grid.
+
+## Key Concept: Pencil Configurations
+
+Different operations require data arranged differently:
+
+| Configuration | Distribution | Z Local? | Use Case |
+|:--------------|:-------------|:---------|:---------|
+| **xy-pencil** | x local, (y,z) distributed | No | Horizontal FFTs |
+| **z-pencil** | (x,y) distributed, z local | **Yes** | Vertical operations |
+
+**Why two configurations?**
+- Horizontal FFTs need consecutive x-data → xy-pencil
+- Vertical tridiagonal solves need all z-data → z-pencil
+- **Transpose operations** switch between configurations automatically
 
 ## Requirements
 
@@ -32,7 +47,7 @@ using Pkg
 Pkg.add(["MPI", "PencilArrays", "PencilFFTs"])
 ```
 
-Ensure you have a working MPI installation (OpenMPI, MPICH, etc.).
+Ensure you have a working MPI installation (OpenMPI, MPICH, Intel MPI, etc.).
 
 ## Quick Start
 
@@ -40,33 +55,48 @@ Ensure you have a working MPI installation (OpenMPI, MPICH, etc.).
 
 ```julia
 # parallel_run.jl
-using QGYBJ
 using MPI
+using PencilArrays
+using PencilFFTs
+using QGYBJ
 
 # Initialize MPI
 MPI.Init()
-comm = MPI.COMM_WORLD
-rank = MPI.Comm_rank(comm)
-nprocs = MPI.Comm_size(comm)
 
-# Create configuration
-config = create_simple_config(
-    nx = 256,
-    ny = 256,
-    nz = 128,
-    dt = 0.001,
-    total_time = 10.0,
-    parallel = true,
-    comm = comm
-)
+# Setup MPI environment with automatic 2D topology
+mpi_config = QGYBJ.setup_mpi_environment()
 
-# Run simulation (automatically parallelized)
-result = run_simple_simulation(config)
+# Create parameters
+params = default_params(nx=256, ny=256, nz=128)
 
-# Output from rank 0 only
-if rank == 0
+# Initialize distributed grid and state
+grid = QGYBJ.init_mpi_grid(params, mpi_config)
+state = QGYBJ.init_mpi_state(grid, mpi_config)
+workspace = QGYBJ.init_mpi_workspace(grid, mpi_config)
+
+# Plan parallel FFTs
+plans = QGYBJ.plan_mpi_transforms(grid, mpi_config)
+
+# Get physics coefficients
+a_vec = a_ell_ut(params, grid)
+dealias = dealias_mask(grid)
+
+# Time stepping loop
+dt = 0.001
+for step in 1:1000
+    # All operations automatically handle 2D decomposition
+    invert_q_to_psi!(state, grid; a=a_vec, workspace=workspace)
+    compute_velocities!(state, grid; plans=plans, params=params, workspace=workspace)
+    leapfrog_step!(state, state, state, grid, params, plans;
+                   a=a_vec, dealias_mask=dealias, workspace=workspace)
+
+    if step % 100 == 0 && mpi_config.is_root
+        println("Step $step completed")
+    end
+end
+
+if mpi_config.is_root
     println("Simulation complete!")
-    println("Final KE: ", result.diagnostics.KE[end])
 end
 
 MPI.Finalize()
@@ -75,98 +105,281 @@ MPI.Finalize()
 ### Running
 
 ```bash
-# Run on 16 processes
+# Run on 16 processes (auto-decomposed to 4×4 grid)
 mpiexec -n 16 julia --project parallel_run.jl
+
+# Run on 64 processes (auto-decomposed to 8×8 grid)
+mpiexec -n 64 julia --project parallel_run.jl
 ```
 
-## Pencil Decomposition
+## 2D Pencil Decomposition Details
 
-### How It Works
+### Process Topology
 
-The domain is decomposed into 2D slabs ("pencils"):
-
-| Configuration | Layout | Best For |
-|:--------------|:-------|:---------|
-| Pencil-X | Full in X, split in Y,Z | X-direction FFTs |
-| Pencil-Y | Full in Y, split in X,Z | Y-direction FFTs |
-| Pencil-Z | Full in Z, split in X,Y | Vertical operations |
-
-### Automatic Transposition
-
-FFTs require data along the transform dimension. QGYBJ.jl automatically:
-
-1. Starts in Pencil-X for X-FFT
-2. Transposes to Pencil-Y for Y-FFT
-3. Transposes to Pencil-Z for vertical operations
-4. Transposes back for next time step
-
-### Decomposition Setup
+The `setup_mpi_environment()` function automatically computes an optimal 2D process grid:
 
 ```julia
-# Manual decomposition control
-decomp = PencilDecomposition(
-    comm,
-    (nx, ny, nz),
-    proc_dims = (4, 4)  # 4×4 = 16 processes
-)
+# Automatic topology (recommended)
+mpi_config = QGYBJ.setup_mpi_environment()
 
-grid = create_mpi_grid(decomp, Lx=2π, Ly=2π, H=1.0)
+# For 16 processes: creates (4, 4) topology
+# For 12 processes: creates (3, 4) topology
+
+# Manual topology specification
+mpi_config = QGYBJ.setup_mpi_environment(topology=(4, 4))
 ```
 
-## Full MPI Example
+### PencilDecomp Structure
+
+The decomposition is stored in `grid.decomp`:
 
 ```julia
-using QGYBJ
+# Access decomposition info
+decomp = grid.decomp
+
+# Two pencil configurations
+decomp.pencil_xy  # For horizontal operations (FFTs)
+decomp.pencil_z   # For vertical operations (tridiagonal solves)
+
+# Local index ranges
+decomp.local_range_xy  # (1:nx_local, y_start:y_end, z_start:z_end)
+decomp.local_range_z   # (x_start:x_end, y_start:y_end, 1:nz)
+
+# Transpose operations
+decomp.transpose_xy_to_z  # Move data for vertical ops
+decomp.transpose_z_to_xy  # Move data back for FFTs
+```
+
+### How Transposes Work
+
+```
+    xy-pencil (for FFTs)              z-pencil (for vertical ops)
+   ┌─────────────────────┐           ┌─────────────────────┐
+   │ x: LOCAL            │           │ x: DISTRIBUTED      │
+   │ y: distributed      │  ←─────→  │ y: distributed      │
+   │ z: distributed      │ transpose │ z: LOCAL            │
+   └─────────────────────┘           └─────────────────────┘
+```
+
+Example: Inverting q to ψ requires a vertical tridiagonal solve:
+
+```julia
+function invert_q_to_psi!(S, G; a, workspace)
+    # Detect if 2D decomposition is active
+    need_transpose = G.decomp !== nothing && hasfield(typeof(G.decomp), :pencil_z)
+
+    if need_transpose
+        # 1. Transpose q from xy-pencil to z-pencil
+        transpose_to_z_pencil!(workspace.q_z, S.q, G)
+
+        # 2. Solve tridiagonal system (z now fully local!)
+        # ... Thomas algorithm for each (i,j) column ...
+
+        # 3. Transpose ψ back to xy-pencil
+        transpose_to_xy_pencil!(S.psi, workspace.psi_z, G)
+    else
+        # Serial: direct solve
+        _invert_q_to_psi_direct!(S, G, a)
+    end
+end
+```
+
+## Workspace Arrays
+
+For 2D decomposition, pre-allocated z-pencil workspace arrays avoid repeated allocation:
+
+```julia
+# Initialize workspace once
+workspace = QGYBJ.init_mpi_workspace(grid, mpi_config)
+
+# Workspace contains z-pencil arrays:
+# workspace.q_z     - for q transpose
+# workspace.psi_z   - for ψ transpose
+# workspace.B_z     - for B transpose
+# workspace.A_z     - for A transpose
+# workspace.C_z     - for C transpose
+# workspace.work_z  - general workspace
+
+# Pass workspace to functions
+invert_q_to_psi!(state, grid; a=a_vec, workspace=workspace)
+invert_B_to_A!(state, grid, params, a_vec; workspace=workspace)
+```
+
+## Index Mapping
+
+### Local to Global Indices
+
+When iterating over distributed arrays, use local indices but map to global for wavenumbers:
+
+```julia
+# For xy-pencil arrays (default)
+for k_local in axes(arr, 3)
+    for j_local in axes(arr, 2)
+        for i_local in axes(arr, 1)
+            # Map to global indices for wavenumber lookup
+            i_global = local_to_global(i_local, 1, grid)
+            j_global = local_to_global(j_local, 2, grid)
+
+            kx = grid.kx[i_global]
+            ky = grid.ky[j_global]
+
+            # Use local indices for array access
+            arr[i_local, j_local, k_local] = ...
+        end
+    end
+end
+
+# For z-pencil arrays (after transpose)
+i_global = local_to_global_z(i_local, 1, grid)
+j_global = local_to_global_z(j_local, 2, grid)
+```
+
+### Helper Functions
+
+```julia
+# Get local index ranges
+local_range = get_local_range(grid)       # xy-pencil
+local_range_z = get_local_range_z(grid)   # z-pencil
+
+# Get local dimensions of an array
+nx_local, ny_local, nz_local = get_local_dims(arr)
+
+# Check if array is distributed
+is_distributed = is_parallel_array(arr)
+
+# Access underlying data (works for both Array and PencilArray)
+data = parent(arr)
+```
+
+## Parallel FFTs
+
+PencilFFTs handles the distributed FFTs automatically:
+
+```julia
+# Plan creation
+plans = QGYBJ.plan_mpi_transforms(grid, mpi_config)
+
+# Forward FFT (physical → spectral)
+fft_forward!(dst, src, plans)
+
+# Backward FFT (spectral → physical)
+fft_backward!(dst, src, plans)
+```
+
+PencilFFTs automatically handles:
+- X-FFT in xy-pencil
+- Transpose to appropriate configuration for Y-FFT
+- Transpose back to output configuration
+
+## Communication Patterns
+
+### Global Reductions
+
+```julia
+# Sum a value across all processes
+local_energy = flow_kinetic_energy(state.u, state.v)
+global_energy = QGYBJ.mpi_reduce_sum(local_energy, mpi_config)
+
+# Only root has the correct sum
+if mpi_config.is_root
+    println("Total KE: $global_energy")
+end
+```
+
+### Gather/Scatter
+
+```julia
+# Gather full field to root process
+global_psi = QGYBJ.gather_to_root(state.psi, grid, mpi_config)
+# Returns full array on rank 0, nothing on others
+
+# Scatter from root to all processes
+distributed_psi = QGYBJ.scatter_from_root(initial_psi, grid, mpi_config)
+```
+
+### Synchronization
+
+```julia
+# Barrier - wait for all processes
+QGYBJ.mpi_barrier(mpi_config)
+```
+
+## Complete Example
+
+```julia
+# full_mpi_simulation.jl
 using MPI
+using PencilArrays
+using PencilFFTs
+using QGYBJ
 
 function main()
     MPI.Init()
 
-    comm = MPI.COMM_WORLD
-    rank = MPI.Comm_rank(comm)
-    nprocs = MPI.Comm_size(comm)
+    # Setup MPI with 2D decomposition
+    mpi_config = QGYBJ.setup_mpi_environment()
 
-    # Global parameters
-    nx, ny, nz = 256, 256, 128
-    dt = 0.001
-    nsteps = 10000
-
-    # Set up MPI environment
-    mpi_config = setup_mpi_environment(comm; nx=nx, ny=ny, nz=nz)
-
-    # Create grid with decomposition
-    grid = init_mpi_grid(mpi_config, Lx=2π, Ly=2π, H=1.0)
+    if mpi_config.is_root
+        println("Running on $(mpi_config.nprocs) processes")
+        println("Topology: $(mpi_config.topology)")
+    end
 
     # Parameters
-    params = QGParams(; ybj_plus=true, nu_h2=1e-10)
+    params = QGParams(
+        nx = 256, ny = 256, nz = 128,
+        Lx = 2π, Ly = 2π,
+        f0 = 1.0,
+        stratification = :constant_N,
+        ybj_plus = true
+    )
 
-    # Create distributed state
-    state = init_mpi_state(grid, mpi_config)
+    # Initialize distributed grid, state, workspace
+    grid = QGYBJ.init_mpi_grid(params, mpi_config)
+    state = QGYBJ.init_mpi_state(grid, mpi_config)
+    workspace = QGYBJ.init_mpi_workspace(grid, mpi_config)
 
-    # Initialize (each rank initializes its local portion)
-    initialize_random_flow!(state, grid; seed=rank+42)
-    initialize_random_waves!(state, grid; seed=rank+123)
+    # FFT plans
+    plans = QGYBJ.plan_mpi_transforms(grid, mpi_config)
 
-    # FFT plans (MPI-aware)
-    plans = plan_mpi_transforms!(grid, mpi_config)
+    # Physics setup
+    a_vec = a_ell_ut(params, grid)
+    dealias = dealias_mask(grid)
 
-    # Work arrays
-    work = create_mpi_work_arrays(grid, mpi_config)
-    a_ell = setup_elliptic_matrices(grid, params)
+    # Initialize with random field (deterministic across processes)
+    QGYBJ.init_mpi_random_field!(state.psi, grid, 1.0, 42)
+    QGYBJ.init_mpi_random_field!(state.B, grid, 0.1, 123)
+
+    # Compute initial q from psi
+    invert_q_to_psi!(state, grid; a=a_vec, workspace=workspace)
 
     # Time stepping
-    for step = 1:nsteps
-        timestep!(state, grid, params, work, plans, a_ell, dt)
+    dt = 0.001
+    nsteps = 10000
+    output_interval = 100
 
-        if step % 100 == 0 && rank == 0
-            KE = mpi_reduce_sum(flow_kinetic_energy(state.u, state.v), comm)
-            println("Step $step: KE = $KE")
-        end
+    for step in 1:nsteps
+        # Main physics
+        invert_q_to_psi!(state, grid; a=a_vec, workspace=workspace)
+        compute_velocities!(state, grid; plans=plans, params=params, workspace=workspace)
 
-        # Checkpointing
-        if step % 1000 == 0
-            save_mpi_checkpoint(state, grid, step, mpi_config)
+        # Time step
+        leapfrog_step!(state, state, state, grid, params, plans;
+                       a=a_vec, dealias_mask=dealias, workspace=workspace)
+
+        # Diagnostics
+        if step % output_interval == 0
+            local_ke = flow_kinetic_energy(state.u, state.v)
+            global_ke = QGYBJ.mpi_reduce_sum(local_ke, mpi_config)
+
+            if mpi_config.is_root
+                println("Step $step / $nsteps: KE = $global_ke")
+            end
         end
+    end
+
+    # Final output
+    if mpi_config.is_root
+        println("Simulation complete!")
     end
 
     MPI.Finalize()
@@ -175,175 +388,54 @@ end
 main()
 ```
 
-## Domain Decomposition Details
-
-### Process Topology
+## Allocating Distributed Arrays
 
 ```julia
-# Automatic topology (recommended)
-decomp = PencilDecomposition(comm, (nx, ny, nz))
+# Allocate array in xy-pencil configuration (for FFTs)
+arr_xy = QGYBJ.allocate_xy_pencil(grid, ComplexF64)
 
-# Custom topology (for specific architectures)
-decomp = PencilDecomposition(comm, (nx, ny, nz);
-    proc_dims = (Px, Py)
-)
-
-# Constraint: Px × Py = nprocs
-```
-
-### Local Array Size
-
-Each rank holds a portion of the global array:
-
-```julia
-# Global size
-global_size = (nx, ny, nz)
-
-# Local size (varies by rank)
-local_size = size(state.psi)  # e.g., (64, 64, 128) for 16 procs
-```
-
-### Index Mapping
-
-```julia
-# Get global indices for local data
-i_global, j_global, k_global = local_to_global_indices(grid, mpi_config)
-
-# Example: local point (i, j, k) maps to global (i_global[i], j_global[j], k)
-```
-
-## Communication Patterns
-
-### Halo Exchange
-
-For stencil operations (e.g., finite differences):
-
-```julia
-# Exchange halo regions between neighbors
-halo_exchange!(field, grid, mpi_config)
-```
-
-### Global Reductions
-
-```julia
-# Sum across all ranks
-global_sum = mpi_reduce_sum(local_value, comm)
-
-# Maximum across all ranks
-global_max = MPI.Allreduce(local_max, MPI.MAX, comm)
-```
-
-### Gather/Scatter
-
-```julia
-# Gather full field to rank 0
-if rank == 0
-    global_field = zeros(ComplexF64, nx, ny, nz)
-end
-gather_to_root!(global_field, local_field, mpi_config)
-
-# Scatter from rank 0 to all
-scatter_from_root!(local_field, global_field, mpi_config)
-```
-
-## I/O in Parallel
-
-### Parallel NetCDF
-
-```julia
-using NCDatasets
-
-# Collective file creation
-ds = NCDataset("output.nc", "c";
-    format = :netcdf4,
-    comm = comm
-)
-
-# Each rank writes its portion
-local_range = get_local_range(grid, mpi_config)
-ds["psi"][local_range..., t] = state.psi
-
-close(ds)
-```
-
-### Gather-and-Write
-
-Alternative for smaller datasets:
-
-```julia
-if rank == 0
-    global_psi = zeros(ComplexF64, nx, ny, nz)
-end
-
-gather_to_root!(global_psi, state.psi, mpi_config)
-
-if rank == 0
-    # Write from rank 0 only
-    NCDataset("output.nc", "a") do ds
-        ds["psi"][:, :, :, t] = global_psi
-    end
-end
+# Allocate array in z-pencil configuration (for vertical ops)
+arr_z = QGYBJ.allocate_z_pencil(grid, ComplexF64)
 ```
 
 ## Performance Considerations
 
 ### Scaling
 
-| Regime | Characteristic |
-|:-------|:---------------|
-| Strong scaling | Fixed problem size, increasing procs |
-| Weak scaling | Fixed work per proc, increasing total size |
+| Regime | Description |
+|:-------|:------------|
+| Strong scaling | Fixed problem size, increase processes |
+| Weak scaling | Fixed work per process, increase total size |
 
-QGYBJ.jl scales well up to ~1000 cores for typical configurations.
+QGYBJ.jl with 2D decomposition scales to O(N²) processes for N³ grid.
 
-### Bottlenecks
+### Communication Costs
 
-1. **Transposition**: All-to-all communication for pencil swaps
-2. **I/O**: Parallel file writes can be slow
-3. **Load imbalance**: Uneven decomposition
+| Operation | Communication Pattern | Cost |
+|:----------|:---------------------|:-----|
+| Transpose xy↔z | All-to-all | O(N³/P) data moved |
+| FFT | Internal transposes | Handled by PencilFFTs |
+| Reduction | Global sum | O(log P) |
 
 ### Optimization Tips
 
-```julia
-# 1. Use power-of-2 process counts
-mpiexec -n 16 julia script.jl  # Good
-mpiexec -n 15 julia script.jl  # May be slower
-
-# 2. Match decomposition to architecture
-# For 256-core nodes with 4 sockets:
-decomp = PencilDecomposition(comm, dims; proc_dims=(16, 16))
-
-# 3. Minimize I/O frequency
-output_interval = 1000  # Not too frequent
-
-# 4. Use asynchronous I/O if available
-enable_async_io!(output_config)
-```
-
-### Profiling
+1. **Use power-of-2 process counts** for optimal topology
+2. **Match decomposition to problem**: More processes in larger dimensions
+3. **Minimize transpose frequency**: Batch vertical operations
+4. **Pre-allocate workspace**: Avoid allocation in time loop
 
 ```julia
-# Built-in timing
-using MPI
-using QGYBJ
+# Good: Power of 2
+mpiexec -n 16 julia script.jl   # 4×4 topology
+mpiexec -n 64 julia script.jl   # 8×8 topology
 
-MPI.Init()
-
-# Enable timing
-set_timing!(true)
-
-# Run simulation
-result = run_simulation(config)
-
-# Print timing summary
-if MPI.Comm_rank(MPI.COMM_WORLD) == 0
-    print_timing_summary()
-end
+# May be slower: Awkward factorization
+mpiexec -n 15 julia script.jl   # 3×5 topology
 ```
 
-## Job Submission
+## Job Submission Scripts
 
-### SLURM Example
+### SLURM
 
 ```bash
 #!/bin/bash
@@ -351,20 +443,22 @@ end
 #SBATCH --nodes=4
 #SBATCH --ntasks-per-node=16
 #SBATCH --time=24:00:00
+#SBATCH --mem=32G
 
-module load julia
-module load openmpi
+module load julia openmpi
 
+export JULIA_NUM_THREADS=1  # Use MPI parallelism
 mpiexec -n 64 julia --project run_simulation.jl
 ```
 
-### PBS Example
+### PBS
 
 ```bash
 #!/bin/bash
 #PBS -N qgybj
 #PBS -l nodes=4:ppn=16
 #PBS -l walltime=24:00:00
+#PBS -l mem=128gb
 
 module load julia openmpi
 
@@ -374,36 +468,37 @@ mpiexec -n 64 julia --project run_simulation.jl
 
 ## Troubleshooting
 
-### Common Issues
+### MPI Not Found
 
-**MPI not found**
 ```julia
-# Install system MPI package first, then:
+# Use system MPI instead of Julia's binary
 using MPIPreferences
 MPIPreferences.use_system_binary()
+# Restart Julia
 ```
 
-**Deadlock in communication**
-- Ensure all ranks call collective operations
-- Check for mismatched send/receive counts
+### Memory Errors
 
-**Memory errors**
-- Local arrays might be too large
-- Increase number of processes
+- Local arrays too large → increase process count
+- Check with: `size(parent(state.psi))` on each rank
+
+### Deadlock
+
+- Ensure ALL ranks call collective operations (gather, reduce, barrier)
+- Check for mismatched send/receive
 
 ### Debugging
 
 ```julia
-# Debug output with rank info
-function mpi_println(msg)
-    rank = MPI.Comm_rank(MPI.COMM_WORLD)
-    println("[Rank $rank] $msg")
-    flush(stdout)
+function debug_print(msg, mpi_config)
+    for r in 0:(mpi_config.nprocs-1)
+        if mpi_config.rank == r
+            println("[Rank $r] $msg")
+            flush(stdout)
+        end
+        QGYBJ.mpi_barrier(mpi_config)
+    end
 end
-
-# Synchronize before critical sections
-MPI.Barrier(comm)
-mpi_println("Reached checkpoint")
 ```
 
 ## API Reference
@@ -412,8 +507,18 @@ mpi_println("Reached checkpoint")
 setup_mpi_environment
 init_mpi_grid
 init_mpi_state
-plan_mpi_transforms!
-gather_to_root!
-scatter_from_root!
+init_mpi_workspace
+plan_mpi_transforms
+gather_to_root
+scatter_from_root
+mpi_barrier
 mpi_reduce_sum
+transpose_to_z_pencil!
+transpose_to_xy_pencil!
+local_to_global
+local_to_global_z
+get_local_range
+get_local_range_z
+allocate_xy_pencil
+allocate_z_pencil
 ```

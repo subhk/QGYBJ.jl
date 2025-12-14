@@ -4,315 +4,344 @@
 CurrentModule = QGYBJ
 ```
 
-This page documents the Grid and State types in detail.
+This page documents the core data structures: `Grid` and `State`.
 
 ## Grid Type
+
+The `Grid` struct contains spatial coordinates, spectral wavenumbers, and parallel decomposition information.
 
 ### Definition
 
 ```julia
-struct Grid{T<:AbstractFloat}
-    # Dimensions
-    nx::Int
-    ny::Int
-    nz::Int
+mutable struct Grid{T, AT}
+    # Grid dimensions
+    nx::Int                # Number of points in x (horizontal)
+    ny::Int                # Number of points in y (horizontal)
+    nz::Int                # Number of points in z (vertical)
 
     # Domain sizes
-    Lx::T
-    Ly::T
-    H::T
+    Lx::T                  # Domain size in x
+    Ly::T                  # Domain size in y
 
     # Grid spacings
-    dx::T
-    dy::T
-    dz::T
+    dx::T                  # Grid spacing in x: dx = Lx/nx
+    dy::T                  # Grid spacing in y: dy = Ly/ny
 
-    # Physical coordinates
-    x::Vector{T}
-    y::Vector{T}
-    z::Vector{T}
+    # Vertical grid (unstaggered)
+    z::Vector{T}           # Vertical levels z[k], size nz
+    dz::Vector{T}          # Layer thicknesses: dz[k] = z[k+1] - z[k], size nz-1
 
-    # Spectral coordinates
-    kx::Vector{T}
-    ky::Vector{T}
-    kh2::Array{T,2}
+    # Spectral wavenumbers
+    kx::Vector{T}          # x-wavenumbers, size nx
+    ky::Vector{T}          # y-wavenumbers, size ny
+    kh2::AT                # kx² + ky² on spectral grid
 
-    # Stratification
-    N2::Vector{T}
-    N2_face::Vector{T}
-    a::Vector{T}
-    a_face::Vector{T}
-
-    # Masks
-    dealias_mask::Array{T,2}
+    # MPI decomposition (PencilArrays)
+    decomp::Any            # PencilDecomp or nothing for serial
 end
 ```
+
+### Type Parameters
+
+- `T`: Floating point type (typically `Float64`)
+- `AT`: Array type for `kh2` (`Array{T,2}` for serial, `PencilArray{T,3}` for parallel)
 
 ### Constructors
 
 ```julia
-# Basic constructor
-grid = Grid(nx=64, ny=64, nz=32)
+# Initialize from parameters (serial mode)
+params = default_params(nx=64, ny=64, nz=32)
+grid = init_grid(params)
 
-# With domain size
-grid = Grid(;
-    nx = 128,
-    ny = 128,
-    nz = 64,
-    Lx = 2π,
-    Ly = 2π,
-    H = 1.0
-)
-
-# With type parameter
-grid = Grid{Float32}(nx=64, ny=64, nz=32)
+# Initialize with MPI decomposition
+using MPI, PencilArrays, PencilFFTs
+MPI.Init()
+mpi_config = QGYBJ.setup_mpi_environment()
+grid = QGYBJ.init_mpi_grid(params, mpi_config)
 ```
 
 ### Grid Properties
 
 ```julia
-# Total number of points
-N = grid.nx * grid.ny * grid.nz
+# Dimensions
+nx, ny, nz = grid.nx, grid.ny, grid.nz
 
-# Nyquist wavenumber
-k_nyq = π / grid.dx
+# Domain size
+Lx, Ly = grid.Lx, grid.Ly
 
-# Dealiased wavenumber
-k_max = 2/3 * k_nyq
+# Grid spacings
+dx, dy = grid.dx, grid.dy
+
+# Vertical levels
+z = grid.z       # Vector of length nz
+dz = grid.dz     # Vector of length nz-1
+
+# Check if parallel
+is_parallel = grid.decomp !== nothing
 ```
 
-### Coordinate Access
+### Wavenumber Access
 
 ```julia
-# Physical coordinates
-x = grid.x  # 1D array, length nx
-y = grid.y  # 1D array, length ny
-z = grid.z  # 1D array, length nz
+# Wavenumber vectors (global, same on all processes)
+kx = grid.kx     # Vector of length nx
+ky = grid.ky     # Vector of length ny
 
-# 3D coordinate grids
-X, Y, Z = meshgrid(grid)
+# Horizontal wavenumber squared
+# Serial: 2D array (nx, ny)
+# Parallel: 3D PencilArray (local_nx, local_ny, local_nz)
+kh2 = grid.kh2
 
-# Wavenumbers
-kx = grid.kx  # length nx÷2+1
-ky = grid.ky  # length ny
-kh2 = grid.kh2  # 2D array (nx÷2+1, ny)
+# Convenience functions (handle serial/parallel automatically)
+kx_val = get_kx(i_local, grid)    # Get kx for local index
+ky_val = get_ky(j_local, grid)    # Get ky for local index
+kh2_val = get_kh2(i, j, k, arr, grid)  # Get kh² for local indices
 ```
 
-### Stratification Access
+### Index Mapping (Parallel)
+
+When using parallel decomposition, local indices must be mapped to global indices:
 
 ```julia
-# Buoyancy frequency squared at cell centers
-N2 = grid.N2  # length nz
+# Get local index ranges
+local_range = get_local_range(grid)   # (i_range, j_range, k_range)
 
-# At cell faces
-N2_face = grid.N2_face  # length nz+1
+# Map local to global indices (xy-pencil)
+i_global = local_to_global(i_local, 1, grid)  # x dimension
+j_global = local_to_global(j_local, 2, grid)  # y dimension
+k_global = local_to_global(k_local, 3, grid)  # z dimension
 
-# Stretching coefficient f₀²/N²
-a = grid.a  # length nz
-a_face = grid.a_face  # length nz+1
+# Map local to global indices (z-pencil)
+i_global = local_to_global_z(i_local, 1, grid)
+j_global = local_to_global_z(j_local, 2, grid)
+
+# Get local dimensions of any array
+nx_local, ny_local, nz_local = get_local_dims(arr)
+
+# Check if array is parallel
+is_distributed = is_parallel_array(arr)
+```
+
+### Decomposition Access
+
+```julia
+# Access decomposition (parallel mode only)
+if grid.decomp !== nothing
+    decomp = grid.decomp
+
+    # Pencil configurations
+    pencil_xy = decomp.pencil_xy   # For horizontal FFTs
+    pencil_z = decomp.pencil_z     # For vertical operations
+
+    # Local ranges
+    range_xy = decomp.local_range_xy
+    range_z = decomp.local_range_z
+
+    # Global dimensions
+    global_dims = decomp.global_dims   # (nx, ny, nz)
+
+    # Process topology
+    topology = decomp.topology   # (px, py)
+end
 ```
 
 ## State Type
 
+The `State` struct contains all prognostic and diagnostic fields.
+
 ### Definition
 
 ```julia
-struct State{T<:AbstractFloat, C<:Complex{T}}
-    # Prognostic variables (spectral space)
-    q::Array{C,3}    # Potential vorticity
-    B::Array{C,3}    # Wave envelope
+mutable struct State{T, RT<:AbstractArray{T,3}, CT<:AbstractArray{Complex{T},3}}
+    # Prognostic fields (spectral space, complex)
+    q::CT           # QG potential vorticity
+    B::CT           # YBJ+ wave envelope (B = L⁺A)
 
-    # Diagnostic variables (spectral space)
-    psi::Array{C,3}  # Streamfunction
-    A::Array{C,3}    # Wave amplitude
+    # Diagnostic fields (spectral space, complex)
+    psi::CT         # Streamfunction (from q via inversion)
+    A::CT           # Wave amplitude (from B via YBJ+ inversion)
+    C::CT           # Vertical derivative A_z
 
-    # Physical space fields
-    u::Array{T,3}    # Zonal velocity
-    v::Array{T,3}    # Meridional velocity
-
-    # Time stepping history
-    rq_old::Array{C,3}
-    rq_old2::Array{C,3}
-    rB_old::Array{C,3}
-    rB_old2::Array{C,3}
+    # Velocity fields (real space, real)
+    u::RT           # Zonal velocity: u = -dψ/dy
+    v::RT           # Meridional velocity: v = dψ/dx
+    w::RT           # Vertical velocity (from omega equation)
 end
 ```
+
+### Type Parameters
+
+- `T`: Floating point type (`Float64`)
+- `RT`: Real array type (`Array{T,3}` or `PencilArray{T,3}`)
+- `CT`: Complex array type (`Array{Complex{T},3}` or `PencilArray{Complex{T},3}`)
 
 ### Constructors
 
 ```julia
-# From grid
-state = create_state(grid)
+# Initialize from grid (serial mode)
+state = init_state(grid)
 
-# With type parameter
-state = create_state(grid; T=Float32)
-
-# With initialization
-state = create_state(grid; init=:random)
+# Initialize with MPI (parallel mode)
+state = QGYBJ.init_mpi_state(grid, mpi_config)
 ```
 
-### Array Dimensions
+### Field Access
 
 ```julia
-# Spectral arrays (complex)
-size(state.psi)  # (nx÷2+1, ny, nz)
-size(state.q)    # (nx÷2+1, ny, nz)
-size(state.B)    # (nx÷2+1, ny, nz)
-size(state.A)    # (nx÷2+1, ny, nz)
+# Prognostic fields (time-stepped)
+q = state.q      # QG potential vorticity (spectral)
+B = state.B      # Wave envelope (spectral)
 
-# Physical arrays (real)
-size(state.u)    # (nx, ny, nz)
-size(state.v)    # (nx, ny, nz)
+# Diagnostic fields (computed)
+psi = state.psi  # Streamfunction (spectral)
+A = state.A      # Wave amplitude (spectral)
+C = state.C      # Vertical derivative dA/dz (spectral)
+
+# Velocity fields (real space)
+u = state.u      # Zonal velocity
+v = state.v      # Meridional velocity
+w = state.w      # Vertical velocity
 ```
 
-### Accessing Fields
+### Working with Arrays
 
 ```julia
-# Direct access
-psi_k = state.psi[i, j, k]  # Single spectral coefficient
+# Get underlying data (works for both Array and PencilArray)
+psi_data = parent(state.psi)
 
-# Slices
-psi_surface = state.psi[:, :, end]  # Surface slice
-psi_profile = state.psi[i, j, :]    # Vertical profile
+# Get local dimensions
+nx_local, ny_local, nz_local = size(parent(state.psi))
 
-# Full arrays
-psi_all = copy(state.psi)  # Copy spectral field
-```
+# Access single element
+val = state.psi[i, j, k]
 
-### Modifying Fields
+# Access slice
+surface = state.psi[:, :, end]
+profile = state.psi[i, j, :]
 
-```julia
-# Set directly
+# Set values
 state.psi[i, j, k] = complex_value
-
-# Set slice
 state.psi[:, :, end] .= surface_values
 
-# Set all
+# Copy all of one field
 state.psi .= initial_psi
 ```
 
-## Work Arrays
+### Physical Interpretation
+
+| Field | Symbol | Physical Meaning |
+|:------|:-------|:-----------------|
+| `q` | q | QG potential vorticity: q = nabla²psi + (f²/N²)d²psi/dz² |
+| `B` | B | YBJ+ wave envelope: B = L⁺A |
+| `psi` | psi | Streamfunction |
+| `A` | A | Wave amplitude |
+| `C` | dA/dz | Vertical derivative of wave amplitude |
+| `u` | u | Zonal velocity: u = -dpsi/dy |
+| `v` | v | Meridional velocity: v = dpsi/dx |
+| `w` | w | Vertical velocity (from omega equation or YBJ) |
+
+## MPI Workspace
+
+For 2D parallel decomposition, workspace arrays store z-pencil data:
 
 ### Definition
 
 ```julia
-struct WorkArrays{T<:AbstractFloat, C<:Complex{T}}
-    # Spectral work arrays
-    tmp_k::Array{C,3}
-    tmp_k2::Array{C,3}
-    tmp_k3::Array{C,3}
-
-    # Physical work arrays
-    tmp::Array{T,3}
-    tmp2::Array{T,3}
-    tmp3::Array{T,3}
-
-    # 2D work arrays
-    tmp_k_2d::Array{C,2}
-    tmp_2d::Array{T,2}
+struct MPIWorkspace{T, PA}
+    q_z::PA      # q in z-pencil configuration
+    psi_z::PA    # psi in z-pencil configuration
+    B_z::PA      # B in z-pencil configuration
+    A_z::PA      # A in z-pencil configuration
+    C_z::PA      # C in z-pencil configuration
+    work_z::PA   # General workspace
 end
+```
+
+### Constructor
+
+```julia
+# Initialize workspace (parallel mode only)
+workspace = QGYBJ.init_mpi_workspace(grid, mpi_config)
 ```
 
 ### Usage
 
 ```julia
-# Create once
-work = create_work_arrays(grid)
-
-# Pass to timestep
-timestep!(state, grid, params, work, plans, a_ell, dt)
+# Pass workspace to functions requiring vertical operations
+invert_q_to_psi!(state, grid; a=a_vec, workspace=workspace)
+invert_B_to_A!(state, grid, params, a_vec; workspace=workspace)
+compute_vertical_velocity!(state, grid, plans, params; workspace=workspace)
 ```
 
-## Grid Utilities
+## Allocating Arrays
 
-### Distance Functions
+### Serial Mode
 
 ```julia
-# Distance between points (periodic)
-d = periodic_distance(x1, y1, x2, y2, grid)
-
-# Distance squared
-d2 = periodic_distance_squared(x1, y1, x2, y2, grid)
+# Allocate using grid
+q = allocate_field(Float64, grid; complex=true)   # Complex spectral
+u = allocate_field(Float64, grid; complex=false)  # Real physical
 ```
 
-### Cell Finding
+### Parallel Mode
 
 ```julia
-# Find cell containing point
-i, j, k = find_cell(x, y, z, grid)
+# Allocate in xy-pencil (for FFTs, horizontal operations)
+arr_xy = QGYBJ.allocate_xy_pencil(grid, ComplexF64)
 
-# With fractional position
-i, j, k, fx, fy, fz = find_cell_frac(x, y, z, grid)
+# Allocate in z-pencil (for vertical operations)
+arr_z = QGYBJ.allocate_z_pencil(grid, ComplexF64)
 ```
 
-### Grid Information
+## Utility Functions
+
+### Grid Utilities
 
 ```julia
-# Print summary
-show(grid)
+# Compute wavenumbers (after changing Lx, Ly)
+compute_wavenumbers!(grid)
 
-# Memory usage
-mem = memory_usage(grid)
-println("Grid memory: $(mem/1e6) MB")
+# Get dealiasing mask
+mask = dealias_mask(grid)  # 2D Bool array (nx, ny)
 ```
 
-## State Utilities
-
-### Copying
-
-```julia
-# Deep copy
-state2 = copy_state(state)
-
-# Copy fields only
-copy_fields!(state_dest, state_src)
-```
-
-### Zeroing
+### State Utilities
 
 ```julia
 # Zero all fields
-zero_state!(state)
+fill!(state.q, 0)
+fill!(state.B, 0)
+fill!(state.psi, 0)
 
-# Zero spectral fields only
-zero_spectral!(state)
+# Check for NaN
+has_nan = any(isnan, parent(state.psi))
 ```
 
-### Validation
+## Serial vs Parallel Comparison
 
-```julia
-# Check for NaN/Inf
-if has_nan(state)
-    error("NaN detected in state")
-end
-
-# Check finite
-@assert all_finite(state)
-```
-
-## Type Parameters
-
-Both Grid and State are parameterized:
-
-```julia
-# Double precision (default)
-grid64 = Grid{Float64}(nx=64, ny=64, nz=32)
-state64 = create_state(grid64)
-
-# Single precision
-grid32 = Grid{Float32}(nx=64, ny=64, nz=32)
-state32 = create_state(grid32)
-```
+| Operation | Serial | Parallel |
+|:----------|:-------|:---------|
+| Grid initialization | `init_grid(params)` | `init_mpi_grid(params, mpi_config)` |
+| State initialization | `init_state(grid)` | `init_mpi_state(grid, mpi_config)` |
+| Array type | `Array{T,3}` | `PencilArray{T,3}` |
+| Index access | Direct `arr[i,j,k]` | Via `parent(arr)[i,j,k]` |
+| Wavenumber lookup | Direct `grid.kx[i]` | `grid.kx[local_to_global(i,1,grid)]` |
+| `grid.decomp` | `nothing` | `PencilDecomp` struct |
 
 ## API Reference
 
 ```@docs
 Grid
-create_state
-create_work_arrays
-copy_state
-zero_state!
-find_cell
-periodic_distance
+State
+init_grid
+init_state
+allocate_field
+compute_wavenumbers!
+get_local_range
+local_to_global
+get_local_dims
+is_parallel_array
+get_kx
+get_ky
+get_kh2
 ```
