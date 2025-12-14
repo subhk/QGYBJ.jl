@@ -140,16 +140,30 @@ effects, use `compute_total_velocities!` instead.
 Matches `compute_velo` in derivatives.f90.
 """
 function compute_velocities!(S::State, G::Grid; plans=nothing, params=nothing, compute_w=true, use_ybj_w=false)
-    # Spectral differentiation: û = -i ky ψ̂, v̂ = i kx ψ̂
+    nx, ny, nz = G.nx, G.ny, G.nz
+
+    # Get underlying arrays (works for both Array and PencilArray)
+    ψk_arr = parent(S.psi)
+    u_arr = parent(S.u)
+    v_arr = parent(S.v)
+    nx_local, ny_local, nz_local = size(ψk_arr)
+
+    # Spectral differentiation: û = -i ky ψ̂, v̂ = i kx ψ̂
     ψk = S.psi
     uk = similar(ψk)
     vk = similar(ψk)
-    @inbounds for k in axes(ψk,3), j in 1:G.ny, i in 1:G.nx
-        ikx = im * G.kx[i]
-        iky = im * G.ky[j]
-        uk[i,j,k] = -iky * ψk[i,j,k]
-        vk[i,j,k] =  ikx * ψk[i,j,k]
+    uk_arr = parent(uk)
+    vk_arr = parent(vk)
+
+    @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
+        i_global = local_to_global(i_local, 1, G)
+        j_global = local_to_global(j_local, 2, G)
+        ikx = im * G.kx[i_global]
+        iky = im * G.ky[j_global]
+        uk_arr[i_local, j_local, k] = -iky * ψk_arr[i_local, j_local, k]
+        vk_arr[i_local, j_local, k] =  ikx * ψk_arr[i_local, j_local, k]
     end
+
     # Inverse FFT to real space
     if plans === nothing
         # Use unified transform planning (handles both serial and parallel)
@@ -159,14 +173,17 @@ function compute_velocities!(S::State, G::Grid; plans=nothing, params=nothing, c
     tmpv = similar(ψk)
     fft_backward!(tmpu, uk, plans)
     fft_backward!(tmpv, vk, plans)
+
+    tmpu_arr = parent(tmpu)
+    tmpv_arr = parent(tmpv)
+
     # Normalization: FFTW.ifft returns unnormalized; divide by (nx*ny)
-    norm = (G.nx * G.ny)
-    @inbounds for k in axes(S.u,3)
-        # Real part
-        S.u[:,:,k] .= real.(tmpu[:,:,k]) ./ norm
-        S.v[:,:,k] .= real.(tmpv[:,:,k]) ./ norm
+    norm = (nx * ny)
+    @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
+        u_arr[i_local, j_local, k] = real(tmpu_arr[i_local, j_local, k]) / norm
+        v_arr[i_local, j_local, k] = real(tmpv_arr[i_local, j_local, k]) / norm
     end
-    
+
     # Compute vertical velocity if requested
     if compute_w
         if use_ybj_w
@@ -178,9 +195,10 @@ function compute_velocities!(S::State, G::Grid; plans=nothing, params=nothing, c
         end
     else
         # Set w to zero (leading-order QG approximation)
-        fill!(S.w, 0.0)
+        w_arr = parent(S.w)
+        fill!(w_arr, 0.0)
     end
-    
+
     return S
 end
 
@@ -243,18 +261,28 @@ Matches omega equation solver in the Fortran implementation.
 """
 function compute_vertical_velocity!(S::State, G::Grid, plans, params; N2_profile=nothing)
     nx, ny, nz = G.nx, G.ny, G.nz
-    
+
+    # Get underlying arrays
+    rhsk_arr = similar(parent(S.psi))
+    wk_arr = similar(parent(S.psi))
+    w_arr = parent(S.w)
+    nx_local, ny_local, nz_local = size(parent(S.psi))
+
+    # Verify z is fully local
+    @assert nz_local == nz "Vertical dimension must be fully local"
+
     # Get RHS of omega equation
     rhsk = similar(S.psi)
     PARENT.Diagnostics.omega_eqn_rhs!(rhsk, S.psi, G, plans)
-    
+    rhsk_arr = parent(rhsk)
+
     # Get stratification parameters
     if params !== nothing && hasfield(typeof(params), :f0)
         f = params.f0
     else
         f = 1.0  # Default
     end
-    
+
     # Get N² profile - use provided profile or default to constant
     if N2_profile === nothing
         N2_profile = ones(eltype(S.psi), nz)
@@ -265,44 +293,47 @@ function compute_vertical_velocity!(S::State, G::Grid, plans, params; N2_profile
             N2_profile = ones(eltype(S.psi), nz)
         end
     end
-    
+
     # Solve the full omega equation: ∇²w + (N²/f²)(∂²w/∂z²) = RHS
     # This is a 3D elliptic equation solved as a tridiagonal system for each (kx,ky)
-    
+
     wk = similar(S.psi)
-    fill!(wk, 0.0)
-    
+    wk_arr = parent(wk)
+    fill!(wk_arr, 0.0)
+
     dz = nz > 1 ? (G.z[2] - G.z[1]) : 1.0
     f2 = f^2
-    
-    # For each horizontal wavenumber (kx, ky), solve tridiagonal system
-    @inbounds for j in 1:ny, i in 1:nx
-        kh2 = G.kh2[i,j]
-        
+
+    # For each LOCAL horizontal wavenumber (kx, ky), solve tridiagonal system
+    @inbounds for j_local in 1:ny_local, i_local in 1:nx_local
+        i_global = local_to_global(i_local, 1, G)
+        j_global = local_to_global(j_local, 2, G)
+        kx_val = G.kx[i_global]
+        ky_val = G.ky[j_global]
+        kh2 = kx_val^2 + ky_val^2
+
         if kh2 > 0 && nz > 2  # Need at least 3 levels for tridiagonal
             # Set up tridiagonal system for vertical levels 2:(nz-1)
             # Boundary conditions: w = 0 at k=1 and k=nz
             n_interior = nz - 2  # Interior points
-            
+
             if n_interior > 0
                 # Tridiagonal matrix coefficients (real-valued)
                 d = zeros(Float64, n_interior)      # diagonal
-                dl = zeros(Float64, n_interior-1)   # lower diagonal  
+                dl = zeros(Float64, n_interior-1)   # lower diagonal
                 du = zeros(Float64, n_interior-1)   # upper diagonal
-                rhs = zeros(eltype(S.psi), n_interior)  # RHS vector (complex eltype already)
-                
+                rhs = zeros(eltype(S.psi), n_interior)  # RHS vector
+
                 # Fill tridiagonal system based on Fortran implementation
                 for iz in 1:n_interior
                     k = iz + 1  # Actual z-level (2 to nz-1)
-                    
+
                     # N² coefficient: a_ell_ut = 1.0/N² (normalized Bu=1)
                     a_ell = 1.0 / N2_profile[k]
-                    
+
                     # Diagonal term: -(N²/f²)/dz² - kh2
-                    # In Fortran: d(iz) = -(... + dz*dz*kh2/a_ell_ut(iz))
-                    # Here: d(iz) = -(N²/f²)/dz² - kh2
                     d[iz] = -(N2_profile[k]/f2)/(dz*dz) - kh2
-                    
+
                     # Off-diagonal terms (simplified density weighting = 1)
                     if iz > 1
                         dl[iz-1] = (N2_profile[k]/f2)/(dz*dz)
@@ -310,81 +341,75 @@ function compute_vertical_velocity!(S::State, G::Grid, plans, params; N2_profile
                     if iz < n_interior
                         du[iz] = (N2_profile[k]/f2)/(dz*dz)
                     end
-                    
+
                     # RHS
-                    rhs[iz] = rhsk[i,j,k]
+                    rhs[iz] = rhsk_arr[i_local, j_local, k]
                 end
-                
-                # Solve tridiagonal system using LAPACK (same as Fortran code)
+
+                # Solve tridiagonal system using LAPACK
                 # For complex RHS, solve real and imaginary parts separately
-                
+
                 # Prepare arrays for LAPACK gtsv! (modifies input arrays)
-                dl_work = copy(dl)  # Sub-diagonal
-                d_work = copy(d)    # Diagonal  
-                du_work = copy(du)  # Super-diagonal
-                
-                # Split complex RHS into real and imaginary parts
-                rhs_real = real.(rhs)
-                rhs_imag = imag.(rhs)
-                
-                # Solve real part: A * x_real = rhs_real
-                sol_real = zeros(Float64, n_interior)
-                try
-                    LinearAlgebra.LAPACK.gtsv!(dl_work, d_work, du_work, rhs_real)
-                    sol_real .= rhs_real  # gtsv! overwrites RHS with solution
-                catch e
-                    @warn "LAPACK gtsv failed for real part: $e, using zeros"
-                end
-                
-                # Reset arrays for imaginary part (gtsv! modifies them)
                 dl_work = copy(dl)
                 d_work = copy(d)
                 du_work = copy(du)
-                
-                # Solve imaginary part: A * x_imag = rhs_imag  
-                # Reset arrays for imaginary part (gtsv! modifies them)
+
+                # Split complex RHS into real and imaginary parts
+                rhs_real = real.(rhs)
+                rhs_imag = imag.(rhs)
+
+                # Solve real part
+                sol_real = zeros(Float64, n_interior)
+                try
+                    LinearAlgebra.LAPACK.gtsv!(dl_work, d_work, du_work, rhs_real)
+                    sol_real .= rhs_real
+                catch e
+                    @warn "LAPACK gtsv failed for real part: $e, using zeros"
+                end
+
+                # Reset arrays for imaginary part
                 dl_work = copy(dl)
                 d_work = copy(d)
                 du_work = copy(du)
                 sol_imag = zeros(Float64, n_interior)
                 try
                     LinearAlgebra.LAPACK.gtsv!(dl_work, d_work, du_work, rhs_imag)
-                    sol_imag .= rhs_imag  # gtsv! overwrites RHS with solution
+                    sol_imag .= rhs_imag
                 catch e
                     @warn "LAPACK gtsv failed for imaginary part: $e, using zeros"
                 end
-                
+
                 # Combine real and imaginary solutions
                 solution = sol_real .+ im .* sol_imag
-                
+
                 # Store solution in wk (interior points)
                 for iz in 1:n_interior
                     k = iz + 1
-                    wk[i,j,k] = solution[iz]
+                    wk_arr[i_local, j_local, k] = solution[iz]
                 end
             end
-            
+
         elseif kh2 > 0 && nz <= 2
             # Simple 2D case - approximate with ∇²w = RHS
             for k in 1:nz
-                wk[i,j,k] = -rhsk[i,j,k] / kh2
+                wk_arr[i_local, j_local, k] = -rhsk_arr[i_local, j_local, k] / kh2
             end
         end
-        
+
         # Boundary conditions are automatically satisfied (wk initialized to 0)
-        # wk[i,j,1] = 0 and wk[i,j,nz] = 0
     end
-    
+
     # Transform to real space
     tmpw = similar(wk)
     fft_backward!(tmpw, wk, plans)
-    
+    tmpw_arr = parent(tmpw)
+
     # Store in state (real part, normalized)
     norm = nx * ny
-    @inbounds for k in 1:nz
-        S.w[:,:,k] .= real.(tmpw[:,:,k]) ./ norm
+    @inbounds for k in 1:nz, j_local in 1:ny_local, i_local in 1:nx_local
+        w_arr[i_local, j_local, k] = real(tmpw_arr[i_local, j_local, k]) / norm
     end
-    
+
     return S
 end
 
@@ -446,29 +471,34 @@ Matches YBJ vertical velocity computation in the Fortran implementation.
 """
 function compute_ybj_vertical_velocity!(S::State, G::Grid, plans, params; N2_profile=nothing, L=nothing)
     nx, ny, nz = G.nx, G.ny, G.nz
-    
+
+    # Get underlying arrays
+    w_arr = parent(S.w)
+    nx_local, ny_local, nz_local = size(w_arr)
+
+    # Verify z is fully local
+    @assert nz_local == nz "Vertical dimension must be fully local"
+
     # Get parameters - need f and N² profile
     if params !== nothing && hasfield(typeof(params), :f0)
         f = params.f0
     else
         f = 1.0  # Default
     end
-    
+
     # Get N² profile - use provided profile or default to constant
     if N2_profile === nothing
         N2_profile = ones(eltype(S.psi), nz)
     else
-        # Ensure N2_profile has correct length and type
         if length(N2_profile) != nz
             @warn "N2_profile length ($(length(N2_profile))) != nz ($nz), using constant N²=1.0"
             N2_profile = ones(eltype(S.psi), nz)
         end
     end
-    
+
     dz = nz > 1 ? (G.z[2] - G.z[1]) : 1.0
-    
+
     # Step 1: Recover A from B = L⁺A using centralized YBJ+ inversion
-    # Build a = 1/N² if provided, otherwise use ones
     a_vec = similar(G.z)
     if N2_profile === nothing
         fill!(a_vec, one(eltype(a_vec)))
@@ -479,56 +509,64 @@ function compute_ybj_vertical_velocity!(S::State, G::Grid, plans, params; N2_pro
     end
     invert_B_to_A!(S, G, params, a_vec)
     Ak = S.A
-    
+    Ak_arr = parent(Ak)
+
     # Step 2: Compute vertical derivative A_z using finite differences
     Ask_z = S.C  # C was set to A_z by invert_B_to_A!
-    
+    Ask_z_arr = parent(Ask_z)
+
     # Step 3: Compute horizontal derivatives of A_z
     dAz_dx_k = similar(Ask_z)
     dAz_dy_k = similar(Ask_z)
-    
-    @inbounds for k in 1:(nz-1), j in 1:ny, i in 1:nx
-        ikx = im * G.kx[i]
-        iky = im * G.ky[j]
-        dAz_dx_k[i,j,k] = ikx * Ask_z[i,j,k]
-        dAz_dy_k[i,j,k] = iky * Ask_z[i,j,k]
+    dAz_dx_k_arr = parent(dAz_dx_k)
+    dAz_dy_k_arr = parent(dAz_dy_k)
+
+    @inbounds for k in 1:(nz-1), j_local in 1:ny_local, i_local in 1:nx_local
+        i_global = local_to_global(i_local, 1, G)
+        j_global = local_to_global(j_local, 2, G)
+        ikx = im * G.kx[i_global]
+        iky = im * G.ky[j_global]
+        dAz_dx_k_arr[i_local, j_local, k] = ikx * Ask_z_arr[i_local, j_local, k]
+        dAz_dy_k_arr[i_local, j_local, k] = iky * Ask_z_arr[i_local, j_local, k]
     end
-    
+
     # Step 4: Compute YBJ vertical velocity
     # w = -(f²/N²)[(∂A/∂x)_z - i(∂A/∂y)_z] + c.c.
-    # The c.c. (complex conjugate) makes the result real
     wk_ybj = similar(S.psi)
-    fill!(wk_ybj, 0.0)
-    
-    @inbounds for k in 1:(nz-1), j in 1:ny, i in 1:nx
-        k_out = k + 1  # Shift to match output grid (intermediate to full levels)
-        # Get N² at this level
+    wk_ybj_arr = parent(wk_ybj)
+    fill!(wk_ybj_arr, 0.0)
+
+    @inbounds for k in 1:(nz-1), j_local in 1:ny_local, i_local in 1:nx_local
+        k_out = k + 1  # Shift to match output grid
         N2_level = N2_profile[k_out]
-        
-        # YBJ formula: w = -(f²/N²)[(∂A/∂x)_z - i(∂A/∂y)_z] + c.c.
+
+        # YBJ formula
         ybj_factor = -(f^2) / N2_level
-        complex_term = dAz_dx_k[i,j,k] - im * dAz_dy_k[i,j,k]
-        
+        complex_term = dAz_dx_k_arr[i_local, j_local, k] - im * dAz_dy_k_arr[i_local, j_local, k]
+
         # Apply the + c.c. operation to get real result
-        wk_ybj[i,j,k_out] = ybj_factor * (complex_term + conj(complex_term))
+        wk_ybj_arr[i_local, j_local, k_out] = ybj_factor * (complex_term + conj(complex_term))
     end
-    
+
     # Apply boundary conditions: w = 0 at top and bottom
-    wk_ybj[:,:,1] .= 0.0
-    if nz > 1
-        wk_ybj[:,:,nz] .= 0.0
+    @inbounds for j_local in 1:ny_local, i_local in 1:nx_local
+        wk_ybj_arr[i_local, j_local, 1] = 0.0
+        if nz > 1
+            wk_ybj_arr[i_local, j_local, nz] = 0.0
+        end
     end
-    
+
     # Transform to real space
     tmpw = similar(wk_ybj)
     fft_backward!(tmpw, wk_ybj, plans)
-    
+    tmpw_arr = parent(tmpw)
+
     # Store in state (real part, normalized)
     norm = nx * ny
-    @inbounds for k in 1:nz
-        S.w[:,:,k] .= real.(tmpw[:,:,k]) ./ norm
+    @inbounds for k in 1:nz, j_local in 1:ny_local, i_local in 1:nx_local
+        w_arr[i_local, j_local, k] = real(tmpw_arr[i_local, j_local, k]) / norm
     end
-    
+
     return S
 end
 
@@ -585,10 +623,10 @@ Modified State with total velocity fields u, v, w.
 function compute_total_velocities!(S::State, G::Grid; plans=nothing, params=nothing, compute_w=true, use_ybj_w=false)
     # First compute QG velocities
     compute_velocities!(S, G; plans=plans, params=params, compute_w=compute_w, use_ybj_w=use_ybj_w)
-    
+
     # Add wave-induced velocities
     compute_wave_velocities!(S, G; plans=plans, params=params)
-    
+
     return S
 end
 
@@ -639,59 +677,73 @@ Call after compute_velocities! to get total velocity.
 """
 function compute_wave_velocities!(S::State, G::Grid; plans=nothing, params=nothing)
     nx, ny, nz = G.nx, G.ny, G.nz
-    
+
+    # Get underlying arrays
+    u_arr = parent(S.u)
+    v_arr = parent(S.v)
+    Ak_arr = parent(S.A)
+    nx_local, ny_local, nz_local = size(Ak_arr)
+
     # Set up plans if needed
     if plans === nothing
         plans = plan_transforms!(G)
     end
-    
-    # Use wave amplitude A for wave velocity computation
-    Ak = S.A  # Wave amplitude in spectral space
-    
+
     # Compute horizontal derivatives of A: ∂A/∂x, ∂A/∂y
-    dA_dx_k = similar(Ak)
-    dA_dy_k = similar(Ak)
-    
-    @inbounds for k in axes(Ak,3), j in 1:ny, i in 1:nx
-        ikx = im * G.kx[i]
-        iky = im * G.ky[j]
-        dA_dx_k[i,j,k] = ikx * Ak[i,j,k]
-        dA_dy_k[i,j,k] = iky * Ak[i,j,k]
+    dA_dx_k = similar(S.A)
+    dA_dy_k = similar(S.A)
+    dA_dx_k_arr = parent(dA_dx_k)
+    dA_dy_k_arr = parent(dA_dy_k)
+
+    @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
+        i_global = local_to_global(i_local, 1, G)
+        j_global = local_to_global(j_local, 2, G)
+        ikx = im * G.kx[i_global]
+        iky = im * G.ky[j_global]
+        dA_dx_k_arr[i_local, j_local, k] = ikx * Ak_arr[i_local, j_local, k]
+        dA_dy_k_arr[i_local, j_local, k] = iky * Ak_arr[i_local, j_local, k]
     end
-    
+
     # Compute wave velocity contributions in spectral space
-    # u_wave = Real[(∂A*/∂x)A + A*(∂A/∂x)] = Real[2 * Real(A* ∂A/∂x)]
-    # v_wave = Real[(∂A*/∂y)A + A*(∂A/∂y)] = Real[2 * Real(A* ∂A/∂y)]
-    u_wave_k = similar(Ak)
-    v_wave_k = similar(Ak)
-    
-    @inbounds for k in axes(Ak,3), j in 1:ny, i in 1:nx
-        if G.kh2[i,j] > 0  # Dealias
-            # Wave velocity contributions
-            u_wave_k[i,j,k] = 2.0 * real(conj(Ak[i,j,k]) * dA_dx_k[i,j,k])
-            v_wave_k[i,j,k] = 2.0 * real(conj(Ak[i,j,k]) * dA_dy_k[i,j,k])
+    u_wave_k = similar(S.A)
+    v_wave_k = similar(S.A)
+    u_wave_k_arr = parent(u_wave_k)
+    v_wave_k_arr = parent(v_wave_k)
+
+    @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
+        i_global = local_to_global(i_local, 1, G)
+        j_global = local_to_global(j_local, 2, G)
+        kx_val = G.kx[i_global]
+        ky_val = G.ky[j_global]
+        kh2 = kx_val^2 + ky_val^2
+        if kh2 > 0  # Dealias
+            u_wave_k_arr[i_local, j_local, k] = 2.0 * real(conj(Ak_arr[i_local, j_local, k]) * dA_dx_k_arr[i_local, j_local, k])
+            v_wave_k_arr[i_local, j_local, k] = 2.0 * real(conj(Ak_arr[i_local, j_local, k]) * dA_dy_k_arr[i_local, j_local, k])
         else
-            u_wave_k[i,j,k] = 0.0
-            v_wave_k[i,j,k] = 0.0
+            u_wave_k_arr[i_local, j_local, k] = 0.0
+            v_wave_k_arr[i_local, j_local, k] = 0.0
         end
     end
-    
+
     # Transform to real space
     u_wave_real = similar(S.u)
     v_wave_real = similar(S.v)
-    
+
     fft_backward!(u_wave_real, u_wave_k, plans)
     fft_backward!(v_wave_real, v_wave_k, plans)
-    
+
+    u_wave_real_arr = parent(u_wave_real)
+    v_wave_real_arr = parent(v_wave_real)
+
     # Normalization
     norm = nx * ny
-    
+
     # Add wave velocities to existing QG velocities
-    @inbounds for k in 1:nz
-        S.u[:,:,k] .+= real.(u_wave_real[:,:,k]) ./ norm
-        S.v[:,:,k] .+= real.(v_wave_real[:,:,k]) ./ norm
+    @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
+        u_arr[i_local, j_local, k] += real(u_wave_real_arr[i_local, j_local, k]) / norm
+        v_arr[i_local, j_local, k] += real(v_wave_real_arr[i_local, j_local, k]) / norm
     end
-    
+
     return S
 end
 
