@@ -159,9 +159,13 @@ export DomainConfig, StratificationConfig, InitialConditionConfig, OutputConfig,
        # Parallel interface (legacy - prefer MPI extension)
        ParallelConfig, setup_parallel_environment, init_parallel_grid, init_parallel_state,
        # MPI extension interface (available when MPI/PencilArrays/PencilFFTs are loaded)
-       setup_mpi_environment, init_mpi_grid, init_mpi_state, plan_mpi_transforms,
+       setup_mpi_environment, init_mpi_grid, init_mpi_state, init_mpi_workspace, plan_mpi_transforms,
        gather_to_root, scatter_from_root, mpi_barrier, mpi_reduce_sum, local_indices,
        write_mpi_field, init_mpi_random_field!,
+       # 2D decomposition transpose and allocation functions
+       transpose_to_z_pencil!, transpose_to_xy_pencil!,
+       get_local_range_xy, get_local_range_z, local_to_global_xy, local_to_global_z,
+       allocate_z_pencil, allocate_xy_pencil,
        # Unified particle advection system (handles both serial and parallel automatically)
        ParticleConfig, ParticleState, ParticleTracker, create_particle_config,
        initialize_particles!, advect_particles!, interpolate_velocity_at_position,
@@ -293,6 +297,73 @@ function write_mpi_field(filename, varname, arr, grid, mpi_config)
 end
 
 function init_mpi_random_field!(arr, grid, amplitude, seed_offset=0)
+    error(MPI_ERROR_MSG)
+end
+
+function init_mpi_workspace(grid, mpi_config; kwargs...)
+    error(MPI_ERROR_MSG)
+end
+
+# 2D decomposition functions - transpose operations
+function transpose_to_z_pencil!(dst, src, grid)
+    # Serial mode - just copy
+    if grid.decomp === nothing
+        dst .= src
+        return dst
+    end
+    error(MPI_ERROR_MSG)
+end
+
+function transpose_to_xy_pencil!(dst, src, grid)
+    # Serial mode - just copy
+    if grid.decomp === nothing
+        dst .= src
+        return dst
+    end
+    error(MPI_ERROR_MSG)
+end
+
+# 2D decomposition functions - local range accessors
+function get_local_range_xy(grid)
+    if grid.decomp === nothing
+        return (1:grid.nx, 1:grid.ny, 1:grid.nz)
+    end
+    error(MPI_ERROR_MSG)
+end
+
+function get_local_range_z(grid)
+    if grid.decomp === nothing
+        return (1:grid.nx, 1:grid.ny, 1:grid.nz)
+    end
+    error(MPI_ERROR_MSG)
+end
+
+function local_to_global_xy(local_idx::Int, dim::Int, grid)
+    if grid.decomp === nothing
+        return local_idx
+    end
+    error(MPI_ERROR_MSG)
+end
+
+function local_to_global_z(local_idx::Int, dim::Int, grid)
+    if grid.decomp === nothing
+        return local_idx
+    end
+    error(MPI_ERROR_MSG)
+end
+
+# 2D decomposition functions - pencil allocation
+function allocate_z_pencil(grid, ::Type{T}=ComplexF64) where T
+    if grid.decomp === nothing
+        return zeros(T, grid.nx, grid.ny, grid.nz)
+    end
+    error(MPI_ERROR_MSG)
+end
+
+function allocate_xy_pencil(grid, ::Type{T}=ComplexF64) where T
+    if grid.decomp === nothing
+        return zeros(T, grid.nx, grid.ny, grid.nz)
+    end
     error(MPI_ERROR_MSG)
 end
 

@@ -11,6 +11,17 @@ This extension module provides MPI parallelization support using:
 The extension is automatically loaded when MPI, PencilArrays, and PencilFFTs
 are imported alongside QGYBJ.
 
+DECOMPOSITION STRATEGY:
+-----------------------
+Uses 2D pencil decomposition for optimal parallel scalability:
+- Data is distributed across a 2D process grid (px × py)
+- Different pencil configurations for different operations:
+  * xy-pencils: For horizontal operations (FFTs in x and y)
+  * z-pencils: For vertical operations (tridiagonal solves)
+- Transpose operations move data between pencil configurations
+
+This approach allows scaling to O(N²) processes for an N³ grid.
+
 USAGE:
 ------
     using MPI
@@ -20,10 +31,10 @@ USAGE:
 
     # Now parallel functions are available
     MPI.Init()
-    pconfig = QGYBJ.setup_mpi_environment()
-    grid = QGYBJ.init_mpi_grid(params, pconfig)
-    state = QGYBJ.init_mpi_state(grid, pconfig)
-    plans = QGYBJ.plan_mpi_transforms(grid, pconfig)
+    mpi_config = QGYBJ.setup_mpi_environment()
+    grid = QGYBJ.init_mpi_grid(params, mpi_config)
+    state = QGYBJ.init_mpi_state(grid, mpi_config)
+    plans = QGYBJ.plan_mpi_transforms(grid, mpi_config)
 
 ================================================================================
 =#
@@ -48,35 +59,62 @@ import QGYBJ: plan_transforms!, fft_forward!, fft_backward!
 """
     MPIConfig
 
-Configuration for MPI parallel execution with PencilArrays decomposition.
+Configuration for MPI parallel execution with 2D PencilArrays decomposition.
 
-Uses 1D decomposition in y-dimension only to keep z-columns local for
-efficient vertical tridiagonal solves.
+# Fields
+- `comm`: MPI communicator
+- `rank`: Process rank (0-indexed)
+- `nprocs`: Total number of processes
+- `is_root`: True if this is rank 0
+- `topology`: 2D process topology (px, py)
 """
 struct MPIConfig
     comm::MPI.Comm
     rank::Int
     nprocs::Int
     is_root::Bool
+    topology::Tuple{Int,Int}
 end
 
 """
-    setup_mpi_environment() -> MPIConfig
+    compute_2d_topology(nprocs::Int) -> Tuple{Int,Int}
+
+Compute optimal 2D process grid for given number of processes.
+Tries to make the grid as square as possible.
+"""
+function compute_2d_topology(nprocs::Int)
+    # Find factors closest to sqrt(nprocs)
+    sqrt_n = isqrt(nprocs)
+    for p1 in sqrt_n:-1:1
+        if nprocs % p1 == 0
+            p2 = nprocs ÷ p1
+            return (p1, p2)
+        end
+    end
+    return (1, nprocs)  # Fallback to 1D if no good factorization
+end
+
+"""
+    setup_mpi_environment(; topology=nothing) -> MPIConfig
 
 Initialize MPI and return configuration. Call this after MPI.Init().
 
-Uses 1D decomposition in y-dimension only, distributing ny across all processes.
-This keeps full x and z columns local on each process, which is required for:
-- Efficient horizontal FFTs (no communication in x-FFT)
-- Efficient vertical tridiagonal solves (full z-column available)
+Uses 2D decomposition for optimal scalability. The process topology
+can be specified manually or computed automatically.
+
+# Keyword Arguments
+- `topology`: Optional tuple (px, py) for process grid. If not specified,
+  computed automatically to be as square as possible.
 
 # Example
 ```julia
 MPI.Init()
 mpi_config = setup_mpi_environment()
+# or with explicit topology
+mpi_config = setup_mpi_environment(topology=(4, 4))
 ```
 """
-function QGYBJ.setup_mpi_environment(; kwargs...)
+function QGYBJ.setup_mpi_environment(; topology=nothing)
     if !MPI.Initialized()
         MPI.Init()
     end
@@ -87,11 +125,19 @@ function QGYBJ.setup_mpi_environment(; kwargs...)
 
     is_root = rank == 0
 
-    if is_root
-        @info "MPI initialized with 1D y-decomposition" nprocs
+    # Compute or validate topology
+    if topology === nothing
+        topo = compute_2d_topology(nprocs)
+    else
+        @assert prod(topology) == nprocs "Topology $(topology) doesn't match nprocs=$nprocs"
+        topo = topology
     end
 
-    return MPIConfig(comm, rank, nprocs, is_root)
+    if is_root
+        @info "MPI initialized with 2D decomposition" nprocs topology=topo
+    end
+
+    return MPIConfig(comm, rank, nprocs, is_root, topo)
 end
 
 #=
@@ -103,43 +149,127 @@ end
 """
     PencilDecomp
 
-Wrapper for PencilArrays decomposition with metadata.
+Wrapper for PencilArrays decomposition supporting 2D decomposition with
+multiple pencil configurations for different operations.
 
-Note: Uses 1D decomposition in y-dimension only to keep z-columns local
-for efficient vertical tridiagonal solves.
+# Fields
+- `pencil_xy`: Pencil configuration for horizontal operations (x,y local or partially local)
+- `pencil_z`: Pencil configuration for vertical operations (z fully local)
+- `local_range_xy`: Local index ranges in xy-pencil configuration
+- `local_range_z`: Local index ranges in z-pencil configuration
+- `global_dims`: Global array dimensions (nx, ny, nz)
+- `topology`: 2D process topology (px, py)
+- `transpose_xy_to_z`: Transpose plan from xy to z pencils
+- `transpose_z_to_xy`: Transpose plan from z to xy pencils
 """
 struct PencilDecomp
-    pencil::Pencil{3,1,MPI.Comm}  # 3D data, 1D decomposition
-    local_range::NTuple{3, UnitRange{Int}}
+    pencil_xy::Pencil{3,2,MPI.Comm}      # 3D data, 2D decomposition for FFTs
+    pencil_z::Pencil{3,2,MPI.Comm}       # 3D data, 2D decomposition with z local
+    local_range_xy::NTuple{3, UnitRange{Int}}
+    local_range_z::NTuple{3, UnitRange{Int}}
     global_dims::NTuple{3, Int}
+    topology::Tuple{Int,Int}
+    transpose_xy_to_z::Transpose
+    transpose_z_to_xy::Transpose
 end
 
 """
     create_pencil_decomposition(nx, ny, nz, mpi_config) -> PencilDecomp
 
-Create a 1D pencil decomposition for 3D data.
+Create a 2D pencil decomposition for 3D data with support for both
+horizontal (FFT) and vertical (tridiagonal solve) operations.
 
-The decomposition is in the y-dimension only, keeping x and z local:
-- x is local for efficient FFTs (no communication in x-FFT)
-- z is local for efficient vertical tridiagonal solves
+# Decomposition Strategy
+- `pencil_xy`: Decomposes in dimensions (2, 3) - y and z distributed, x local
+  This is the "x-pencil" configuration, good for FFTs starting in x.
+- `pencil_z`: Decomposes in dimensions (1, 2) - x and y distributed, z local
+  This is the "z-pencil" configuration, needed for vertical operations.
 
-This is the standard "slab" decomposition for pseudo-spectral codes with
-vertical finite differences.
+PencilFFTs handles the intermediate transposes for FFTs automatically.
+For vertical operations, we explicitly transpose between xy and z pencils.
 """
 function create_pencil_decomposition(nx::Int, ny::Int, nz::Int, mpi_config::MPIConfig)
-    # Create 1D topology for y-decomposition
-    # Total processes distributed along y-dimension only
-    nprocs = mpi_config.nprocs
-    topo = MPITopology(mpi_config.comm, (nprocs,))
+    topo = mpi_config.topology
 
-    # Create pencil: full domain size, decomposed in dim 2 only (y)
-    # x and z remain fully local on each process
-    pencil = Pencil(topo, (nx, ny, nz), (2,))
+    # Create 2D MPI topology
+    mpi_topo = MPITopology(mpi_config.comm, topo)
 
-    # Get local index ranges (LogicalOrder is default)
-    local_range = range_local(pencil)
+    # Create x-pencil (for starting FFTs): decompose in dims 2 and 3 (y, z)
+    # x remains fully local on each process
+    pencil_xy = Pencil(mpi_topo, (nx, ny, nz), (2, 3))
 
-    return PencilDecomp(pencil, local_range, (nx, ny, nz))
+    # Create z-pencil (for vertical operations): decompose in dims 1 and 2 (x, y)
+    # z remains fully local on each process
+    pencil_z = Pencil(mpi_topo, (nx, ny, nz), (1, 2))
+
+    # Get local index ranges for each configuration
+    local_range_xy = range_local(pencil_xy)
+    local_range_z = range_local(pencil_z)
+
+    # Create transpose operations between pencil configurations
+    transpose_xy_to_z = Transpose(pencil_xy, pencil_z)
+    transpose_z_to_xy = Transpose(pencil_z, pencil_xy)
+
+    return PencilDecomp(
+        pencil_xy,
+        pencil_z,
+        local_range_xy,
+        local_range_z,
+        (nx, ny, nz),
+        topo,
+        transpose_xy_to_z,
+        transpose_z_to_xy
+    )
+end
+
+#=
+================================================================================
+                        TRANSPOSE OPERATIONS
+================================================================================
+=#
+
+"""
+    transpose_to_z_pencil!(dst, src, decomp::PencilDecomp)
+
+Transpose data from xy-pencil to z-pencil configuration.
+After this operation, z is fully local on each process.
+Use this before vertical operations (tridiagonal solves, vertical derivatives).
+"""
+function transpose_to_z_pencil!(dst::PencilArray, src::PencilArray, decomp::PencilDecomp)
+    transpose!(dst, src, decomp.transpose_xy_to_z)
+    return dst
+end
+
+"""
+    transpose_to_xy_pencil!(dst, src, decomp::PencilDecomp)
+
+Transpose data from z-pencil to xy-pencil configuration.
+Use this after vertical operations to return to the FFT-ready layout.
+"""
+function transpose_to_xy_pencil!(dst::PencilArray, src::PencilArray, decomp::PencilDecomp)
+    transpose!(dst, src, decomp.transpose_z_to_xy)
+    return dst
+end
+
+# Export transpose functions
+function QGYBJ.transpose_to_z_pencil!(dst, src, grid::Grid)
+    decomp = grid.decomp
+    if decomp === nothing
+        # Serial mode - just copy
+        dst .= src
+        return dst
+    end
+    transpose_to_z_pencil!(dst, src, decomp)
+end
+
+function QGYBJ.transpose_to_xy_pencil!(dst, src, grid::Grid)
+    decomp = grid.decomp
+    if decomp === nothing
+        # Serial mode - just copy
+        dst .= src
+        return dst
+    end
+    transpose_to_xy_pencil!(dst, src, decomp)
 end
 
 #=
@@ -151,7 +281,7 @@ end
 """
     init_mpi_grid(params::QGParams, mpi_config::MPIConfig) -> Grid
 
-Initialize a Grid with MPI-distributed arrays using PencilArrays.
+Initialize a Grid with MPI-distributed arrays using 2D PencilArrays decomposition.
 
 # Arguments
 - `params::QGParams`: Model parameters
@@ -159,8 +289,8 @@ Initialize a Grid with MPI-distributed arrays using PencilArrays.
 
 # Returns
 Grid with:
-- `decomp::PencilDecomp`: The pencil decomposition
-- `kh2::PencilArray`: Distributed wavenumber squared array
+- `decomp::PencilDecomp`: The 2D pencil decomposition with transpose support
+- All arrays in xy-pencil configuration (ready for FFTs)
 
 # Example
 ```julia
@@ -173,7 +303,7 @@ function QGYBJ.init_mpi_grid(params::QGParams, mpi_config::MPIConfig)
     T = Float64
     nx, ny, nz = params.nx, params.ny, params.nz
 
-    # Create pencil decomposition
+    # Create 2D pencil decomposition
     decomp = create_pencil_decomposition(nx, ny, nz, mpi_config)
 
     # Horizontal grid spacing
@@ -184,24 +314,23 @@ function QGYBJ.init_mpi_grid(params::QGParams, mpi_config::MPIConfig)
     z = T.(collect(range(0, 2π; length=nz)))
     dz = diff(z)
 
-    # Wavenumbers (same on all processes for now)
+    # Wavenumbers (global arrays, same on all processes)
     kx = T.([i <= nx÷2 ? (2π/params.Lx)*(i-1) : (2π/params.Lx)*(i-1-nx) for i in 1:nx])
     ky = T.([j <= ny÷2 ? (2π/params.Ly)*(j-1) : (2π/params.Ly)*(j-1-ny) for j in 1:ny])
 
-    # Create distributed kh2 array
-    kh2_pencil = PencilArray{T}(undef, decomp.pencil)
+    # Create distributed kh2 array in xy-pencil configuration
+    kh2_pencil = PencilArray{T}(undef, decomp.pencil_xy)
 
     # Fill local portion of kh2
-    local_range = decomp.local_range
+    local_range = decomp.local_range_xy
     parent_arr = parent(kh2_pencil)
 
     for k_local in axes(parent_arr, 3)
+        k_global = local_range[3][k_local]
         for j_local in axes(parent_arr, 2)
+            j_global = local_range[2][j_local]
             for i_local in axes(parent_arr, 1)
-                # Map local to global indices
                 i_global = local_range[1][i_local]
-                j_global = local_range[2][j_local]
-                # k doesn't need mapping for wavenumbers (kh2 only depends on i,j)
                 parent_arr[i_local, j_local, k_local] = kx[i_global]^2 + ky[j_global]^2
             end
         end
@@ -225,11 +354,30 @@ end
 =#
 
 """
+    MPIState
+
+Extended state structure for MPI parallel execution with workspace arrays
+for transpose operations.
+
+The main state arrays are in xy-pencil configuration (for FFTs).
+Additional z-pencil workspace arrays are provided for vertical operations.
+"""
+struct MPIWorkspace{T, PA}
+    # Z-pencil workspace arrays for vertical operations
+    q_z::PA
+    psi_z::PA
+    B_z::PA
+    A_z::PA
+    C_z::PA
+    work_z::PA
+end
+
+"""
     init_mpi_state(grid::Grid, mpi_config::MPIConfig; T=Float64) -> State
 
-Initialize a State with MPI-distributed PencilArrays.
+Initialize a State with MPI-distributed PencilArrays in xy-pencil configuration.
 
-All fields are allocated as PencilArrays using the grid's decomposition.
+All fields are allocated as PencilArrays using the grid's xy-pencil decomposition.
 """
 function QGYBJ.init_mpi_state(grid::Grid, mpi_config::MPIConfig; T=Float64)
     decomp = grid.decomp
@@ -237,21 +385,46 @@ function QGYBJ.init_mpi_state(grid::Grid, mpi_config::MPIConfig; T=Float64)
         error("Grid does not have MPI decomposition. Use init_mpi_grid() first.")
     end
 
-    pencil = decomp.pencil
+    pencil_xy = decomp.pencil_xy
 
-    # Allocate spectral (complex) fields
-    q   = PencilArray{Complex{T}}(undef, pencil); fill!(q, 0)
-    psi = PencilArray{Complex{T}}(undef, pencil); fill!(psi, 0)
-    A   = PencilArray{Complex{T}}(undef, pencil); fill!(A, 0)
-    B   = PencilArray{Complex{T}}(undef, pencil); fill!(B, 0)
-    C   = PencilArray{Complex{T}}(undef, pencil); fill!(C, 0)
+    # Allocate spectral (complex) fields in xy-pencil configuration
+    q   = PencilArray{Complex{T}}(undef, pencil_xy); fill!(q, 0)
+    psi = PencilArray{Complex{T}}(undef, pencil_xy); fill!(psi, 0)
+    A   = PencilArray{Complex{T}}(undef, pencil_xy); fill!(A, 0)
+    B   = PencilArray{Complex{T}}(undef, pencil_xy); fill!(B, 0)
+    C   = PencilArray{Complex{T}}(undef, pencil_xy); fill!(C, 0)
 
     # Allocate real-space (real) fields
-    u = PencilArray{T}(undef, pencil); fill!(u, 0)
-    v = PencilArray{T}(undef, pencil); fill!(v, 0)
-    w = PencilArray{T}(undef, pencil); fill!(w, 0)
+    u = PencilArray{T}(undef, pencil_xy); fill!(u, 0)
+    v = PencilArray{T}(undef, pencil_xy); fill!(v, 0)
+    w = PencilArray{T}(undef, pencil_xy); fill!(w, 0)
 
     return State{T, typeof(u), typeof(q)}(q, B, psi, A, C, u, v, w)
+end
+
+"""
+    init_mpi_workspace(grid::Grid, mpi_config::MPIConfig; T=Float64) -> MPIWorkspace
+
+Initialize workspace arrays for transpose operations.
+These are z-pencil arrays used for vertical operations.
+"""
+function QGYBJ.init_mpi_workspace(grid::Grid, mpi_config::MPIConfig; T=Float64)
+    decomp = grid.decomp
+    if decomp === nothing
+        error("Grid does not have MPI decomposition")
+    end
+
+    pencil_z = decomp.pencil_z
+
+    # Allocate z-pencil workspace arrays
+    q_z    = PencilArray{Complex{T}}(undef, pencil_z); fill!(q_z, 0)
+    psi_z  = PencilArray{Complex{T}}(undef, pencil_z); fill!(psi_z, 0)
+    B_z    = PencilArray{Complex{T}}(undef, pencil_z); fill!(B_z, 0)
+    A_z    = PencilArray{Complex{T}}(undef, pencil_z); fill!(A_z, 0)
+    C_z    = PencilArray{Complex{T}}(undef, pencil_z); fill!(C_z, 0)
+    work_z = PencilArray{Complex{T}}(undef, pencil_z); fill!(work_z, 0)
+
+    return MPIWorkspace{T, typeof(q_z)}(q_z, psi_z, B_z, A_z, C_z, work_z)
 end
 
 #=
@@ -264,6 +437,10 @@ end
     MPIPlans
 
 FFT plans for MPI-parallel execution using PencilFFTs.
+
+PencilFFTs automatically handles the transposes needed for 2D distributed FFTs:
+- Forward FFT: x-pencil → y-pencil → output (handles x-FFT, transpose, y-FFT)
+- Backward FFT: reverse operations
 """
 struct MPIPlans
     forward::PencilFFTs.PencilFFTPlan
@@ -276,10 +453,10 @@ end
 """
     plan_mpi_transforms(grid::Grid, mpi_config::MPIConfig) -> MPIPlans
 
-Create PencilFFTs plans for parallel FFT execution.
+Create PencilFFTs plans for parallel 2D horizontal FFT execution.
 
-Plans are created for 2D horizontal FFTs (dimensions 1 and 2) while
-keeping data distributed in dimension 3 (vertical).
+PencilFFTs handles the transposes between pencil configurations automatically
+for the FFT operations. The returned plans transform dimensions 1 and 2 (x, y).
 
 # Example
 ```julia
@@ -293,20 +470,19 @@ function QGYBJ.plan_mpi_transforms(grid::Grid, mpi_config::MPIConfig)
         error("Grid does not have MPI decomposition")
     end
 
-    pencil = decomp.pencil
+    pencil_xy = decomp.pencil_xy
 
     # Create transforms for each dimension:
     # - Dimensions 1 and 2 (x and y): FFT
     # - Dimension 3 (z): NoTransform (stays in physical space)
-    # According to PencilFFTs API, pass a tuple of transforms for each dimension
     transform = (
-        PencilFFTs.Transforms.FFT(),      # x dimension
-        PencilFFTs.Transforms.FFT(),      # y dimension
+        PencilFFTs.Transforms.FFT(),         # x dimension
+        PencilFFTs.Transforms.FFT(),         # y dimension
         PencilFFTs.Transforms.NoTransform()  # z dimension (no transform)
     )
 
     # Create the PencilFFT plan
-    plan = PencilFFTPlan(pencil, transform)
+    plan = PencilFFTPlan(pencil_xy, transform)
 
     # Get input and output pencil configurations
     input_pencil = first_pencil(plan)
@@ -316,7 +492,7 @@ function QGYBJ.plan_mpi_transforms(grid::Grid, mpi_config::MPIConfig)
     work_in = PencilArray{Complex{Float64}}(undef, input_pencil)
     work_out = PencilArray{Complex{Float64}}(undef, output_pencil)
 
-    # Create inverse plan using inv()
+    # Create inverse plan
     inv_plan = inv(plan)
 
     return MPIPlans(
@@ -331,9 +507,8 @@ end
 """
     fft_forward!(dst, src, plans::MPIPlans)
 
-Perform forward FFT using PencilFFTs.
-
-Transforms dimensions 1 and 2 (horizontal) of the input array.
+Perform forward 2D horizontal FFT using PencilFFTs.
+Transforms dimensions 1 and 2 (x and y) of the input array.
 """
 function QGYBJ.fft_forward!(dst::PencilArray, src::PencilArray, plans::MPIPlans)
     mul!(dst, plans.forward, src)
@@ -343,18 +518,70 @@ end
 """
     fft_backward!(dst, src, plans::MPIPlans)
 
-Perform inverse FFT using PencilFFTs.
-
-Transforms dimensions 1 and 2 (horizontal) of the input array.
-
-Note: Uses ldiv! which provides NORMALIZED inverse transform (consistent with FFTW.ifft).
-This differs from mul!(dst, inv(plan), src) which would be unnormalized.
+Perform inverse 2D horizontal FFT using PencilFFTs.
+Uses ldiv! for normalized inverse transform (consistent with FFTW.ifft).
 """
 function QGYBJ.fft_backward!(dst::PencilArray, src::PencilArray, plans::MPIPlans)
-    # Use ldiv! for normalized inverse transform
-    # This is equivalent to: dst = plans.forward \ src
     ldiv!(dst, plans.forward, src)
     return dst
+end
+
+#=
+================================================================================
+                        LOCAL INDEX MAPPING FOR 2D DECOMPOSITION
+================================================================================
+=#
+
+"""
+    get_local_range_xy(grid::Grid) -> NTuple{3, UnitRange{Int}}
+
+Get local index ranges for xy-pencil configuration (used for FFTs).
+"""
+function QGYBJ.get_local_range_xy(grid::Grid)
+    decomp = grid.decomp
+    if decomp === nothing
+        return (1:grid.nx, 1:grid.ny, 1:grid.nz)
+    end
+    return decomp.local_range_xy
+end
+
+"""
+    get_local_range_z(grid::Grid) -> NTuple{3, UnitRange{Int}}
+
+Get local index ranges for z-pencil configuration (used for vertical operations).
+"""
+function QGYBJ.get_local_range_z(grid::Grid)
+    decomp = grid.decomp
+    if decomp === nothing
+        return (1:grid.nx, 1:grid.ny, 1:grid.nz)
+    end
+    return decomp.local_range_z
+end
+
+"""
+    local_to_global_xy(local_idx::Int, dim::Int, grid::Grid) -> Int
+
+Convert local index to global index for xy-pencil configuration.
+"""
+function QGYBJ.local_to_global_xy(local_idx::Int, dim::Int, grid::Grid)
+    decomp = grid.decomp
+    if decomp === nothing
+        return local_idx
+    end
+    return decomp.local_range_xy[dim][local_idx]
+end
+
+"""
+    local_to_global_z(local_idx::Int, dim::Int, grid::Grid) -> Int
+
+Convert local index to global index for z-pencil configuration.
+"""
+function QGYBJ.local_to_global_z(local_idx::Int, dim::Int, grid::Grid)
+    decomp = grid.decomp
+    if decomp === nothing
+        return local_idx
+    end
+    return decomp.local_range_z[dim][local_idx]
 end
 
 #=
@@ -367,7 +594,6 @@ end
     gather_to_root(arr::PencilArray, grid::Grid, mpi_config::MPIConfig)
 
 Gather a distributed PencilArray to the root process.
-
 Returns the full array on rank 0, nothing on other ranks.
 """
 function QGYBJ.gather_to_root(arr::PencilArray, grid::Grid, mpi_config::MPIConfig)
@@ -379,21 +605,17 @@ end
     scatter_from_root(arr, grid::Grid, mpi_config::MPIConfig)
 
 Scatter an array from root to all processes as PencilArrays.
-
-Note: PencilArrays doesn't have a built-in scatter function, so we implement
-it manually by having root broadcast data and each process extract its local portion.
 """
 function QGYBJ.scatter_from_root(arr, grid::Grid, mpi_config::MPIConfig)
     decomp = grid.decomp
-    pencil = decomp.pencil
-    local_range = decomp.local_range
+    pencil_xy = decomp.pencil_xy
+    local_range = decomp.local_range_xy
 
     # Allocate distributed array
-    distributed = PencilArray{eltype(arr)}(undef, pencil)
+    distributed = PencilArray{eltype(arr)}(undef, pencil_xy)
     parent_arr = parent(distributed)
 
     # Broadcast full array from root to all processes
-    # (This is simple but not memory-efficient for very large arrays)
     if mpi_config.is_root
         global_arr = arr
     else
@@ -437,14 +659,14 @@ end
 """
     local_indices(grid::Grid)
 
-Get the local index ranges for the current process.
+Get the local index ranges for the current process (xy-pencil configuration).
 """
 function QGYBJ.local_indices(grid::Grid)
     decomp = grid.decomp
     if decomp === nothing
         return (1:grid.nx, 1:grid.ny, 1:grid.nz)
     end
-    return decomp.local_range
+    return decomp.local_range_xy
 end
 
 #=
@@ -456,16 +678,14 @@ end
 """
     write_mpi_field(filename, varname, arr::PencilArray, grid::Grid, mpi_config)
 
-Write a distributed field to a NetCDF file using parallel I/O or gather.
+Write a distributed field to file using parallel I/O or gather.
 """
 function QGYBJ.write_mpi_field(filename::String, varname::String,
                                arr::PencilArray, grid::Grid, mpi_config::MPIConfig)
-    # For now, gather to root and write serially
-    # Future: Use NCDatasets parallel I/O
+    # Gather to root and write serially
     gathered = gather(arr)
 
     if mpi_config.is_root && gathered !== nothing
-        # Write using standard NetCDF (handled by netcdf_io.jl)
         return gathered
     end
     return nothing
@@ -481,14 +701,12 @@ end
     init_mpi_random_field!(arr::PencilArray, grid::Grid, amplitude, seed_offset=0)
 
 Initialize a PencilArray with deterministic random values.
-
-Uses hash-based seeding to ensure reproducibility across different
-process counts.
+Uses hash-based seeding to ensure reproducibility across different process counts.
 """
 function QGYBJ.init_mpi_random_field!(arr::PencilArray, grid::Grid,
                                        amplitude::Real, seed_offset::Int=0)
     decomp = grid.decomp
-    local_range = decomp.local_range
+    local_range = decomp.local_range_xy
     parent_arr = parent(arr)
 
     for k_local in axes(parent_arr, 3)
@@ -508,7 +726,39 @@ function QGYBJ.init_mpi_random_field!(arr::PencilArray, grid::Grid,
     return arr
 end
 
-# Export extension functions
-export MPIConfig, MPIPlans, PencilDecomp
+"""
+    allocate_z_pencil(grid::Grid, ::Type{T}=ComplexF64) where T
+
+Allocate an array in z-pencil configuration for vertical operations.
+"""
+function QGYBJ.allocate_z_pencil(grid::Grid, ::Type{T}=ComplexF64) where T
+    decomp = grid.decomp
+    if decomp === nothing
+        # Serial mode
+        return zeros(T, grid.nx, grid.ny, grid.nz)
+    end
+    arr = PencilArray{T}(undef, decomp.pencil_z)
+    fill!(arr, zero(T))
+    return arr
+end
+
+"""
+    allocate_xy_pencil(grid::Grid, ::Type{T}=ComplexF64) where T
+
+Allocate an array in xy-pencil configuration for horizontal operations.
+"""
+function QGYBJ.allocate_xy_pencil(grid::Grid, ::Type{T}=ComplexF64) where T
+    decomp = grid.decomp
+    if decomp === nothing
+        # Serial mode
+        return zeros(T, grid.nx, grid.ny, grid.nz)
+    end
+    arr = PencilArray{T}(undef, decomp.pencil_xy)
+    fill!(arr, zero(T))
+    return arr
+end
+
+# Export extension types
+export MPIConfig, MPIPlans, PencilDecomp, MPIWorkspace
 
 end # module QGYBJMPIExt
