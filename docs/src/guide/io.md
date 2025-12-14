@@ -242,44 +242,104 @@ step,time,KE,PE,WE
 ...
 ```
 
-## MPI Parallel I/O
+## MPI Parallel I/O with 2D Decomposition
 
-### Parallel NetCDF
+QGYBJ.jl provides seamless I/O support for 2D pencil decomposition. The I/O functions automatically handle distributed arrays.
+
+### Writing State Files
 
 ```julia
-using NCDatasets
+using MPI, PencilArrays, PencilFFTs, QGYBJ
 
-# Open with MPI communicator
-ds = NCDataset("output.nc", "c";
-    format = :netcdf4,
-    comm = MPI.COMM_WORLD
+MPI.Init()
+mpi_config = QGYBJ.setup_mpi_environment()
+
+# Setup distributed grid and state
+grid = QGYBJ.init_mpi_grid(params, mpi_config)
+state = QGYBJ.init_mpi_state(grid, mpi_config)
+
+# Create output manager with parallel config
+output_config = OutputConfig(
+    output_dir = "output",
+    state_file_pattern = "state%04d.nc",
+    psi_interval = 0.1,
+    wave_interval = 0.1
 )
+manager = OutputManager(output_config, params, mpi_config)
 
-# Define dimensions (collective)
-defDim(ds, "x", grid.nx)
-defDim(ds, "y", grid.ny)
-defDim(ds, "z", grid.nz)
-
-# Write local portion (each rank writes its own data)
-ds["psi"][local_range...] = local_psi
-
-close(ds)
+# Write state - automatically handles 2D decomposition
+write_state_file(manager, state, grid, plans, time, mpi_config)
 ```
 
-### Gathered Output
-
-Alternative: gather to root and write:
+### Reading Initial Conditions
 
 ```julia
-if MPI.Comm_rank(comm) == 0
-    global_psi = zeros(ComplexF64, nx, ny, nz)
+# Read psi - works in both serial and parallel mode
+psi = read_initial_psi("initial_psi.nc", grid, plans; parallel_config=mpi_config)
+# In parallel: rank 0 reads, then scatters to all processes
+
+# Read wave field
+B = read_initial_waves("initial_waves.nc", grid, plans; parallel_config=mpi_config)
+
+# Or use legacy wrappers with parallel support
+ncread_psi!(state, grid, plans; path="psi.nc", parallel_config=mpi_config)
+ncread_la!(state, grid, plans; path="la.nc", parallel_config=mpi_config)
+```
+
+### I/O Strategy for 2D Decomposition
+
+QGYBJ.jl uses two strategies for parallel I/O:
+
+| Strategy | Method | Best For |
+|:---------|:-------|:---------|
+| **Parallel NetCDF** | Each rank writes its portion | Large files, fast I/O |
+| **Gather-and-Write** | Gather to rank 0, write serially | Compatibility, smaller files |
+
+```julia
+# The write functions automatically try parallel NetCDF first,
+# falling back to gather-and-write if needed
+
+write_state_file(manager, state, grid, plans, time, mpi_config)
+# Internally:
+# 1. Try parallel NetCDF with mpi_comm
+# 2. If fails, gather arrays to rank 0 using QGYBJ.gather_to_root()
+# 3. Rank 0 writes the full file
+```
+
+### Local Index Ranges for Manual I/O
+
+```julia
+# Get local ranges for this process (xy-pencil)
+if grid.decomp !== nothing
+    local_range = grid.decomp.local_range_xy
+    # local_range = (1:nx_local, y_start:y_end, z_start:z_end)
+else
+    local_range = (1:grid.nx, 1:grid.ny, 1:grid.nz)
 end
 
-MPI.Gather!(local_psi, global_psi, 0, comm)
+# Use with NCDatasets for manual parallel writes
+NCDatasets.Dataset("output.nc", "c"; comm=mpi_config.comm) do ds
+    ds.dim["x"] = grid.nx
+    ds.dim["y"] = grid.ny
+    ds.dim["z"] = grid.nz
 
-if MPI.Comm_rank(comm) == 0
-    write_netcdf("output.nc", global_psi)
+    psi_var = NCDatasets.defVar(ds, "psi", Float64, ("x", "y", "z"))
+
+    # Each rank writes its portion
+    psi_var[local_range[1], local_range[2], local_range[3]] = local_psi_data
 end
+```
+
+### Gather/Scatter for I/O
+
+```julia
+# Gather distributed array to rank 0
+global_psi = QGYBJ.gather_to_root(state.psi, grid, mpi_config)
+# Returns full array on rank 0, nothing on other ranks
+
+# Scatter from rank 0 to all processes
+local_psi = QGYBJ.scatter_from_root(global_psi, grid, mpi_config)
+# Each rank receives its local portion
 ```
 
 ## Physical Space Output
