@@ -458,7 +458,7 @@ function leapfrog_step!(Snp1::State, Sn::State, Snm1::State,
 
     #= Step 1: Update diagnostics for current state =#
     if !par.fixed_flow
-        invert_q_to_psi!(Sn, G; a, par=par)
+        invert_q_to_psi!(Sn, G; a, par=par, workspace=workspace)
     end
     compute_velocities!(Sn, G; plans, params=par)
 
@@ -484,7 +484,8 @@ function leapfrog_step!(Snp1::State, Sn::State, Snm1::State,
     refraction_waqg!(rBRk, rBIk, BRk, BIk, Sn.psi, G, plans; Lmask=L)
 
     # Vertical diffusion uses q at n-1 (for leapfrog stability)
-    dissipation_q_nv!(dqk, Snm1.q, par, G)
+    # Handles 2D decomposition transposes internally
+    dissipation_q_nv!(dqk, Snm1.q, par, G; workspace=workspace)
 
     #= Step 3: Apply physics switches =#
     if par.inviscid; dqk .= 0; end
@@ -598,14 +599,15 @@ function leapfrog_step!(Snp1::State, Sn::State, Snm1::State,
 
     #= Step 8: Update diagnostics for new state =#
 
-    # Invert q → ψ
+    # Invert q → ψ (handles 2D decomposition transposes internally)
     if !par.fixed_flow
-        invert_q_to_psi!(Snp1, G; a, par=par)
+        invert_q_to_psi!(Snp1, G; a, par=par, workspace=workspace)
     end
 
     # Recover A from B
     if par.ybj_plus
-        invert_B_to_A!(Snp1, G, par, a)
+        # YBJ+: handles 2D decomposition transposes internally
+        invert_B_to_A!(Snp1, G, par, a; workspace=workspace)
     else
         # Normal YBJ path
         BRk3 = similar(Snp1.B); BIk3 = similar(Snp1.B)
