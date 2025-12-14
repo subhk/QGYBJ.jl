@@ -49,22 +49,26 @@ import QGYBJ: plan_transforms!, fft_forward!, fft_backward!
     MPIConfig
 
 Configuration for MPI parallel execution with PencilArrays decomposition.
+
+Uses 1D decomposition in y-dimension only to keep z-columns local for
+efficient vertical tridiagonal solves.
 """
 struct MPIConfig
     comm::MPI.Comm
     rank::Int
     nprocs::Int
-    topology::Tuple{Int,Int}  # Process topology for 2D decomposition
     is_root::Bool
 end
 
 """
-    setup_mpi_environment(; topology=(0,0)) -> MPIConfig
+    setup_mpi_environment() -> MPIConfig
 
 Initialize MPI and return configuration. Call this after MPI.Init().
 
-# Arguments
-- `topology::Tuple{Int,Int}`: Process grid (0,0 for auto-detection)
+Uses 1D decomposition in y-dimension only, distributing ny across all processes.
+This keeps full x and z columns local on each process, which is required for:
+- Efficient horizontal FFTs (no communication in x-FFT)
+- Efficient vertical tridiagonal solves (full z-column available)
 
 # Example
 ```julia
@@ -72,7 +76,7 @@ MPI.Init()
 mpi_config = setup_mpi_environment()
 ```
 """
-function QGYBJ.setup_mpi_environment(; topology::Tuple{Int,Int}=(0,0))
+function QGYBJ.setup_mpi_environment(; kwargs...)
     if !MPI.Initialized()
         MPI.Init()
     end
@@ -81,24 +85,13 @@ function QGYBJ.setup_mpi_environment(; topology::Tuple{Int,Int}=(0,0))
     rank = MPI.Comm_rank(comm)
     nprocs = MPI.Comm_size(comm)
 
-    # Auto-determine topology if not specified
-    if topology == (0, 0)
-        # Try to make a roughly square decomposition for 2D
-        p1 = isqrt(nprocs)
-        while nprocs % p1 != 0
-            p1 -= 1
-        end
-        p2 = nprocs ÷ p1
-        topology = (p1, p2)
-    end
-
     is_root = rank == 0
 
     if is_root
-        @info "MPI initialized" nprocs topology
+        @info "MPI initialized with 1D y-decomposition" nprocs
     end
 
-    return MPIConfig(comm, rank, nprocs, topology, is_root)
+    return MPIConfig(comm, rank, nprocs, is_root)
 end
 
 #=
@@ -111,9 +104,12 @@ end
     PencilDecomp
 
 Wrapper for PencilArrays decomposition with metadata.
+
+Note: Uses 1D decomposition in y-dimension only to keep z-columns local
+for efficient vertical tridiagonal solves.
 """
 struct PencilDecomp
-    pencil::Pencil{3,2,MPI.Comm}  # 3D data, 2D decomposition
+    pencil::Pencil{3,1,MPI.Comm}  # 3D data, 1D decomposition
     local_range::NTuple{3, UnitRange{Int}}
     global_dims::NTuple{3, Int}
 end
@@ -121,18 +117,24 @@ end
 """
     create_pencil_decomposition(nx, ny, nz, mpi_config) -> PencilDecomp
 
-Create a 2D pencil decomposition for 3D data.
+Create a 1D pencil decomposition for 3D data.
 
-The decomposition is in the (y, z) dimensions, keeping x local for efficient
-horizontal FFTs.
+The decomposition is in the y-dimension only, keeping x and z local:
+- x is local for efficient FFTs (no communication in x-FFT)
+- z is local for efficient vertical tridiagonal solves
+
+This is the standard "slab" decomposition for pseudo-spectral codes with
+vertical finite differences.
 """
 function create_pencil_decomposition(nx::Int, ny::Int, nz::Int, mpi_config::MPIConfig)
-    # Create topology for decomposition
-    # Decompose in y and z, keep x local for efficient FFTs
-    topo = MPITopology(mpi_config.comm, mpi_config.topology)
+    # Create 1D topology for y-decomposition
+    # Total processes distributed along y-dimension only
+    nprocs = mpi_config.nprocs
+    topo = MPITopology(mpi_config.comm, (nprocs,))
 
-    # Create pencil: full domain size, decomposed in dims 2 and 3 (y and z)
-    pencil = Pencil(topo, (nx, ny, nz), (2, 3))
+    # Create pencil: full domain size, decomposed in dim 2 only (y)
+    # x and z remain fully local on each process
+    pencil = Pencil(topo, (nx, ny, nz), (2,))
 
     # Get local index ranges (LogicalOrder is default)
     local_range = range_local(pencil)
