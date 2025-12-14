@@ -493,17 +493,29 @@ compute_qw!(qw, BR, BI, params, grid, plans; Lmask=L)
 """
 function compute_qw!(qwk, BRk, BIk, par, G::Grid, plans; Lmask=nothing)
     nx, ny, nz = G.nx, G.ny, G.nz
+
+    # Get underlying arrays
+    BRk_arr = parent(BRk); BIk_arr = parent(BIk)
+    qwk_arr = parent(qwk)
+    nx_local, ny_local, nz_local = size(BRk_arr)
+
     L = isnothing(Lmask) ? trues(nx,ny) : Lmask
 
     #= Compute derivatives of BR and BI =#
     BRxk = similar(BRk); BRyk = similar(BRk)
     BIxk = similar(BIk); BIyk = similar(BIk)
+    BRxk_arr = parent(BRxk); BRyk_arr = parent(BRyk)
+    BIxk_arr = parent(BIxk); BIyk_arr = parent(BIyk)
 
-    @inbounds for k in 1:nz, j in 1:ny, i in 1:nx
-        BRxk[i,j,k] = im*G.kx[i]*BRk[i,j,k]  # ∂BR/∂x
-        BRyk[i,j,k] = im*G.ky[j]*BRk[i,j,k]  # ∂BR/∂y
-        BIxk[i,j,k] = im*G.kx[i]*BIk[i,j,k]  # ∂BI/∂x
-        BIyk[i,j,k] = im*G.ky[j]*BIk[i,j,k]  # ∂BI/∂y
+    @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
+        i_global = local_to_global(i_local, 1, G)
+        j_global = local_to_global(j_local, 2, G)
+        kx_val = G.kx[i_global]
+        ky_val = G.ky[j_global]
+        BRxk_arr[i_local, j_local, k] = im*kx_val*BRk_arr[i_local, j_local, k]  # ∂BR/∂x
+        BRyk_arr[i_local, j_local, k] = im*ky_val*BRk_arr[i_local, j_local, k]  # ∂BR/∂y
+        BIxk_arr[i_local, j_local, k] = im*kx_val*BIk_arr[i_local, j_local, k]  # ∂BI/∂x
+        BIyk_arr[i_local, j_local, k] = im*ky_val*BIk_arr[i_local, j_local, k]  # ∂BI/∂y
     end
 
     #= Transform derivatives to real space =#
@@ -514,13 +526,17 @@ function compute_qw!(qwk, BRk, BIk, par, G::Grid, plans; Lmask=nothing)
     fft_backward!(BIxr, BIxk, plans)
     fft_backward!(BIyr, BIyk, plans)
 
+    BRxr_arr = parent(BRxr); BRyr_arr = parent(BRyr)
+    BIxr_arr = parent(BIxr); BIyr_arr = parent(BIyr)
+
     #= Compute (i/2)J(B*, B) term
     J(B*, B) = 2(BRᵧBIₓ - BRₓBIᵧ)
     So (i/2)J(B*, B) contributes: BRᵧBIₓ - BRₓBIᵧ =#
     qwr = similar(qwk)
-    @inbounds for k in 1:nz, j in 1:ny, i in 1:nx
-        qwr[i,j,k] = real(BRyr[i,j,k])*real(BIxr[i,j,k]) -
-                     real(BRxr[i,j,k])*real(BIyr[i,j,k])
+    qwr_arr = parent(qwr)
+    @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
+        qwr_arr[i_local, j_local, k] = real(BRyr_arr[i_local, j_local, k])*real(BIxr_arr[i_local, j_local, k]) -
+                                        real(BRxr_arr[i_local, j_local, k])*real(BIyr_arr[i_local, j_local, k])
     end
 
     #= Compute |B|² = BR² + BI² for the ∇²|B|² term =#
@@ -528,36 +544,38 @@ function compute_qw!(qwk, BRk, BIk, par, G::Grid, plans; Lmask=nothing)
     fft_backward!(BRr, BRk, plans)
     fft_backward!(BIr, BIk, plans)
 
+    BRr_arr = parent(BRr); BIr_arr = parent(BIr)
     mag2 = similar(BRk)
-    @inbounds for k in 1:nz, j in 1:ny, i in 1:nx
-        mag2[i,j,k] = real(BRr[i,j,k])^2 + real(BIr[i,j,k])^2
+    mag2_arr = parent(mag2)
+    @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
+        mag2_arr[i_local, j_local, k] = real(BRr_arr[i_local, j_local, k])^2 + real(BIr_arr[i_local, j_local, k])^2
     end
 
     #= Transform |B|² to spectral for ∇² operation =#
     tempk = similar(BRk)
     fft_forward!(tempk, mag2, plans)
+    tempk_arr = parent(tempk)
 
     #= Assemble qʷ in spectral space
     qʷ = J_term - (1/4)∇²|B|²
     where ∇² → -kₕ² in spectral space =#
     fft_forward!(qwk, qwr, plans)
+    qwk_arr = parent(qwk)
 
     norm = nx*ny
-    @inbounds for k in 1:nz, j in 1:ny, i in 1:nx
-        kh2 = G.kh2[i,j]
-        if L[i,j]
-            # Combine terms: qʷ = J_term - (1/4)(-kₕ²)|B|² = J_term - (kₕ²/4)|B|²
-            # Wait, ∇²|B|² = -kₕ²|B̂|², so -(1/4)∇²|B|² = (kₕ²/4)|B̂|²
-            # But we want -(1/4)∇²|B|², so term is +(kₕ²/4)|B̂|²? Let me check...
-            # Actually in spectral: -(1/4)∇²f → -(1/4)(-kₕ²)f̂ = (kₕ²/4)f̂
-            # But the formula is qʷ = J - (1/4)∇²|B|², so we need -0.25*(-kₕ²)*|B̂|² = 0.25*kₕ²*|B̂|²
-            # Hmm, the code has -0.25*kh2*tempk, let me keep it as in original
-            qwk[i,j,k] = (qwk[i,j,k] - 0.25*kh2*tempk[i,j,k]) / norm
+    @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
+        i_global = local_to_global(i_local, 1, G)
+        j_global = local_to_global(j_local, 2, G)
+        kx_val = G.kx[i_global]
+        ky_val = G.ky[j_global]
+        kh2 = kx_val^2 + ky_val^2
+        if L[i_global, j_global]
+            qwk_arr[i_local, j_local, k] = (qwk_arr[i_local, j_local, k] - 0.25*kh2*tempk_arr[i_local, j_local, k]) / norm
         else
-            qwk[i,j,k] = 0
+            qwk_arr[i_local, j_local, k] = 0
         end
         # Scale by W2F = (Uw/U)² (wave-to-flow velocity ratio)
-        qwk[i,j,k] *= par.W2F
+        qwk_arr[i_local, j_local, k] *= par.W2F
     end
 
     return qwk
@@ -608,23 +626,31 @@ so the operation is the same for each (kx, ky) mode.
 This matches `dissipation_q_nv` in derivatives.f90.
 """
 function dissipation_q_nv!(dqk, qok, par, G::Grid)
-    nx, ny, nz = G.nx, G.ny, G.nz
+    nz = G.nz
+
+    # Get underlying arrays
+    dqk_arr = parent(dqk)
+    qok_arr = parent(qok)
+    nx_local, ny_local, nz_local = size(dqk_arr)
+
+    # Verify z is fully local
+    @assert nz_local == nz "Vertical dimension must be fully local"
 
     # Vertical grid spacing
     dz = nz > 1 ? (G.z[2]-G.z[1]) : 1.0
     invdz2 = 1/(dz*dz)
 
-    @inbounds for k in 1:nz, j in 1:ny, i in 1:nx
+    @inbounds for k in 1:nz, j_local in 1:ny_local, i_local in 1:nx_local
         if k == 1
             # Bottom boundary: Neumann (q_z = 0)
             # One-sided: D = νz(q[2] - q[1])/dz²
-            dqk[i,j,k] = par.nuz * ( qok[i,j,k+1] - qok[i,j,k] ) * invdz2
+            dqk_arr[i_local, j_local, k] = par.nuz * ( qok_arr[i_local, j_local, k+1] - qok_arr[i_local, j_local, k] ) * invdz2
         elseif k == nz
             # Top boundary: Neumann (q_z = 0)
-            dqk[i,j,k] = par.nuz * ( qok[i,j,k-1] - qok[i,j,k] ) * invdz2
+            dqk_arr[i_local, j_local, k] = par.nuz * ( qok_arr[i_local, j_local, k-1] - qok_arr[i_local, j_local, k] ) * invdz2
         else
             # Interior: standard central difference
-            dqk[i,j,k] = par.nuz * ( qok[i,j,k+1] - 2qok[i,j,k] + qok[i,j,k-1] ) * invdz2
+            dqk_arr[i_local, j_local, k] = par.nuz * ( qok_arr[i_local, j_local, k+1] - 2qok_arr[i_local, j_local, k] + qok_arr[i_local, j_local, k-1] ) * invdz2
         end
     end
 
