@@ -408,5 +408,5 @@ function init_state(G::Grid; T=Float64)
     v   = allocate_field(T, G; complex=false);   fill!(v, 0)
     w   = allocate_field(T, G; complex=false);   fill!(w, 0)
 
-    return State{T, typeof(u), typeof(q)}(q, psi, A, B, C, u, v, w)
+    return State{T, typeof(u), typeof(q)}(q, B, psi, A, C, u, v, w)
 end

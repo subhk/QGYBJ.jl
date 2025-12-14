@@ -134,8 +134,8 @@ function create_pencil_decomposition(nx::Int, ny::Int, nz::Int, mpi_config::MPIC
     # Create pencil: full domain size, decomposed in dims 2 and 3 (y and z)
     pencil = Pencil(topo, (nx, ny, nz), (2, 3))
 
-    # Get local index ranges
-    local_range = range_local(pencil, permutation=nothing)
+    # Get local index ranges (LogicalOrder is default)
+    local_range = range_local(pencil)
 
     return PencilDecomp(pencil, local_range, (nx, ny, nz))
 end

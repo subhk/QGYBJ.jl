@@ -121,7 +121,7 @@ function init_parallel_state(grid::Grid, pconfig::ParallelConfig; T=Float64)
     v   = Array{T}(undef, sz); fill!(v, 0)
     w   = Array{T}(undef, sz); fill!(w, 0)
 
-    return State{T, typeof(u), typeof(q)}(q, psi, A, B, C, u, v, w)
+    return State{T, typeof(u), typeof(q)}(q, B, psi, A, C, u, v, w)
 end
 
 
