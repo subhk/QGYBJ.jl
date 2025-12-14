@@ -30,7 +30,8 @@ These two types of motion **interact strongly**: eddies refract and focus waves,
 |:--------|:------------|
 | **Spectral Methods** | Pseudo-spectral horizontal derivatives with FFTW |
 | **Vertical Solvers** | Efficient tridiagonal solvers for elliptic inversions |
-| **MPI Parallel** | Distributed computing with PencilArrays/PencilFFTs |
+| **2D Pencil Decomposition** | Scalable MPI parallelization with PencilArrays/PencilFFTs |
+| **Dual Pencil Configurations** | Automatic xy-pencil ↔ z-pencil transposes for vertical operations |
 | **Particle Tracking** | Lagrangian advection with multiple interpolation schemes |
 | **Flexible Physics** | Configurable stratification, dissipation, and wave feedback |
 | **NetCDF I/O** | Standard output format for analysis |

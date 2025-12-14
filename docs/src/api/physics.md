@@ -18,7 +18,11 @@ invert_q_to_psi!
 
 **Usage:**
 ```julia
-invert_q_to_psi!(state, grid, params, a_ell)
+# Serial mode
+invert_q_to_psi!(state, grid; a=a_ell)
+
+# Parallel mode (with workspace for 2D decomposition)
+invert_q_to_psi!(state, grid; a=a_ell, workspace=workspace)
 # Updates state.psi from state.q
 ```
 
@@ -32,7 +36,11 @@ invert_B_to_A!
 
 **Usage:**
 ```julia
+# Serial mode
 invert_B_to_A!(state, grid, params, a_ell)
+
+# Parallel mode (with workspace for 2D decomposition)
+invert_B_to_A!(state, grid, params, a_ell; workspace=workspace)
 # Updates state.A from state.B
 ```
 
@@ -91,8 +99,15 @@ compute_velocities!
 
 **Usage:**
 ```julia
-compute_velocities!(state, grid, plans)
-# Updates state.u and state.v from state.psi
+# Basic usage
+compute_velocities!(state, grid; plans=plans, params=params)
+
+# With vertical velocity (omega equation)
+compute_velocities!(state, grid; plans=plans, params=params, compute_w=true)
+
+# Parallel mode with workspace
+compute_velocities!(state, grid; plans=plans, params=params, workspace=workspace)
+# Updates state.u, state.v, and optionally state.w from state.psi
 ```
 
 ## Dispersion
@@ -253,3 +268,26 @@ compute_rms
 - FFT plans are **pre-computed** for efficiency
 - Tridiagonal systems use **Thomas algorithm** (O(n))
 - Functions are **type-stable** for optimal JIT compilation
+
+## 2D Decomposition Notes
+
+Functions requiring vertical operations automatically detect 2D decomposition and use the appropriate method:
+
+| Function | Serial | Parallel (2D) |
+|:---------|:-------|:--------------|
+| `invert_q_to_psi!` | Direct solve | Transpose → solve → transpose |
+| `invert_B_to_A!` | Direct solve | Transpose → solve → transpose |
+| `compute_vertical_velocity!` | Direct solve | Transpose → solve → transpose |
+| `dissipation_q_nv!` | Direct | Transpose if needed |
+
+**Pattern:**
+```julia
+need_transpose = G.decomp !== nothing && hasfield(typeof(G.decomp), :pencil_z)
+if need_transpose
+    _function_2d!(...)   # Uses transpose operations
+else
+    _function_direct!(...)  # Direct vertical access
+end
+```
+
+**Workspace requirement:** Pass `workspace` argument for parallel mode to avoid repeated allocation of z-pencil arrays.
