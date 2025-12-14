@@ -259,6 +259,128 @@ end
 
 #=
 ================================================================================
+                    LOCAL-TO-GLOBAL INDEX MAPPING
+================================================================================
+Helper functions for working with both serial arrays and PencilArrays.
+In serial mode, local indices equal global indices. In parallel mode,
+we need to map local indices to global indices for wavenumber lookups.
+================================================================================
+=#
+
+"""
+    get_local_range(G::Grid) -> NTuple{3, UnitRange{Int}}
+
+Get the local index range for the current process.
+
+# Returns
+- Serial mode: `(1:nx, 1:ny, 1:nz)`
+- Parallel mode: The local range from the decomposition
+
+# Example
+```julia
+local_range = get_local_range(grid)
+for k in local_range[3], j in local_range[2], i in local_range[1]
+    # Access data at local indices
+end
+```
+"""
+function get_local_range(G::Grid)
+    if G.decomp === nothing
+        return (1:G.nx, 1:G.ny, 1:G.nz)
+    else
+        return G.decomp.local_range
+    end
+end
+
+"""
+    local_to_global(local_idx::Int, dim::Int, G::Grid) -> Int
+
+Convert a local array index to a global index.
+
+# Arguments
+- `local_idx`: Local index in the array
+- `dim`: Dimension (1, 2, or 3 for x, y, z)
+- `G::Grid`: Grid with optional decomposition
+
+# Returns
+Global index for wavenumber lookup.
+
+# Example
+```julia
+for j_local in axes(arr, 2), i_local in axes(arr, 1)
+    i_global = local_to_global(i_local, 1, grid)
+    j_global = local_to_global(j_local, 2, grid)
+    kx = grid.kx[i_global]
+    ky = grid.ky[j_global]
+end
+```
+"""
+function local_to_global(local_idx::Int, dim::Int, G::Grid)
+    if G.decomp === nothing
+        return local_idx
+    else
+        return G.decomp.local_range[dim][local_idx]
+    end
+end
+
+"""
+    get_kx(i_local::Int, G::Grid) -> Real
+
+Get the x-wavenumber for a local index, handling both serial and parallel cases.
+"""
+@inline function get_kx(i_local::Int, G::Grid)
+    i_global = local_to_global(i_local, 1, G)
+    return G.kx[i_global]
+end
+
+"""
+    get_ky(j_local::Int, G::Grid) -> Real
+
+Get the y-wavenumber for a local index, handling both serial and parallel cases.
+"""
+@inline function get_ky(j_local::Int, G::Grid)
+    j_global = local_to_global(j_local, 2, G)
+    return G.ky[j_global]
+end
+
+"""
+    get_kh2(i_local::Int, j_local::Int, k_local::Int, arr, G::Grid) -> Real
+
+Get horizontal wavenumber squared for local indices.
+
+For serial mode, accesses G.kh2 directly.
+For parallel mode, accesses the local PencilArray element.
+"""
+@inline function get_kh2(i_local::Int, j_local::Int, k_local::Int, arr, G::Grid)
+    if G.decomp === nothing
+        # Serial: kh2 is a 2D array
+        return G.kh2[i_local, j_local]
+    else
+        # Parallel: kh2 is a 3D PencilArray, same value for all k
+        # Access via parent to get local data
+        return real(parent(G.kh2)[i_local, j_local, k_local])
+    end
+end
+
+"""
+    get_local_dims(arr) -> Tuple{Int, Int, Int}
+
+Get the local dimensions of an array (works for both Array and PencilArray).
+"""
+function get_local_dims(arr)
+    p = parent(arr)  # Works for both Array and PencilArray
+    return (size(p, 1), size(p, 2), size(p, 3))
+end
+
+"""
+    is_parallel_array(arr) -> Bool
+
+Check if an array is a PencilArray (parallel) or regular Array (serial).
+"""
+is_parallel_array(arr) = !(typeof(parent(arr)) === typeof(arr))
+
+#=
+================================================================================
                             STATE STRUCTURE
 ================================================================================
 =#
