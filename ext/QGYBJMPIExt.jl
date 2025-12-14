@@ -380,12 +380,40 @@ end
     scatter_from_root(arr, grid::Grid, mpi_config::MPIConfig)
 
 Scatter an array from root to all processes as PencilArrays.
+
+Note: PencilArrays doesn't have a built-in scatter function, so we implement
+it manually by having root broadcast data and each process extract its local portion.
 """
 function QGYBJ.scatter_from_root(arr, grid::Grid, mpi_config::MPIConfig)
     decomp = grid.decomp
     pencil = decomp.pencil
+    local_range = decomp.local_range
+
+    # Allocate distributed array
     distributed = PencilArray{eltype(arr)}(undef, pencil)
-    scatter!(distributed, arr)
+    parent_arr = parent(distributed)
+
+    # Broadcast full array from root to all processes
+    # (This is simple but not memory-efficient for very large arrays)
+    if mpi_config.is_root
+        global_arr = arr
+    else
+        global_arr = similar(arr)
+    end
+    MPI.Bcast!(global_arr, 0, mpi_config.comm)
+
+    # Each process extracts its local portion
+    for k_local in axes(parent_arr, 3)
+        k_global = local_range[3][k_local]
+        for j_local in axes(parent_arr, 2)
+            j_global = local_range[2][j_local]
+            for i_local in axes(parent_arr, 1)
+                i_global = local_range[1][i_local]
+                parent_arr[i_local, j_local, k_local] = global_arr[i_global, j_global, k_global]
+            end
+        end
+    end
+
     return distributed
 end
 
