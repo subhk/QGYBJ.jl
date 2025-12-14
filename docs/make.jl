@@ -1,6 +1,7 @@
 using Pkg
 # Ensure the package in this repo is available in the docs environment
-Pkg.develop(PackageSpec(path=pwd()*"/.."))
+# Use @__DIR__ for robust path resolution regardless of working directory
+Pkg.develop(PackageSpec(path=dirname(@__DIR__)))
 Pkg.instantiate()
 
 using Documenter
