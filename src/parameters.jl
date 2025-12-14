@@ -142,8 +142,16 @@ Base.@kwdef mutable struct QGParams{T}
 
     #= ====================================================================
                         NONDIMENSIONAL NUMBERS
+    ====================================================================
+    The nondimensional numbers match the Fortran QG_YBJp code:
+    - Ro = U/(f*L) : Rossby number
+    - Fr = U/(N*H) : Froude number
+    - Bu = Fr²/Ro² = (N*H*L)²/(f*L*U)² = (NH/fL)² : Burger number
+
+    The wave dispersion coefficient is: N²/(2f) → 1/(2*Bu*Ro) in nondim form
     ==================================================================== =#
-    Bu::T                      # Burger number = (NH/fL)² (typically 1.0)
+    Ro::T                      # Rossby number = U/(f*L)
+    Bu::T                      # Burger number = Fr²/Ro² = (NH/fL)²
     W2F::T                     # (Uw/U)² = wave-to-flow velocity ratio squared
     gamma::T                   # Robert-Asselin filter parameter (typ. 10⁻³)
 
@@ -286,15 +294,38 @@ function default_params(; nx=64, ny=64, nz=64, Lx=2π, Ly=2π,
                            stratification::Symbol=:constant_N)
     T = Float64
 
-    # Wave-to-flow velocity ratio squared (from Fortran test1)
-    # W2F = (Uw_scale/U_scale)² where Uw_scale ~ 2.5e-5, U_scale ~ 0.25
-    W2F = T( (2.5e-5/0.25)^2 )
+    #= Nondimensional numbers from Fortran test1:
+    Scaling parameters from parameters_test1.f90:
+      - L_scale = dom_x/L1 = 5e4 m (horizontal scale)
+      - H_scale = dom_z/L3 = 4e3/(2π) m (vertical scale)
+      - U_scale = 0.25 m/s (flow velocity)
+      - Uw_scale = 2.5e-5 m/s (wave velocity)
+      - cor = 1e-4 s⁻¹ (Coriolis)
+      - N0 = (25/8)*2π*cor (characteristic stratification)
+
+    Nondimensional numbers:
+      - Ro = U_scale/(cor*L_scale) ≈ 0.05
+      - Fr = U_scale/(N0*H_scale)
+      - Bu = Fr²/Ro²
+      - W2F = (Uw_scale/U_scale)²
+    =#
+
+    # Physical scales (matching Fortran test1)
+    L_scale = T(5e4)           # Horizontal scale in m
+    H_scale = T(4e3/(2π))      # Vertical scale in m (dom_z/L3)
+    U_scale = T(0.25)          # Flow velocity scale in m/s
+    Uw_scale = T(2.5e-5)       # Wave velocity scale in m/s
+    cor = T(1e-4)              # Coriolis parameter in s⁻¹
+    N0 = T((25/8)*2π*cor)      # Characteristic stratification in s⁻¹
+
+    # Nondimensional numbers
+    Ro = T(U_scale / (cor * L_scale))           # Rossby number
+    Fr = T(U_scale / (N0 * H_scale))            # Froude number
+    Bu = T(Fr^2 / Ro^2)                         # Burger number
+    W2F = T((Uw_scale / U_scale)^2)             # Wave-to-flow velocity ratio squared
 
     # Robert-Asselin filter parameter (small value for stability)
     gamma = T(1e-3)
-
-    # Burger number (controls vertical scale of eddies)
-    Bu = T(1.0)
 
     #= Hyperdiffusion parameters
     Two operators: -ν₁∇^(2*ilap1) - ν₂∇^(2*ilap2)
@@ -333,7 +364,7 @@ function default_params(; nx=64, ny=64, nz=64, Lx=2π, Ly=2π,
     alpha_sg = T(-5.338431587899242)  # Skewness
 
     return QGParams{T}(; nx, ny, nz, Lx, Ly, dt, nt, f0, nu_h, nu_v,
-                         linear_vert_structure, stratification, W2F, Bu, gamma,
+                         linear_vert_structure, stratification, Ro, W2F, Bu, gamma,
                          nuh1, nuh2, ilap1, ilap2, nuh1w, nuh2w, ilap1w, ilap2w,
                          nuz, inviscid, linear, no_dispersion, passive_scalar,
                          ybj_plus, no_feedback, fixed_flow, no_wave_feedback,

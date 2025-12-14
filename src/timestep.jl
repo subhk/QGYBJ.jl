@@ -260,16 +260,20 @@ function first_projection_step!(S::State, G::Grid, par::QGParams, plans; a, deal
             end
 
             #= Update B (wave envelope)
-            The YBJ+ equation for B is:
-                ∂B/∂t + J(ψ,B) = -(ikₕ²/2)A + (1/2)B×ζ
+            The YBJ+ equation for B is (from Fortran main_waqg.f90):
+                ∂B/∂t + J(ψ,B) = -i(kₕ²/(2BuRo))A + (1/2)B×ζ
+
+            The dispersion coefficient N²/(2f) becomes 1/(2*Bu*Ro) in nondimensional form.
+
             In terms of real/imaginary parts:
-                ∂BR/∂t = -J(ψ,BR) - (kₕ²/2)AI + (1/2)BI×ζ
-                ∂BI/∂t = -J(ψ,BI) + (kₕ²/2)AR - (1/2)BR×ζ =#
+                ∂BR/∂t = -J(ψ,BR) - (kₕ²/(2BuRo))AI + (1/2)BI×ζ
+                ∂BI/∂t = -J(ψ,BI) + (kₕ²/(2BuRo))AR - (1/2)BR×ζ =#
+            disp_coef = 0.5 / (par.Bu * par.Ro)  # Dispersion coefficient
             BRnew = ( BRok_arr[i,j,k] - par.dt*nBRk_arr[i,j,k]
-                      - par.dt*0.5*kh2*Complex(imag(A_arr[i,j,k]),0)
+                      - par.dt*disp_coef*kh2*Complex(imag(A_arr[i,j,k]),0)
                       + par.dt*0.5*rBIk_arr[i,j,k] ) * exp(-Ifw)
             BInew = ( BIok_arr[i,j,k] - par.dt*nBIk_arr[i,j,k]
-                      + par.dt*0.5*kh2*Complex(real(A_arr[i,j,k]),0)
+                      + par.dt*disp_coef*kh2*Complex(real(A_arr[i,j,k]),0)
                       - par.dt*0.5*rBRk_arr[i,j,k] ) * exp(-Ifw)
 
             # Recombine into complex B
@@ -527,15 +531,17 @@ function leapfrog_step!(Snp1::State, Sn::State, Snm1::State,
             end
 
             #= Update B (real and imaginary parts)
-            BR^(n+1) = BR^(n-1)×e^(-2λdt) - 2dt×[J(ψ,BR) + (kₕ²/2)AI - (1/2)BI×ζ]×e^(-λdt)
-            BI^(n+1) = BI^(n-1)×e^(-2λdt) - 2dt×[J(ψ,BI) - (kₕ²/2)AR + (1/2)BR×ζ]×e^(-λdt) =#
+            From Fortran main_waqg.f90:
+            BR^(n+1) = BR^(n-1)×e^(-2λdt) - 2dt×[J(ψ,BR) + (kₕ²/(2BuRo))AI - (1/2)BI×ζ]×e^(-λdt)
+            BI^(n+1) = BI^(n-1)×e^(-2λdt) - 2dt×[J(ψ,BI) - (kₕ²/(2BuRo))AR + (1/2)BR×ζ]×e^(-λdt) =#
+            disp_coef = 0.5 / (par.Bu * par.Ro)  # Dispersion coefficient N²/(2f)
             BRtemp_arr[i,j,k] = Complex(real(Bnm1_arr[i,j,k]),0)*exp(-2Ifw) -
                            2*par.dt*( nBRk_arr[i,j,k] +
-                                     0.5*kh2*Complex(imag(An_arr[i,j,k]),0) -
+                                     disp_coef*kh2*Complex(imag(An_arr[i,j,k]),0) -
                                      0.5*rBIk_arr[i,j,k] )*exp(-Ifw)
             BItemp_arr[i,j,k] = Complex(imag(Bnm1_arr[i,j,k]),0)*exp(-2Ifw) -
                            2*par.dt*( nBIk_arr[i,j,k] -
-                                     0.5*kh2*Complex(real(An_arr[i,j,k]),0) +
+                                     disp_coef*kh2*Complex(real(An_arr[i,j,k]),0) +
                                      0.5*rBRk_arr[i,j,k] )*exp(-Ifw)
         else
             qtemp_arr[i,j,k] = 0; BRtemp_arr[i,j,k] = 0; BItemp_arr[i,j,k] = 0
