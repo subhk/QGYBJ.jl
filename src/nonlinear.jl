@@ -54,7 +54,7 @@ FORTRAN CORRESPONDENCE:
 
 module Nonlinear
 
-using ..QGYBJ: Grid
+using ..QGYBJ: Grid, local_to_global, get_local_dims
 using ..QGYBJ: plan_transforms!, fft_forward!, fft_backward!
 
 #=
@@ -110,16 +110,30 @@ jacobian_spectral!(Jpsi_q, psi_k, q_k, grid, plans)
 function jacobian_spectral!(dstk, phik, chik, G::Grid, plans)
     nx, ny, nz = G.nx, G.ny, G.nz
 
+    # Get underlying arrays (works for both Array and PencilArray)
+    phi_arr = parent(phik)
+    chi_arr = parent(chik)
+    dst_arr = parent(dstk)
+    nx_local, ny_local, nz_local = size(phi_arr)
+
     #= Step 1: Compute spectral derivatives
     In spectral space: ∂/∂x → ikₓ, ∂/∂y → ikᵧ =#
     phixk = similar(phik); phiyk = similar(phik)
     chixk = similar(chik); chiyk = similar(chik)
 
-    @inbounds for k in 1:nz, j in 1:ny, i in 1:nx
-        phixk[i,j,k] = im*G.kx[i]*phik[i,j,k]   # φ̂ₓ = ikₓ φ̂
-        phiyk[i,j,k] = im*G.ky[j]*phik[i,j,k]   # φ̂ᵧ = ikᵧ φ̂
-        chixk[i,j,k] = im*G.kx[i]*chik[i,j,k]   # χ̂ₓ = ikₓ χ̂
-        chiyk[i,j,k] = im*G.ky[j]*chik[i,j,k]   # χ̂ᵧ = ikᵧ χ̂
+    phix_arr = parent(phixk); phiy_arr = parent(phiyk)
+    chix_arr = parent(chixk); chiy_arr = parent(chiyk)
+
+    @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
+        i_global = local_to_global(i_local, 1, G)
+        j_global = local_to_global(j_local, 2, G)
+        kx_val = G.kx[i_global]
+        ky_val = G.ky[j_global]
+
+        phix_arr[i_local, j_local, k] = im*kx_val*phi_arr[i_local, j_local, k]   # φ̂ₓ = ikₓ φ̂
+        phiy_arr[i_local, j_local, k] = im*ky_val*phi_arr[i_local, j_local, k]   # φ̂ᵧ = ikᵧ φ̂
+        chix_arr[i_local, j_local, k] = im*kx_val*chi_arr[i_local, j_local, k]   # χ̂ₓ = ikₓ χ̂
+        chiy_arr[i_local, j_local, k] = im*ky_val*chi_arr[i_local, j_local, k]   # χ̂ᵧ = ikᵧ χ̂
     end
 
     #= Step 2: Transform derivatives to real space =#
@@ -130,12 +144,16 @@ function jacobian_spectral!(dstk, phik, chik, G::Grid, plans)
     fft_backward!(chix, chixk, plans)
     fft_backward!(chiy, chiyk, plans)
 
+    phix_r = parent(phix); phiy_r = parent(phiy)
+    chix_r = parent(chix); chiy_r = parent(chiy)
+
     #= Step 3: Compute Jacobian in real space (pointwise multiplication)
     J = φₓχᵧ - φᵧχₓ =#
     J = similar(phik)
-    @inbounds for k in 1:nz, j in 1:ny, i in 1:nx
-        J[i,j,k] = (real(phix[i,j,k])*real(chiy[i,j,k]) -
-                   real(phiy[i,j,k])*real(chix[i,j,k]))
+    J_arr = parent(J)
+    @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
+        J_arr[i_local, j_local, k] = (real(phix_r[i_local, j_local, k])*real(chiy_r[i_local, j_local, k]) -
+                                      real(phiy_r[i_local, j_local, k])*real(chix_r[i_local, j_local, k]))
     end
 
     #= Step 4: Transform back to spectral space =#
@@ -144,7 +162,7 @@ function jacobian_spectral!(dstk, phik, chik, G::Grid, plans)
     #= Normalize for unnormalized inverse FFT
     FFTW's ifft returns unnormalized result; divide by (nx × ny) =#
     norm = nx*ny
-    @inbounds dstk .= dstk ./ norm
+    @inbounds dst_arr .= dst_arr ./ norm
 
     return dstk
 end

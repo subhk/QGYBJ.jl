@@ -271,9 +271,16 @@ function invert_helmholtz!(dstk, rhs, G::Grid, par;
                            scale_kh2::Real=1.0,
                            bot_bc=nothing,
                            top_bc=nothing)
-    nx, ny, nz = G.nx, G.ny, G.nz
-    @assert size(dstk) == (nx, ny, nz) "dstk must have size ($nx, $ny, $nz)"
-    @assert size(rhs)  == (nx, ny, nz) "rhs must have size ($nx, $ny, $nz)"
+    nz = G.nz
+
+    # Get underlying arrays (works for both Array and PencilArray)
+    dst_arr = parent(dstk)
+    rhs_arr = parent(rhs)
+
+    # Get local dimensions
+    nx_local, ny_local, nz_local = size(dst_arr)
+
+    @assert nz_local == nz "Vertical dimension must be fully local"
     @assert length(a) == nz "a must have length nz=$nz"
     @assert length(b) == nz "b must have length nz=$nz"
 
@@ -288,8 +295,18 @@ function invert_helmholtz!(dstk, rhs, G::Grid, par;
     d  = zeros(eltype(a), nz)
     du = zeros(eltype(a), nz)
 
-    for j in 1:ny, i in 1:nx
-        kh2 = G.kh2[i,j]
+    # Handle boundary conditions (if PencilArrays, get local portion)
+    bot_bc_arr = bot_bc !== nothing ? parent(bot_bc) : nothing
+    top_bc_arr = top_bc !== nothing ? parent(top_bc) : nothing
+
+    for j_local in 1:ny_local, i_local in 1:nx_local
+        # Get global indices for wavenumber lookup
+        i_global = local_to_global(i_local, 1, G)
+        j_global = local_to_global(j_local, 2, G)
+
+        kx_val = G.kx[i_global]
+        ky_val = G.ky[j_global]
+        kh2 = kx_val^2 + ky_val^2
 
         # Build tridiagonals including first derivative b-terms
         fill!(dl, 0); fill!(d, 0); fill!(du, 0)
@@ -314,22 +331,22 @@ function invert_helmholtz!(dstk, rhs, G::Grid, par;
         d[nz]  = -( αn*a[nz-1] - 0.5*αn*b[nz-1]*Δ + scale_kh2*kh2*Δ2 )
 
         # Prepare RHS (scale by dz²)
-        rhsR = similar(view(rhs, i, j, :), eltype(a))
-        rhsI = similar(rhsR)
+        rhsR = zeros(eltype(a), nz)
+        rhsI = zeros(eltype(a), nz)
         @inbounds for k in 1:nz
-            rhsR[k] = Δ2 * real(rhs[i,j,k])
-            rhsI[k] = Δ2 * imag(rhs[i,j,k])
+            rhsR[k] = Δ2 * real(rhs_arr[i_local, j_local, k])
+            rhsI[k] = Δ2 * imag(rhs_arr[i_local, j_local, k])
         end
 
         #= Boundary flux adjustments (for non-zero flux BCs)
         These add contributions from bottom/top buoyancy terms =#
-        if bot_bc !== nothing
-            rhsR[1] += (α1*(a[1] - 0.5*b[1]*Δ)) * Δ * real(bot_bc[i,j])
-            rhsI[1] += (α1*(a[1] - 0.5*b[1]*Δ)) * Δ * imag(bot_bc[i,j])
+        if bot_bc_arr !== nothing
+            rhsR[1] += (α1*(a[1] - 0.5*b[1]*Δ)) * Δ * real(bot_bc_arr[i_local, j_local])
+            rhsI[1] += (α1*(a[1] - 0.5*b[1]*Δ)) * Δ * imag(bot_bc_arr[i_local, j_local])
         end
-        if top_bc !== nothing
-            rhsR[nz] -= (αn*(a[nz-1] + 0.5*b[nz-1]*Δ)) * Δ * real(top_bc[i,j])
-            rhsI[nz] -= (αn*(a[nz-1] + 0.5*b[nz-1]*Δ)) * Δ * imag(top_bc[i,j])
+        if top_bc_arr !== nothing
+            rhsR[nz] -= (αn*(a[nz-1] + 0.5*b[nz-1]*Δ)) * Δ * real(top_bc_arr[i_local, j_local])
+            rhsI[nz] -= (αn*(a[nz-1] + 0.5*b[nz-1]*Δ)) * Δ * imag(top_bc_arr[i_local, j_local])
         end
 
         # Solve real and imaginary parts
@@ -339,7 +356,7 @@ function invert_helmholtz!(dstk, rhs, G::Grid, par;
         thomas_solve!(solI, dl, d, du, rhsI)
 
         @inbounds for k in 1:nz
-            dstk[i,j,k] = solR[k] + im*solI[k]
+            dst_arr[i_local, j_local, k] = solR[k] + im*solI[k]
         end
     end
 
