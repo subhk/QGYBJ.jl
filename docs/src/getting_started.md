@@ -1,44 +1,166 @@
-## Getting Started
+# [Installation & Getting Started](@id getting_started)
 
-This page walks you through installing QGYBJ.jl, running a quick example,
-and understanding the core concepts (Grid, State, Params).
+```@meta
+CurrentModule = QGYBJ
+```
 
-### Installation
+This page walks you through installing QGYBJ.jl, running a quick example, and understanding the core concepts.
 
-- Clone the repository and activate the project
-  - `git clone https://github.com/subhk/QGYBJ.jl`
-  - `cd QGYBJ.jl`
-  - `julia --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'`
+## Installation
 
-Notes:
-- FFTW.jl is required for transforms. The optional NCDatasets.jl is only needed
-  for NetCDF I/O. If NCDatasets is not installed, NetCDF I/O is disabled.
+### Basic Installation
 
-### Quick Example
+```julia
+using Pkg
+Pkg.add(url="https://github.com/subhk/QGYBJ.jl")
+```
+
+Or clone and develop locally:
+
+```bash
+git clone https://github.com/subhk/QGYBJ.jl
+cd QGYBJ.jl
+julia --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
+```
+
+### Dependencies
+
+| Package | Purpose | Required |
+|:--------|:--------|:---------|
+| FFTW.jl | FFT transforms | Yes |
+| LinearAlgebra | Matrix operations | Yes (stdlib) |
+| NCDatasets.jl | NetCDF I/O | Optional |
+
+### MPI Support (Optional)
+
+For parallel execution with 2D pencil decomposition:
+
+```julia
+using Pkg
+Pkg.add(["MPI", "PencilArrays", "PencilFFTs"])
+```
+
+The MPI extension is automatically loaded when these packages are imported.
+
+## Quick Example
+
+### Serial Mode
 
 ```julia
 using QGYBJ
 
-# Create a simple configuration and run a short simulation
+# Create configuration
 config = create_simple_config(
-    dt=1e-3, total_time=2.0,
+    nx=64, ny=64, nz=32,
+    dt=0.001,
+    total_time=1.0,
+    output_interval=100
 )
-sim = setup_simulation(config)
-run_simulation!(sim)
+
+# Run simulation
+result = run_simple_simulation(config)
+
+# Check results
+println("Final KE: ", flow_kinetic_energy(result.state.u, result.state.v))
 ```
 
-This will:
-- Build a grid and state
-- Create transforms (FFTs)
-- Initialize fields from the config
-- Step forward in time and (optionally) write outputs
+### Parallel Mode (MPI)
 
-### Core Concepts
+```julia
+# run_parallel.jl
+using MPI, PencilArrays, PencilFFTs, QGYBJ
 
-- `QGParams`: numerical/physical parameters (grid sizes, dt, viscosity, flags)
-- `Grid`: grid geometry and spectral metadata (kx, ky, kh², z)
-- `State`: prognostic and diagnostic fields in spectral/real space
-  - Spectral: `q`, `psi`, `A`, `B`, `C=A_z`
-  - Real: `u`, `v`, `w` (computed as needed)
-- Transforms: 2D FFTs per z (FFTW in serial; PencilFFTs in parallel)
+MPI.Init()
+mpi_config = QGYBJ.setup_mpi_environment()
 
+# Setup distributed simulation
+params = default_params(nx=256, ny=256, nz=128)
+grid = QGYBJ.init_mpi_grid(params, mpi_config)
+state = QGYBJ.init_mpi_state(grid, mpi_config)
+workspace = QGYBJ.init_mpi_workspace(grid, mpi_config)
+plans = QGYBJ.plan_mpi_transforms(grid, mpi_config)
+
+# Run time stepping...
+
+MPI.Finalize()
+```
+
+Run with:
+```bash
+mpiexec -n 16 julia --project run_parallel.jl
+```
+
+## Core Concepts
+
+### QGParams
+
+All model parameters in one struct:
+
+```julia
+params = QGParams(
+    nx=64, ny=64, nz=32,      # Grid dimensions
+    Lx=2π, Ly=2π,              # Domain size
+    f0=1.0,                    # Coriolis parameter
+    dt=0.001,                  # Time step
+    nu_h2=1e-10,               # Hyperdiffusion
+    ybj_plus=true              # Use YBJ+ formulation
+)
+```
+
+### Grid
+
+Spatial coordinates and spectral wavenumbers:
+
+```julia
+grid = init_grid(params)
+
+# Physical coordinates
+grid.x, grid.y, grid.z     # Coordinate arrays
+grid.dx, grid.dy           # Grid spacings
+
+# Spectral wavenumbers
+grid.kx, grid.ky           # Wavenumber vectors
+grid.kh2                   # Horizontal wavenumber squared
+
+# Parallel decomposition (if using MPI)
+grid.decomp                # PencilDecomp or nothing
+```
+
+### State
+
+Prognostic and diagnostic fields:
+
+```julia
+state = init_state(grid)
+
+# Prognostic (time-stepped)
+state.q      # QG potential vorticity (spectral)
+state.B      # Wave envelope B = L⁺A (spectral)
+
+# Diagnostic (computed)
+state.psi    # Streamfunction (spectral)
+state.A      # Wave amplitude (spectral)
+state.C      # Vertical derivative dA/dz (spectral)
+
+# Velocities (real space)
+state.u, state.v, state.w
+```
+
+### FFT Transforms
+
+```julia
+# Serial mode
+plans = plan_transforms!(grid)
+fft_forward!(dst, src, plans)   # Physical → Spectral
+fft_backward!(dst, src, plans)  # Spectral → Physical
+
+# Parallel mode (automatic with PencilFFTs)
+plans = QGYBJ.plan_mpi_transforms(grid, mpi_config)
+```
+
+## What's Next?
+
+- [Quick Start Tutorial](@ref quickstart) - Hands-on introduction
+- [Configuration Guide](@ref configuration) - All parameters explained
+- [MPI Parallelization](@ref parallel) - Scale to large domains
+- [Physics Overview](@ref physics-overview) - Understand the equations
