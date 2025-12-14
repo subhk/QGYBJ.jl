@@ -1,80 +1,249 @@
-"""
-    Grid
+#=
+================================================================================
+                        grid.jl - Spatial Grid and State
+================================================================================
 
-Numerical grid and spectral metadata. Supports both serial arrays and
-PencilArrays-backed distributed storage. Vertical grid is stored explicitly
-to enable second-order finite differences like in the Fortran reference.
+This file defines the fundamental data structures for the QG-YBJ+ model:
+
+1. GRID: Spatial coordinates and spectral wavenumbers
+2. STATE: Prognostic and diagnostic field arrays
+
+GRID STRUCTURE:
+---------------
+The model uses a doubly-periodic horizontal domain with:
+- x ∈ [0, Lx) with nx points (typically Lx = 2π)
+- y ∈ [0, Ly) with ny points (typically Ly = 2π)
+- z ∈ [0, Lz] with nz points (typically Lz = 2π for nondimensional)
+
+SPECTRAL REPRESENTATION:
+------------------------
+Horizontal fields are represented in spectral space using 2D FFTs.
+The wavenumber arrays follow FFTW conventions:
+- kx = [0, 1, 2, ..., nx/2-1, -nx/2, ..., -2, -1] × (2π/Lx)
+- ky = [0, 1, 2, ..., ny/2-1, -ny/2, ..., -2, -1] × (2π/Ly)
+
+VERTICAL DISCRETIZATION:
+------------------------
+The vertical coordinate uses an unstaggered grid with second-order
+finite differences, matching the Fortran implementation:
+- z[k] = k × dz for k = 0, 1, ..., nz-1
+- Staggered values (for derivatives) at z[k] + dz/2
+
+STATE VARIABLES:
+----------------
+Prognostic (evolved in time):
+- q: Quasi-geostrophic potential vorticity (spectral)
+- B: YBJ+ wave envelope L⁺A (spectral)
+
+Diagnostic (computed from prognostic):
+- psi (ψ): Streamfunction, from q via elliptic inversion
+- A: Wave amplitude, from B via YBJ+ inversion
+- C: Vertical derivative A_z (for wave velocities)
+- u, v: Horizontal velocities (real space)
+- w: Vertical velocity (real space)
+
+PARALLELIZATION:
+----------------
+The Grid and State structs support both serial and parallel (MPI) execution:
+- Serial: Standard Julia Arrays
+- Parallel: PencilArrays for distributed memory
+
+FORTRAN CORRESPONDENCE:
+----------------------
+- Grid corresponds to init_arrays in init.f90
+- State corresponds to the field arrays in main_waqg.f90
+
+================================================================================
+=#
+
+#=
+================================================================================
+                            GRID STRUCTURE
+================================================================================
+=#
+
+"""
+    Grid{T, AT}
+
+Numerical grid and spectral metadata for the QG-YBJ+ model.
+
+# Type Parameters
+- `T`: Floating point type (typically Float64)
+- `AT`: Array type for 2D arrays (Array{T,2} or PencilArray{T,2})
+
+# Fields
+
+## Grid Dimensions
+- `nx, ny, nz::Int`: Number of grid points in x, y, z directions
+- `Lx, Ly::T`: Domain size in x, y (typically 2π for nondimensional)
+- `dx, dy::T`: Grid spacing in x, y (computed as Lx/nx, Ly/ny)
+
+## Vertical Grid
+- `z::Vector{T}`: Unstaggered vertical levels, length nz
+- `dz::Vector{T}`: Layer thicknesses between levels, length nz-1
+
+## Spectral Wavenumbers
+- `kx::Vector{T}`: x-wavenumbers following FFTW convention, length nx
+- `ky::Vector{T}`: y-wavenumbers following FFTW convention, length ny
+- `kh2::AT`: Horizontal wavenumber squared kx² + ky², size (nx, ny)
+
+## Parallel Decomposition
+- `decomp::Any`: PencilArrays decomposition (nothing for serial)
+
+# Wavenumber Convention
+For a domain of size L with n points:
+```
+k[i] = (2π/L) × m  where m = i-1        for i ≤ n/2
+                          m = i-1-n      for i > n/2
+```
+
+# Example
+```julia
+par = default_params(nx=64, ny=64, nz=32)
+G = init_grid(par)
+# G.kx[1] = 0 (mean mode)
+# G.kx[33] = -32 × (2π/Lx) (most negative wavenumber)
+```
+
+See also: [`init_grid`](@ref), [`State`](@ref)
 """
 Base.@kwdef mutable struct Grid{T, AT}
-    # Sizes and spacings
-    nx::Int
-    ny::Int
-    nz::Int
-    Lx::T
-    Ly::T
-    dx::T
-    dy::T
-    z::Vector{T}           # unstaggered vertical levels (size nz)
-    dz::Vector{T}          # layer thicknesses (size nz-1), mid-point scheme
+    #= Grid dimensions and spacings =#
+    nx::Int                # Number of points in x (horizontal)
+    ny::Int                # Number of points in y (horizontal)
+    nz::Int                # Number of points in z (vertical)
+    Lx::T                  # Domain size in x
+    Ly::T                  # Domain size in y
+    dx::T                  # Grid spacing in x: dx = Lx/nx
+    dy::T                  # Grid spacing in y: dy = Ly/ny
 
-    # Wavenumbers and spectral helpers
-    kx::Vector{T}
-    ky::Vector{T}
-    kh2::AT                # kh^2 on spectral grid (nx, ny)
+    #= Vertical grid (unstaggered) =#
+    z::Vector{T}           # Vertical levels z[k], size nz
+    dz::Vector{T}          # Layer thicknesses: dz[k] = z[k+1] - z[k], size nz-1
 
-    # Decomposition (if using PencilArrays)
-    decomp::Any
+    #= Spectral wavenumbers =#
+    kx::Vector{T}          # x-wavenumbers, size nx
+    ky::Vector{T}          # y-wavenumbers, size ny
+    kh2::AT                # kx² + ky² on spectral grid, size (nx, ny)
+
+    #= MPI decomposition (PencilArrays) =#
+    decomp::Any            # PencilDecomposition or nothing for serial
 end
 
 """
-    init_grid(par::QGParams)
+    init_grid(par::QGParams) -> Grid
 
-Initialize grid and wavenumber arrays. Uses PencilArrays decomposition if available.
+Initialize the spatial grid and spectral wavenumbers from parameters.
+
+# Grid Setup
+- Horizontal: Uniform grid with spacing dx = Lx/nx, dy = Ly/ny
+- Vertical: Uniform grid from 0 to 2π (nondimensional) matching Fortran
+
+# Wavenumber Arrays
+Computes kx, ky following FFTW conventions for 2π-periodic domain:
+```
+kx[i] = (i-1)           for i = 1, ..., nx/2
+        (i-1-nx)        for i = nx/2+1, ..., nx
+```
+multiplied by 2π/Lx.
+
+# Arguments
+- `par::QGParams`: Parameter struct with nx, ny, nz, Lx, Ly
+
+# Returns
+Initialized `Grid` struct with all arrays allocated.
+
+# Example
+```julia
+par = default_params(nx=64, ny=64, nz=32)
+G = init_grid(par)
+```
+
+# Fortran Correspondence
+This matches `init_arrays` in init.f90.
 """
 function init_grid(par::QGParams)
     T = Float64
     nx, ny, nz = par.nx, par.ny, par.nz
+
+    # Horizontal grid spacing
     dx = par.Lx / nx
     dy = par.Ly / ny
-    # Match Fortran nondimensional vertical domain L3 = 2π
+
+    #= Vertical grid: match Fortran nondimensional domain L3 = 2π
+    z[k] ranges from 0 to 2π with nz points =#
     z = T.(collect(range(0, 2π; length=nz)))
     dz = diff(z)
 
-    # Wavenumbers (2π periodic domain)
+    #= Wavenumbers for 2π-periodic domain
+    Following FFTW convention:
+    - Positive wavenumbers first: 0, 1, 2, ..., n/2-1
+    - Then negative: -n/2, -n/2+1, ..., -1
+
+    With 2π-periodicity: k_physical = k_index × (2π/L) =#
     kx = T.([i <= nx÷2 ? (2π/par.Lx)*(i-1) : (2π/par.Lx)*(i-1-nx) for i in 1:nx])
     ky = T.([j <= ny÷2 ? (2π/par.Ly)*(j-1) : (2π/par.Ly)*(j-1-ny) for j in 1:ny])
 
-    # kh^2 grid
+    # Horizontal wavenumber squared: kh² = kx² + ky²
     kh2 = Array{T}(undef, nx, ny)
     @inbounds for j in 1:ny, i in 1:nx
         kh2[i,j] = kx[i]^2 + ky[j]^2
     end
 
+    # No MPI decomposition by default (serial mode)
     decomp = nothing
 
     return Grid{T, typeof(kh2)}(nx, ny, nz, par.Lx, par.Ly, dx, dy, z, dz, kx, ky, kh2, decomp)
 end
 
 """
-    compute_wavenumbers!(grid)
+    compute_wavenumbers!(G::Grid)
 
-Recompute `kx`, `ky`, `kh2` if grid sizes/domains changed.
+Recompute wavenumber arrays `kx`, `ky`, `kh2` if grid parameters changed.
+
+This is useful after modifying grid dimensions or domain size.
+
+# Example
+```julia
+G.Lx = 4π  # Change domain size
+compute_wavenumbers!(G)  # Update wavenumbers
+```
 """
 function compute_wavenumbers!(G::Grid)
     nx, ny = G.nx, G.ny
+
+    # Recompute wavenumbers
     G.kx .= [i <= nx÷2 ? (2π/G.Lx)*(i-1) : (2π/G.Lx)*(i-1-nx) for i in 1:nx]
     G.ky .= [j <= ny÷2 ? (2π/G.Ly)*(j-1) : (2π/G.Ly)*(j-1-ny) for j in 1:ny]
+
+    # Recompute kh²
     @inbounds for j in 1:ny, i in 1:nx
         G.kh2[i,j] = G.kx[i]^2 + G.ky[j]^2
     end
+
     return G
 end
 
 """
-    init_pencil_decomposition!(G)
+    init_pencil_decomposition!(G::Grid)
 
-Attempt to initialize a PencilArrays pencil decomposition using MPI if
-available. Safe to call even without MPI; leaves `G.decomp` as `nothing`.
+Initialize PencilArrays MPI decomposition for parallel execution.
+
+This attempts to set up distributed arrays using MPI. If MPI or PencilArrays
+are not available, the grid remains in serial mode with `G.decomp = nothing`.
+
+# Usage
+```julia
+# After initializing MPI in your script:
+using MPI
+MPI.Init()
+
+G = init_grid(par)
+init_pencil_decomposition!(G)  # Enable parallel mode
+```
+
+# Note
+Safe to call even without MPI - silently falls back to serial mode.
 """
 function init_pencil_decomposition!(G::Grid)
     try
@@ -83,43 +252,116 @@ function init_pencil_decomposition!(G::Grid)
         comm = MPI.COMM_WORLD
         G.decomp = PencilArrays.PencilDecomposition((G.nx, G.ny, G.nz), comm)
     catch
-        # stay in serial mode
+        # Stay in serial mode - no error, just no parallelization
     end
     return G
 end
 
-"""
-    State
+#=
+================================================================================
+                            STATE STRUCTURE
+================================================================================
+=#
 
-Holds prognostic and diagnostic fields. Real space fields are real-valued
-arrays `(nx, ny, nz)`. Spectral fields are complex arrays `(nx, ny, nz)`.
-If using PencilArrays, these are `PencilArray`s; otherwise they are `Array`s.
+"""
+    State{T, RT, CT}
+
+Container for all prognostic and diagnostic fields in the QG-YBJ+ model.
+
+# Type Parameters
+- `T`: Floating point type (Float64)
+- `RT`: Real array type (Array{T,3} or PencilArray{T,3})
+- `CT`: Complex array type (Array{Complex{T},3} or PencilArray{Complex{T},3})
+
+# Prognostic Fields (evolved in time)
+- `q::CT`: QG potential vorticity in spectral space
+- `B::CT`: YBJ+ wave envelope B = L⁺A in spectral space
+
+# Diagnostic Fields (computed from prognostic)
+- `psi::CT`: Streamfunction ψ (from q via elliptic inversion)
+- `A::CT`: Wave amplitude (from B via YBJ+ inversion)
+- `C::CT`: Vertical derivative C = ∂A/∂z (for wave velocities)
+
+# Velocity Fields (real space)
+- `u::RT`: Zonal velocity u = -∂ψ/∂y
+- `v::RT`: Meridional velocity v = ∂ψ/∂x
+- `w::RT`: Vertical velocity (from omega equation or YBJ)
+
+# Array Dimensions
+All arrays have shape (nx, ny, nz).
+- Spectral fields (q, psi, A, B, C): Complex arrays
+- Real-space fields (u, v, w): Real arrays
+
+# Physical Interpretation
+The prognostic variables are:
+1. q: Quasi-geostrophic potential vorticity
+   - Related to ψ by: q = ∇²ψ + (f²/N²)∂²ψ/∂z²
+
+2. B: YBJ+ wave envelope
+   - Related to wave amplitude A by: B = L⁺A
+   - L⁺ is an elliptic operator involving ∂²/∂z² and kh²
+
+# Example
+```julia
+G = init_grid(par)
+S = init_state(G)
+
+# Access fields
+q_spectral = S.q          # Complex (nx, ny, nz)
+u_realspace = S.u         # Real (nx, ny, nz)
+```
+
+See also: [`init_state`](@ref), [`Grid`](@ref)
 """
 Base.@kwdef mutable struct State{T, RT<:AbstractArray{T,3}, CT<:AbstractArray{Complex{T},3}}
-    # Prognostic fields
-    q::CT           # potential vorticity in spectral space
-    psi::CT         # QG streamfunction in spectral space
-    A::CT           # YBJ wave amplitude A (spectral)
-    B::CT           # YBJ L+A combined field (spectral)
-    C::CT           # A_z diagnostic (spectral)
+    #= Prognostic fields (spectral space, complex)
+    These are the variables that are time-stepped =#
+    q::CT           # QG potential vorticity
+    B::CT           # YBJ+ wave envelope (B = L⁺A)
 
-    # Diagnostics (optional; can be allocated lazily)
-    u::RT           # u in real space
-    v::RT           # v in real space
-    w::RT           # w in real space (if computed)
+    #= Diagnostic fields (spectral space, complex)
+    These are computed from prognostic fields =#
+    psi::CT         # Streamfunction (from q via inversion)
+    A::CT           # Wave amplitude (from B via YBJ+ inversion)
+    C::CT           # Vertical derivative A_z
+
+    #= Velocity fields (real space, real)
+    Computed from ψ and optionally A =#
+    u::RT           # Zonal velocity: u = -∂ψ/∂y
+    v::RT           # Meridional velocity: v = ∂ψ/∂x
+    w::RT           # Vertical velocity (from omega equation)
 end
 
 """
-    allocate_field(T, G; complex=false)
+    allocate_field(T, G; complex=false) -> Array
 
-Allocate a 3D array of size `(nx, ny, nz)`, optionally complex, using
-PencilArrays when available.
+Allocate a 3D field array of size (nx, ny, nz).
+
+Uses PencilArrays when parallel decomposition is available,
+otherwise standard Julia Arrays.
+
+# Arguments
+- `T::Type`: Element type (Float64)
+- `G::Grid`: Grid struct (determines array size and parallel mode)
+- `complex::Bool`: If true, allocate complex array
+
+# Returns
+- Serial mode: `Array{T,3}` or `Array{Complex{T},3}`
+- Parallel mode: `PencilArray{T,3}` or `PencilArray{Complex{T},3}`
+
+# Example
+```julia
+q = allocate_field(Float64, G; complex=true)   # Complex spectral field
+u = allocate_field(Float64, G; complex=false)  # Real velocity field
+```
 """
 function allocate_field(::Type{T}, G::Grid; complex::Bool=false) where {T}
     sz = (G.nx, G.ny, G.nz)
     if G.decomp === nothing
+        # Serial mode: use standard Arrays
         return complex ? Array{Complex{T}}(undef, sz) : Array{T}(undef, sz)
     else
+        # Parallel mode: use PencilArrays
         if complex
             return PencilArrays.PencilArray{Complex{T}}(G.decomp, sz)
         else
@@ -129,18 +371,42 @@ function allocate_field(::Type{T}, G::Grid; complex::Bool=false) where {T}
 end
 
 """
-    init_state(G::Grid; T=Float64)
+    init_state(G::Grid; T=Float64) -> State
 
-Allocate a default `State` with zeroed fields.
+Allocate and initialize a State with all fields set to zero.
+
+# Arguments
+- `G::Grid`: Grid struct (determines array sizes)
+- `T::Type`: Floating point type (default Float64)
+
+# Returns
+State struct with:
+- Spectral fields (q, psi, A, B, C): Complex arrays, initialized to 0
+- Real fields (u, v, w): Real arrays, initialized to 0
+
+# Example
+```julia
+G = init_grid(par)
+S = init_state(G)
+
+# All fields are zero - use init_random_psi! or similar to set ICs
+init_random_psi!(S, G, par, plans)
+```
+
+See also: [`State`](@ref), [`init_random_psi!`](@ref)
 """
 function init_state(G::Grid; T=Float64)
+    # Allocate spectral (complex) fields
     q   = allocate_field(T, G; complex=true);    fill!(q, 0)
     psi = allocate_field(T, G; complex=true);    fill!(psi, 0)
     A   = allocate_field(T, G; complex=true);    fill!(A, 0)
     B   = allocate_field(T, G; complex=true);    fill!(B, 0)
     C   = allocate_field(T, G; complex=true);    fill!(C, 0)
+
+    # Allocate real-space (real) fields
     u   = allocate_field(T, G; complex=false);   fill!(u, 0)
     v   = allocate_field(T, G; complex=false);   fill!(v, 0)
     w   = allocate_field(T, G; complex=false);   fill!(w, 0)
+
     return State{T, typeof(u), typeof(q)}(q, psi, A, B, C, u, v, w)
 end
