@@ -6,67 +6,81 @@ CurrentModule = QGYBJ
 
 This page documents the time integration functions.
 
-## Main Time Stepper
+## Main Time Stepping Scheme
 
-### timestep!
+QGYBJ.jl uses a **Leapfrog scheme with Robert-Asselin filter** for time integration. This provides second-order accuracy while maintaining stability through computational mode damping.
+
+### Overview
+
+The time stepping consists of two functions:
+1. `first_projection_step!` - Forward Euler initialization
+2. `leapfrog_step!` - Main leapfrog integration with Robert-Asselin filter
+
+## Forward Euler Projection Step
 
 ```@docs
-timestep!
+first_projection_step!
 ```
 
-The main time stepping function. Performs one AB3 step.
+**Purpose:** Initialize the leapfrog scheme by providing values at times n and n-1.
 
 **Algorithm:**
-1. Compute nonlinear tendencies
-2. Apply integrating factors for diffusion
-3. AB3 update for prognostic variables
-4. Invert elliptic equations
-5. Update diagnostic variables
+1. Compute tendencies at time n (advection, refraction, diffusion)
+2. Apply physics switches (linear, inviscid, etc.)
+3. Forward Euler update with integrating factors
+4. Wave feedback (optional)
+5. Diagnostic inversions (q → ψ → u, v)
 
 **Usage:**
 ```julia
-timestep!(state, grid, params, work, plans, a_ell, dt)
+# Serial mode
+first_projection_step!(state, grid, params, plans; a=a_ell, dealias_mask=L)
+
+# Parallel mode (2D decomposition)
+first_projection_step!(state, grid, params, plans; a=a_ell, dealias_mask=L, workspace=workspace)
 ```
 
-## Time Integration Schemes
-
-### Adams-Bashforth 3rd Order
+## Leapfrog Step with Robert-Asselin Filter
 
 ```@docs
-ab3_step!
+leapfrog_step!
 ```
 
-The AB3 scheme:
+**The Leapfrog scheme:**
 ```math
-q^{n+1} = q^n + \Delta t\left(\frac{23}{12}F^n - \frac{16}{12}F^{n-1} + \frac{5}{12}F^{n-2}\right)
+\phi^{n+1} = \phi^{n-1} + 2\Delta t \times F^n
+```
+
+**Robert-Asselin filter (damps computational mode):**
+```math
+\tilde{\phi}^n = \phi^n + \gamma(\phi^{n-1} - 2\phi^n + \phi^{n+1})
+```
+
+**With integrating factor for hyperdiffusion:**
+```math
+\phi^{n+1} = \phi^{n-1} \times e^{-2\lambda\Delta t} + 2\Delta t \times F^n \times e^{-\lambda\Delta t}
 ```
 
 **Usage:**
 ```julia
-ab3_step!(q_new, q, rq, rq_old, rq_old2, dt)
+# Serial mode
+leapfrog_step!(Snp1, Sn, Snm1, grid, params, plans; a=a_ell, dealias_mask=L)
+
+# Parallel mode (2D decomposition)
+leapfrog_step!(Snp1, Sn, Snm1, grid, params, plans; a=a_ell, dealias_mask=L, workspace=workspace)
+
+# Time level rotation after each step
+Snm1, Sn, Snp1 = Sn, Snp1, Snm1
 ```
 
-### Adams-Bashforth 2nd Order
+## Forward Euler Update
 
-```@docs
-ab2_step!
-```
-
-Used for the second time step:
+Used for the first (projection) step:
 ```math
-q^{n+1} = q^n + \Delta t\left(\frac{3}{2}F^n - \frac{1}{2}F^{n-1}\right)
+\phi^{n+1} = \left[\phi^n - \Delta t \times F\right] \times e^{-\lambda\Delta t}
 ```
 
-### Forward Euler
-
-```@docs
-euler_step!
-```
-
-Used for the first time step:
-```math
-q^{n+1} = q^n + \Delta t \cdot F^n
-```
+The integrating factor `e^{-λΔt}` handles hyperdiffusion exactly.
 
 ## Tendency Computation
 
