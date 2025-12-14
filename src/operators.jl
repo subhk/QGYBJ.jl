@@ -1,9 +1,85 @@
-"""
-Operators and utilities mapping to key Fortran routines in derivatives.f90:
- - compute_streamfunction (q -> psi inversion via elliptic solver; in elliptic.jl)
- - compute_velo (psi -> u,v,b,w diagnostics)
-This file wires spectral-to-real conversions and simple diagnostic operators.
-"""
+#=
+================================================================================
+                    operators.jl - Velocity Field Computation
+================================================================================
+
+This file computes diagnostic velocity fields from the model's prognostic
+variables (streamfunction ψ and wave amplitude A).
+
+PHYSICAL BACKGROUND:
+--------------------
+In QG-YBJ+ dynamics, velocities arise from two sources:
+
+1. GEOSTROPHIC FLOW (from streamfunction ψ):
+   - Horizontal: u = -∂ψ/∂y, v = ∂ψ/∂x (geostrophic balance)
+   - Vertical: w from the QG omega equation (ageostrophic correction)
+
+2. WAVE-INDUCED FLOW (from wave amplitude A):
+   - Horizontal: Stokes drift from wave envelope gradients
+   - Vertical: YBJ formulation involving ∂A_z/∂x, ∂A_z/∂y
+
+GEOSTROPHIC VELOCITIES:
+-----------------------
+The horizontal geostrophic velocities follow from:
+
+    f u = -∂p'/∂y = -f ∂ψ/∂y  →  u = -∂ψ/∂y
+    f v =  ∂p'/∂x =  f ∂ψ/∂x  →  v =  ∂ψ/∂x
+
+In spectral space:
+    û(k) = -i kᵧ ψ̂(k)
+    v̂(k) =  i kₓ ψ̂(k)
+
+QG OMEGA EQUATION:
+------------------
+The ageostrophic vertical velocity w comes from the omega equation:
+
+    ∇²w + (N²/f²) ∂²w/∂z² = 2 J(ψ_z, ∇²ψ)
+
+This is a 3D elliptic PDE solved via:
+- Horizontal: spectral differentiation (kₓ², kᵧ²)
+- Vertical: tridiagonal solver at each (kₓ, kᵧ)
+
+Physical meaning: w arises from ageostrophic convergence/divergence required
+to maintain geostrophic balance as the flow evolves.
+
+YBJ VERTICAL VELOCITY:
+----------------------
+For wave-induced vertical motion (equation 4 in YBJ papers):
+
+    w = -(f²/N²) [(∂A/∂x)_z - i(∂A/∂y)_z] + c.c.
+
+where:
+- A is the wave amplitude (recovered from B via L⁺A = B)
+- A_z = ∂A/∂z is the vertical derivative
+- c.c. ensures real result
+
+This represents vertical motion induced by wave envelope modulation.
+
+WAVE-INDUCED HORIZONTAL VELOCITIES:
+-----------------------------------
+The Stokes drift from near-inertial waves:
+
+    u_wave = Re[(∂A*/∂x)A + A*(∂A/∂x)] = 2 Re[A* ∂A/∂x]
+    v_wave = Re[(∂A*/∂y)A + A*(∂A/∂y)] = 2 Re[A* ∂A/∂y]
+
+These wave corrections are important for Lagrangian particle advection.
+
+SPECTRAL DIFFERENTIATION:
+-------------------------
+All derivatives are computed in spectral space:
+    ∂f/∂x → i kₓ f̂(k)
+    ∂f/∂y → i kᵧ f̂(k)
+
+Vertical derivatives use second-order finite differences.
+
+FORTRAN CORRESPONDENCE:
+-----------------------
+- compute_velocities! → compute_velo in derivatives.f90
+- compute_vertical_velocity! → solve_omega_eqn
+- compute_wave_velocities! → wave velocity terms in compute_velo
+
+================================================================================
+=#
 module Operators
 
 using LinearAlgebra
@@ -11,21 +87,57 @@ using ..QGYBJ: Grid, State
 using ..QGYBJ: fft_forward!, fft_backward!, plan_transforms!, compute_wavenumbers!
 const PARENT = Base.parentmodule(@__MODULE__)
 
+#=
+================================================================================
+                    GEOSTROPHIC VELOCITY COMPUTATION
+================================================================================
+The primary diagnostic: horizontal and vertical velocities from streamfunction.
+================================================================================
+=#
+
 """
-    compute_velocities!(S, G)
+    compute_velocities!(S, G; plans=nothing, params=nothing, compute_w=true, use_ybj_w=false)
 
-Given spectral streamfunction `psi(kx,ky,z)`, compute QG velocities only:
-- Horizontal: `u = -∂ψ/∂y`, `v = ∂ψ/∂x` using spectral differentiation
-- Vertical: `w` from either QG omega equation or YBJ formulation
+Compute geostrophic velocities from the spectral streamfunction ψ̂.
 
-This computes ONLY QG velocities. For particle advection, use `compute_total_velocities!`
-to get the full QG + wave velocity field.
+# Physical Equations
+Horizontal velocities from geostrophic balance:
+```
+u = -∂ψ/∂y  →  û(k) = -i kᵧ ψ̂(k)
+v =  ∂ψ/∂x  →  v̂(k) =  i kₓ ψ̂(k)
+```
 
-Vertical velocity options:
-1. QG omega equation: ∇²w + (N²/f²)(∂²w/∂z²) = 2 J(ψ_z, ∇²ψ)
-2. YBJ formulation: w₀ = -(f²/N²)[(∂A/∂x)_z - i(∂A/∂y)_z] (equation 4)
+Vertical velocity from QG omega equation:
+```
+∇²w + (N²/f²) ∂²w/∂z² = 2 J(ψ_z, ∇²ψ)
+```
+or YBJ formulation:
+```
+w = -(f²/N²) [(∂A/∂x)_z - i(∂A/∂y)_z] + c.c.
+```
 
-Set `use_ybj_w=true` for YBJ vertical velocity from wave envelope gradients.
+# Algorithm
+1. Compute û = -i kᵧ ψ̂ and v̂ = i kₓ ψ̂ in spectral space
+2. Transform to physical space via inverse FFT
+3. Optionally solve omega equation or use YBJ formula for w
+
+# Arguments
+- `S::State`: State with ψ (input) and u, v, w (output)
+- `G::Grid`: Grid with wavenumbers kx, ky
+- `plans`: FFT plans (auto-generated if nothing)
+- `params`: Model parameters (for f₀, N²)
+- `compute_w::Bool`: If true, compute vertical velocity
+- `use_ybj_w::Bool`: If true, use YBJ formula instead of omega equation
+
+# Returns
+Modified State with updated u, v, w fields.
+
+# Note
+This computes ONLY QG velocities. For Lagrangian advection including wave
+effects, use `compute_total_velocities!` instead.
+
+# Fortran Correspondence
+Matches `compute_velo` in derivatives.f90.
 """
 function compute_velocities!(S::State, G::Grid; plans=nothing, params=nothing, compute_w=true, use_ybj_w=false)
     # Spectral differentiation: û = -i ky ψ̂, v̂ = i kx ψ̂
@@ -72,18 +184,62 @@ function compute_velocities!(S::State, G::Grid; plans=nothing, params=nothing, c
     return S
 end
 
+#=
+================================================================================
+                    QG OMEGA EQUATION SOLVER
+================================================================================
+Computes the ageostrophic vertical velocity from the QG omega equation.
+This is a 3D elliptic problem solved via tridiagonal systems.
+================================================================================
+=#
+
 """
     compute_vertical_velocity!(S, G, plans, params; N2_profile=nothing)
 
-Compute QG ageostrophic vertical velocity by solving the omega equation:
-∇²w + (N²/f²)(∂²w/∂z²) = 2 J(ψ_z, ∇²ψ)
+Solve the QG omega equation for ageostrophic vertical velocity.
 
-This is the diagnostic vertical velocity from quasi-geostrophic theory.
-The full 3D elliptic equation is solved using LAPACK's tridiagonal solver (gtsv!)
-for each horizontal wavenumber, matching the Fortran implementation.
+# Physical Background
+In quasi-geostrophic dynamics, the leading-order horizontal flow is non-divergent
+(∇·u_g = 0). Vertical motion arises from ageostrophic corrections that maintain
+thermal wind balance as the flow evolves.
 
-Optional parameters:
-- N2_profile: Vector of N²(z) values. If not provided, uses constant N² = 1.0.
+The omega equation relates w to the horizontal flow:
+```
+∇²w + (N²/f²) ∂²w/∂z² = 2 J(ψ_z, ∇²ψ)
+```
+
+where:
+- Left side: 3D Laplacian (horizontal + stratification-weighted vertical)
+- Right side: Jacobian forcing from vertical shear and vorticity
+
+# Physical Interpretation
+The RHS forcing J(ψ_z, ∇²ψ) represents:
+- Thermal wind tilting: vertical shear ψ_z interacting with vorticity ∇²ψ
+- Frontogenesis/frontolysis: differential advection of temperature gradients
+
+Strong w occurs at:
+- Fronts (sharp density gradients)
+- Edges of eddies (strong vorticity gradients)
+
+# Numerical Method
+1. Compute RHS in spectral space via omega_eqn_rhs!
+2. For each horizontal wavenumber (kₓ, kᵧ):
+   - Set up tridiagonal system in z
+   - Solve using LAPACK gtsv! (O(nz) per wavenumber)
+3. Transform w to physical space
+
+# Boundary Conditions
+w = 0 at z = 0 and z = Lz (rigid lid and bottom).
+
+# Arguments
+- `S::State`: State with ψ (input) and w (output)
+- `G::Grid`: Grid structure
+- `plans`: FFT plans
+- `params`: Model parameters (f₀)
+- `N2_profile::Vector`: Optional N²(z) profile (default: constant N² = 1)
+
+# Fortran Correspondence
+Matches omega equation solver in the Fortran implementation.
 """
 function compute_vertical_velocity!(S::State, G::Grid, plans, params; N2_profile=nothing)
     nx, ny, nz = G.nx, G.ny, G.nz
@@ -232,25 +388,61 @@ function compute_vertical_velocity!(S::State, G::Grid, plans, params; N2_profile
     return S
 end
 
+#=
+================================================================================
+                    YBJ VERTICAL VELOCITY
+================================================================================
+Wave-induced vertical motion from the YBJ+ formulation.
+================================================================================
+=#
+
 """
     compute_ybj_vertical_velocity!(S, G, plans, params; N2_profile=nothing, L=nothing)
 
-Compute YBJ vertical velocity using the complete YBJ+ formulation:
+Compute vertical velocity from near-inertial wave envelope using YBJ+ formulation.
 
-1. **A Recovery**: Solve L⁺A = B for the true wave envelope A
-   - Uses tridiagonal solver: a_ell(z) d²A/dz² + b_ell(z) dA/dz - kh²A/4 = B
-   - Based on A_solver_ybj_plus from Fortran implementation
+# Physical Background
+Near-inertial waves induce vertical motion through the modulation of their
+envelope. The YBJ vertical velocity (equation 4 in Asselin & Young 2019):
 
-2. **Vertical Velocity**: Apply YBJ equation (4)
-   - w = -(f²/N²)[(∂A/∂x)_z - i(∂A/∂y)_z] + c.c.
-   - where A_z is the vertical derivative of the recovered A
+```
+w = -(f²/N²) [(∂A/∂x)_z - i(∂A/∂y)_z] + c.c.
+```
 
-This is the complete YBJ vertical velocity including proper A recovery
-from the evolved field B = L⁺A, matching the Fortran implementation.
+where:
+- A is the true wave amplitude (recovered from evolved B via L⁺A = B)
+- A_z = ∂A/∂z is the vertical derivative
+- c.c. denotes complex conjugate (ensures real result)
 
-Optional parameters:
-- N2_profile: Vector of N²(z) values. If not provided, uses constant N² = 1.0
-- L: Dealiasing mask. If not provided, no dealiasing applied
+# Physical Interpretation
+This represents vertical motion induced by:
+- Horizontal gradients in the wave envelope's vertical structure
+- Wave packet propagation and refraction
+- Strong w occurs where wave amplitude varies both horizontally and vertically
+
+# Algorithm
+1. **A Recovery**: Solve L⁺A = B using invert_B_to_A!
+   - L⁺ is the YBJ+ elliptic operator
+   - Tridiagonal solver in z for each horizontal wavenumber
+
+2. **Vertical Derivative**: Compute A_z = ∂A/∂z
+   - Uses second-order finite differences
+
+3. **Horizontal Gradients**: Compute ∂(A_z)/∂x, ∂(A_z)/∂y
+   - Spectral differentiation: multiply by i kₓ, i kᵧ
+
+4. **Combine**: Apply YBJ formula with c.c. for real result
+
+# Arguments
+- `S::State`: State with B (input) and w (output)
+- `G::Grid`: Grid structure
+- `plans`: FFT plans
+- `params`: Model parameters (f₀)
+- `N2_profile::Vector`: Optional N²(z) profile (default: constant N² = 1)
+- `L`: Optional dealiasing mask
+
+# Fortran Correspondence
+Matches YBJ vertical velocity computation in the Fortran implementation.
 """
 function compute_ybj_vertical_velocity!(S::State, G::Grid, plans, params; N2_profile=nothing, L=nothing)
     nx, ny, nz = G.nx, G.ny, G.nz
@@ -340,20 +532,55 @@ function compute_ybj_vertical_velocity!(S::State, G::Grid, plans, params; N2_pro
     return S
 end
 
+#=
+================================================================================
+                    TOTAL VELOCITY FOR LAGRANGIAN ADVECTION
+================================================================================
+For particle tracking, we need the complete velocity field including both
+geostrophic flow and wave-induced motion.
+================================================================================
+=#
+
 """
     compute_total_velocities!(S, G; plans=nothing, params=nothing, compute_w=true, use_ybj_w=false)
 
-Compute TOTAL velocity field for particle advection: QG velocity + wave velocity.
-This is the proper velocity field for advecting particles in QG-YBJ simulations.
+Compute the TOTAL velocity field for Lagrangian particle advection.
 
-Total velocity components:
-- Horizontal: u_total = u_QG + u_wave, v_total = v_QG + v_wave  
-- Vertical: w_total from QG omega equation or YBJ formulation
+# Physical Background
+In QG-YBJ+ dynamics, a particle is advected by:
+1. **Geostrophic flow**: u_QG = -∂ψ/∂y, v_QG = ∂ψ/∂x
+2. **Wave-induced drift**: Stokes drift from near-inertial waves
 
-The wave velocities come from the Stokes drift and wave-induced corrections:
-u_wave = Real[(∂A*/∂x)A + A*(∂A/∂x)], v_wave = Real[(∂A*/∂y)A + A*(∂A/∂y)]
+The total velocity is:
+```
+u_total = u_QG + u_wave
+v_total = v_QG + v_wave
+w_total = w (from omega equation or YBJ)
+```
 
-For YBJ formulation, see equations in QG_YBJp.pdf.
+# Wave-Induced Horizontal Velocities
+The Stokes drift from the wave envelope:
+```
+u_wave = Re[(∂A*/∂x)A + A*(∂A/∂x)] = 2 Re[A* ∂A/∂x]
+v_wave = Re[(∂A*/∂y)A + A*(∂A/∂y)] = 2 Re[A* ∂A/∂y]
+```
+
+These wave corrections can be significant in regions of strong wave gradients.
+
+# Usage
+For Lagrangian particle advection, always use this function rather than
+`compute_velocities!` to include wave effects.
+
+# Arguments
+- `S::State`: State with ψ, A (input) and u, v, w (output)
+- `G::Grid`: Grid structure
+- `plans`: FFT plans
+- `params`: Model parameters
+- `compute_w::Bool`: If true, compute vertical velocity
+- `use_ybj_w::Bool`: If true, use YBJ formula for w
+
+# Returns
+Modified State with total velocity fields u, v, w.
 """
 function compute_total_velocities!(S::State, G::Grid; plans=nothing, params=nothing, compute_w=true, use_ybj_w=false)
     # First compute QG velocities

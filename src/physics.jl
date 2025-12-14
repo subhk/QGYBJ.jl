@@ -357,45 +357,129 @@ end
 """
     derive_density_profiles(par, G; N2_profile=nothing) -> (rho_ut, rho_st)
 
-Derive density-like vertical profiles from stratification:
-- Start with N²(z) (uses `N2_ut(par,G)` if not provided).
-- Integrate a simple Boussinesq relation dρ/dz = -N² (nondimensional g=ρ₀=1)
-  to obtain a monotonically varying background density ρ(z). Then normalize
-  ρ to unit mean and ensure positivity.
-- Construct `rho_ut[k] = ρ(z_k)` on unstaggered levels.
-- Construct staggered `rho_st` as vertical averages between adjacent levels
-  with boundary handling: `rho_st[1]=rho_ut[1]`, `rho_st[nz]=rho_ut[nz-1]`, and
-  `rho_st[k]=0.5(rho_ut[k]+rho_ut[k-1])` for interior 2..nz-1.
+Derive background density profiles from stratification N²(z).
 
-This heuristic mirrors the Fortran usage of `rho_ut`/`rho_st` in weighted
-vertical operators and provides a consistent default derived from N².
+# Physical Background
+In the ocean, density ρ(z) and stratification N²(z) are related by:
+
+    N² = -(g/ρ₀) ∂ρ/∂z
+
+Integrating: ρ(z) = ρ₀ - (ρ₀/g) ∫ N²(z') dz'
+
+This function could derive ρ(z) from N²(z) for non-Boussinesq dynamics.
+
+# Algorithm (if implemented)
+1. Get N²(z) from `N2_ut(par, G)` or provided profile
+2. Integrate: dρ/dz = -N² (nondimensional with g = ρ₀ = 1)
+3. Normalize to unit mean for numerical stability
+4. Interpolate to staggered grid for rho_st
+
+# Current Implementation
+Returns unity profiles (Boussinesq approximation). The QG-YBJ+ model
+assumes constant background density, with stratification effects entering
+only through a_ell = 1/N² in the elliptic operators.
+
+# Arguments
+- `par::QGParams`: Model parameters
+- `G::Grid`: Grid structure
+- `N2_profile`: Optional custom N² profile (uses N2_ut if nothing)
+
+# Returns
+- `rho_ut`: Density on unstaggered levels (length nz)
+- `rho_st`: Density on staggered levels (length nz)
+
+# Fortran Correspondence
+The Fortran test1 case also uses unity weights (Boussinesq).
 """
 function derive_density_profiles(par::QGParams, G::Grid; N2_profile=nothing)
-    # For the Fortran reference (test1), the background density weights used in
-    # vertical operators are unity (Boussinesq), while stratification enters via
-    # N² and the corresponding a_ell = 1/N². So return ones.
+    #= For the QG-YBJ+ model with Boussinesq approximation:
+    - Background density ρ = const = 1 (nondimensional)
+    - Stratification enters through a_ell = 1/N² in elliptic operators
+    - No density weighting in vertical derivatives
+
+    This matches the Fortran reference implementation (test1). =#
     nz = G.nz
     rho_ut = ones(eltype(G.z), nz)
     rho_st = ones(eltype(G.z), nz)
     return rho_ut, rho_st
 end
 
+#=
+================================================================================
+                        SPECTRAL DEALIASING
+================================================================================
+Pseudo-spectral methods require dealiasing to prevent errors from the
+nonlinear terms. The 2/3 rule is the standard approach.
+================================================================================
+=#
+
 """
     dealias_mask(G) -> Matrix{Bool}
 
-2/3-rule horizontal dealiasing mask `L(i,j)` with radial cutoff, modeled after
-the Fortran practice. True indicates mode is kept; false indicates it is
-truncated.
+Compute the 2/3-rule dealiasing mask for spectral space.
+
+# Physical Background
+In pseudo-spectral methods, nonlinear terms are computed by:
+1. Transform fields to physical space (inverse FFT)
+2. Compute products in physical space
+3. Transform back to spectral space (forward FFT)
+
+The problem: A product of two fields with max wavenumber k_max produces
+wavenumbers up to 2×k_max. With finite resolution, these high-k components
+"fold back" (alias) onto resolved wavenumbers, causing errors.
+
+# The 2/3 Rule
+To prevent aliasing from quadratic nonlinearities (e.g., u·∇q):
+- Keep only wavenumbers |k| ≤ (2/3) × k_Nyquist
+- Truncated modes: set to zero before computing nonlinear products
+- Result: product wavenumbers stay within (2/3)×2 = (4/3) < k_Nyquist
+
+This rule is exact for quadratic nonlinearities in 1D. For 2D with
+radial cutoff, it provides effective dealiasing.
+
+# Algorithm
+Uses radial (isotropic) cutoff:
+- k_max = min(nx, ny) / 3
+- Keep mode (i,j) if sqrt(kx² + ky²) ≤ k_max
+- More isotropic than rectangular truncation
+
+# Arguments
+- `G::Grid`: Grid with dimensions nx, ny
+
+# Returns
+Matrix{Bool} of size (nx, ny):
+- true = keep this wavenumber
+- false = truncate (set to zero)
+
+# Usage
+```julia
+mask = dealias_mask(G)
+q_hat .*= mask  # Zero out aliased modes
+```
+
+# Fortran Correspondence
+Matches `LL(i,j)` mask in the Fortran implementation.
 """
 function dealias_mask(G::Grid)
     nx, ny = G.nx, G.ny
     keep = falses(nx, ny)
-    # Radial 2/3 cutoff in index space
+
+    #= Radial 2/3 cutoff in wavenumber index space
+    k_max = N/3 where N = min(nx, ny)
+    This ensures isotropic dealiasing =#
     kmax = floor(Int, min(nx, ny) / 3)
+
     for j in 1:ny, i in 1:nx
+        #= Convert array index to wavenumber index (FFTW convention):
+        - Indices 1 to N/2: wavenumber 0 to N/2-1 (positive)
+        - Indices N/2+1 to N: wavenumber -N/2 to -1 (negative) =#
         ix = i-1; ix = ix <= nx÷2 ? ix : ix - nx
         jy = j-1; jy = jy <= ny÷2 ? jy : jy - ny
+
+        # Radial distance in wavenumber space
         r = sqrt(ix^2 + jy^2)
+
+        # Keep mode if within dealiasing radius
         keep[i,j] = (r <= kmax)
     end
     return keep
