@@ -71,8 +71,8 @@ if SERIAL_MODE
             fft_forward!(dst, src, plans)
             fft_backward!(dst2, dst, plans)
 
-            # FFTW ifft is unnormalized, so divide by n
-            dst2 ./= (32 * 32)
+            # FFTW.ifft is normalized (divides by N automatically)
+            # So no manual normalization needed
 
             @test isapprox(src, dst2, rtol=1e-10)
             println("  ✓ FFT roundtrip successful")
@@ -197,8 +197,8 @@ else
                 QGYBJ.fft_forward!(work_k, state.psi, plans)
                 QGYBJ.fft_backward!(work, work_k, plans)
 
-                # Normalize (PencilFFTs ifft is unnormalized)
-                work ./= (grid.nx * grid.ny)
+                # PencilFFTs ldiv! (used in fft_backward!) is normalized
+                # So no manual normalization needed
 
                 # Check roundtrip accuracy
                 parent_psi = parent(state.psi)
