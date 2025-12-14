@@ -57,6 +57,11 @@ STABILITY:
 - Robert-Asselin γ too large → excessive damping
 - Robert-Asselin γ too small → computational mode growth
 
+PENCILARRAY COMPATIBILITY:
+--------------------------
+All loops use local indexing with local_to_global() for wavenumber access.
+The vertical dimension (z) must be fully local for proper operation.
+
 ================================================================================
 =#
 
@@ -138,10 +143,23 @@ first_projection_step!(state, grid, params, plans; a=a, dealias_mask=L)
 ```
 """
 function first_projection_step!(S::State, G::Grid, par::QGParams, plans; a, dealias_mask=nothing)
-    #= Setup =#
-    L = isnothing(dealias_mask) ? trues(G.nx,G.ny) : dealias_mask
+    #= Setup - get local dimensions for PencilArray compatibility =#
+    q_arr = parent(S.q)
+    B_arr = parent(S.B)
+    psi_arr = parent(S.psi)
+    A_arr = parent(S.A)
+    C_arr = parent(S.C)
 
-    # Allocate tendency arrays
+    nx_local, ny_local, nz_local = size(q_arr)
+    nz = G.nz
+
+    # Verify z is fully local (required for vertical operations)
+    @assert nz_local == nz "Vertical dimension must be fully local for time stepping"
+
+    # Dealias mask - use global indices for lookup
+    L = isnothing(dealias_mask) ? trues(G.nx, G.ny) : dealias_mask
+
+    # Allocate tendency arrays (same size as local arrays)
     nqk  = similar(S.q)    # J(ψ, q) advection of PV
     nBRk = similar(S.B)    # J(ψ, BR) advection of wave real part
     nBIk = similar(S.B)    # J(ψ, BI) advection of wave imaginary part
@@ -152,9 +170,11 @@ function first_projection_step!(S::State, G::Grid, par::QGParams, plans; a, deal
     #= Split B into real and imaginary parts for computation
     The wave field B is complex; we work with BR = Re(B), BI = Im(B) =#
     BRk = similar(S.B); BIk = similar(S.B)
-    @inbounds for k in 1:G.nz, j in 1:G.ny, i in 1:G.nx
-        BRk[i,j,k] = Complex(real(S.B[i,j,k]), 0)
-        BIk[i,j,k] = Complex(imag(S.B[i,j,k]), 0)
+    BRk_arr = parent(BRk); BIk_arr = parent(BIk)
+
+    @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
+        BRk_arr[i,j,k] = Complex(real(B_arr[i,j,k]), 0)
+        BIk_arr[i,j,k] = Complex(imag(B_arr[i,j,k]), 0)
     end
 
     #= Step 1: Compute diagnostic fields ψ and velocities =#
@@ -197,19 +217,32 @@ function first_projection_step!(S::State, G::Grid, par::QGParams, plans; a, deal
 
     #= Store old fields for time stepping =#
     qok  = copy(S.q)
+    qok_arr = parent(qok)
     BRok = similar(S.B); BIok = similar(S.B)
-    @inbounds for k in 1:G.nz, j in 1:G.ny, i in 1:G.nx
-        BRok[i,j,k] = Complex(real(S.B[i,j,k]), 0)
-        BIok[i,j,k] = Complex(imag(S.B[i,j,k]), 0)
+    BRok_arr = parent(BRok); BIok_arr = parent(BIok)
+
+    @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
+        BRok_arr[i,j,k] = Complex(real(B_arr[i,j,k]), 0)
+        BIok_arr[i,j,k] = Complex(imag(B_arr[i,j,k]), 0)
     end
 
     #= Step 4: Forward Euler with integrating factors =#
     # The integrating factor handles hyperdiffusion exactly:
     # φ^(n+1) = [φ^n - dt × F] × exp(-λ×dt)
 
-    @inbounds for k in 1:G.nz, j in 1:G.ny, i in 1:G.nx
-        if L[i,j]
-            kx = G.kx[i]; ky = G.ky[j]; kh2 = G.kh2[i,j]
+    # Get parent arrays for tendency terms
+    nqk_arr = parent(nqk)
+    nBRk_arr = parent(nBRk); nBIk_arr = parent(nBIk)
+    rBRk_arr = parent(rBRk); rBIk_arr = parent(rBIk)
+    dqk_arr = parent(dqk)
+
+    @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
+        # Get global indices for wavenumber lookup
+        i_global = local_to_global(i, 1, G)
+        j_global = local_to_global(j, 2, G)
+
+        if L[i_global, j_global]
+            kx = G.kx[i_global]; ky = G.ky[j_global]; kh2 = G.kh2[i_global, j_global]
 
             # Integrating factors for hyperdiffusion
             If = int_factor(kx, ky, par; waves=false)   # For mean flow
@@ -218,10 +251,10 @@ function first_projection_step!(S::State, G::Grid, par::QGParams, plans; a, deal
             #= Update q (QGPV) =#
             if par.fixed_flow
                 # Keep q unchanged when mean flow is fixed
-                S.q[i,j,k] = qok[i,j,k]
+                q_arr[i,j,k] = qok_arr[i,j,k]
             else
                 # q^(n+1) = [q^n - dt×J(ψ,q) + dt×diffusion] × exp(-λ×dt)
-                S.q[i,j,k] = ( qok[i,j,k] - par.dt*nqk[i,j,k] + par.dt*dqk[i,j,k] ) * exp(-If)
+                q_arr[i,j,k] = ( qok_arr[i,j,k] - par.dt*nqk_arr[i,j,k] + par.dt*dqk_arr[i,j,k] ) * exp(-If)
             end
 
             #= Update B (wave envelope)
@@ -230,19 +263,19 @@ function first_projection_step!(S::State, G::Grid, par::QGParams, plans; a, deal
             In terms of real/imaginary parts:
                 ∂BR/∂t = -J(ψ,BR) - (kₕ²/2)AI + (1/2)BI×ζ
                 ∂BI/∂t = -J(ψ,BI) + (kₕ²/2)AR - (1/2)BR×ζ =#
-            BRnew = ( BRok[i,j,k] - par.dt*nBRk[i,j,k]
-                      - par.dt*0.5*kh2*Complex(imag(S.A[i,j,k]),0)
-                      + par.dt*0.5*rBIk[i,j,k] ) * exp(-Ifw)
-            BInew = ( BIok[i,j,k] - par.dt*nBIk[i,j,k]
-                      + par.dt*0.5*kh2*Complex(real(S.A[i,j,k]),0)
-                      - par.dt*0.5*rBRk[i,j,k] ) * exp(-Ifw)
+            BRnew = ( BRok_arr[i,j,k] - par.dt*nBRk_arr[i,j,k]
+                      - par.dt*0.5*kh2*Complex(imag(A_arr[i,j,k]),0)
+                      + par.dt*0.5*rBIk_arr[i,j,k] ) * exp(-Ifw)
+            BInew = ( BIok_arr[i,j,k] - par.dt*nBIk_arr[i,j,k]
+                      + par.dt*0.5*kh2*Complex(real(A_arr[i,j,k]),0)
+                      - par.dt*0.5*rBRk_arr[i,j,k] ) * exp(-Ifw)
 
             # Recombine into complex B
-            S.B[i,j,k] = Complex(real(BRnew), 0) + im*Complex(real(BInew), 0)
+            B_arr[i,j,k] = Complex(real(BRnew), 0) + im*Complex(real(BInew), 0)
         else
             # Zero out dealiased modes
-            S.q[i,j,k] = 0
-            S.B[i,j,k] = 0
+            q_arr[i,j,k] = 0
+            B_arr[i,j,k] = 0
         end
     end
 
@@ -251,22 +284,25 @@ function first_projection_step!(S::State, G::Grid, par::QGParams, plans; a, deal
     wave_feedback_enabled = !par.no_feedback && !par.no_wave_feedback
     if wave_feedback_enabled
         qwk = similar(S.q)
+        qwk_arr = parent(qwk)
 
         # Rebuild BR/BI from updated B
-        @inbounds for k in 1:G.nz, j in 1:G.ny, i in 1:G.nx
-            BRk[i,j,k] = Complex(real(S.B[i,j,k]), 0)
-            BIk[i,j,k] = Complex(imag(S.B[i,j,k]), 0)
+        @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
+            BRk_arr[i,j,k] = Complex(real(B_arr[i,j,k]), 0)
+            BIk_arr[i,j,k] = Complex(imag(B_arr[i,j,k]), 0)
         end
 
         # Compute qʷ from B
         compute_qw!(qwk, BRk, BIk, par, G, plans; Lmask=L)
 
         # Subtract from q
-        @inbounds for k in 1:G.nz, j in 1:G.ny, i in 1:G.nx
-            if L[i,j]
-                S.q[i,j,k] -= qwk[i,j,k]
+        @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
+            i_global = local_to_global(i, 1, G)
+            j_global = local_to_global(j, 2, G)
+            if L[i_global, j_global]
+                q_arr[i,j,k] -= qwk_arr[i,j,k]
             else
-                S.q[i,j,k] = 0
+                q_arr[i,j,k] = 0
             end
         end
     end
@@ -285,9 +321,10 @@ function first_projection_step!(S::State, G::Grid, par::QGParams, plans; a, deal
     else
         # Normal YBJ: Different procedure
         BRk2 = similar(S.B); BIk2 = similar(S.B)
-        @inbounds for k in 1:G.nz, j in 1:G.ny, i in 1:G.nx
-            BRk2[i,j,k] = Complex(real(S.B[i,j,k]), 0)
-            BIk2[i,j,k] = Complex(imag(S.B[i,j,k]), 0)
+        BRk2_arr = parent(BRk2); BIk2_arr = parent(BIk2)
+        @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
+            BRk2_arr[i,j,k] = Complex(real(B_arr[i,j,k]), 0)
+            BIk2_arr[i,j,k] = Complex(imag(B_arr[i,j,k]), 0)
         end
         sumB!(S.B, G; Lmask=L)  # Remove vertical mean
         sigma = compute_sigma(par, G, nBRk, nBIk, rBRk, rBIk; Lmask=L)
@@ -397,8 +434,23 @@ end
 """
 function leapfrog_step!(Snp1::State, Sn::State, Snm1::State,
                         G::Grid, par::QGParams, plans; a, dealias_mask=nothing)
-    nx, ny, nz = G.nx, G.ny, G.nz
-    L = isnothing(dealias_mask) ? trues(nx,ny) : dealias_mask
+    #= Setup - get local dimensions for PencilArray compatibility =#
+    qn_arr = parent(Sn.q)
+    Bn_arr = parent(Sn.B)
+    An_arr = parent(Sn.A)
+    qnm1_arr = parent(Snm1.q)
+    Bnm1_arr = parent(Snm1.B)
+    qnp1_arr = parent(Snp1.q)
+    Bnp1_arr = parent(Snp1.B)
+
+    nx_local, ny_local, nz_local = size(qn_arr)
+    nz = G.nz
+
+    # Verify z is fully local (required for vertical operations)
+    @assert nz_local == nz "Vertical dimension must be fully local for time stepping"
+
+    # Dealias mask - use global indices for lookup
+    L = isnothing(dealias_mask) ? trues(G.nx, G.ny) : dealias_mask
 
     #= Step 1: Update diagnostics for current state =#
     if !par.fixed_flow
@@ -416,9 +468,11 @@ function leapfrog_step!(Snp1::State, Sn::State, Snm1::State,
 
     # Split B into real/imaginary
     BRk = similar(Sn.B); BIk = similar(Sn.B)
-    @inbounds for k in 1:nz, j in 1:ny, i in 1:nx
-        BRk[i,j,k] = Complex(real(Sn.B[i,j,k]), 0)
-        BIk[i,j,k] = Complex(imag(Sn.B[i,j,k]), 0)
+    BRk_arr = parent(BRk); BIk_arr = parent(BIk)
+
+    @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
+        BRk_arr[i,j,k] = Complex(real(Bn_arr[i,j,k]), 0)
+        BIk_arr[i,j,k] = Complex(imag(Bn_arr[i,j,k]), 0)
     end
 
     # Compute tendencies
@@ -438,36 +492,48 @@ function leapfrog_step!(Snp1::State, Sn::State, Snm1::State,
     #= Step 4: Leapfrog update with integrating factors =#
     qtemp = similar(Sn.q)
     BRtemp = similar(Sn.B); BItemp = similar(Sn.B)
+    qtemp_arr = parent(qtemp)
+    BRtemp_arr = parent(BRtemp); BItemp_arr = parent(BItemp)
 
-    @inbounds for k in 1:nz, j in 1:ny, i in 1:nx
-        if L[i,j]
-            kx = G.kx[i]; ky = G.ky[j]; kh2 = G.kh2[i,j]
+    # Get parent arrays for tendency terms
+    nqk_arr = parent(nqk)
+    nBRk_arr = parent(nBRk); nBIk_arr = parent(nBIk)
+    rBRk_arr = parent(rBRk); rBIk_arr = parent(rBIk)
+    dqk_arr = parent(dqk)
+
+    @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
+        # Get global indices for wavenumber lookup
+        i_global = local_to_global(i, 1, G)
+        j_global = local_to_global(j, 2, G)
+
+        if L[i_global, j_global]
+            kx = G.kx[i_global]; ky = G.ky[j_global]; kh2 = G.kh2[i_global, j_global]
             If  = int_factor(kx, ky, par; waves=false)
             Ifw = int_factor(kx, ky, par; waves=true)
 
             #= Update q
             q^(n+1) = q^(n-1)×e^(-2λdt) - 2dt×J(ψ,q)^n×e^(-λdt) + 2dt×diff^(n-1)×e^(-2λdt) =#
             if par.fixed_flow
-                qtemp[i,j,k] = Sn.q[i,j,k]  # Keep unchanged
+                qtemp_arr[i,j,k] = qn_arr[i,j,k]  # Keep unchanged
             else
-                qtemp[i,j,k] = Snm1.q[i,j,k]*exp(-2If) -
-                               2*par.dt*nqk[i,j,k]*exp(-If) +
-                               2*par.dt*dqk[i,j,k]*exp(-2If)
+                qtemp_arr[i,j,k] = qnm1_arr[i,j,k]*exp(-2If) -
+                               2*par.dt*nqk_arr[i,j,k]*exp(-If) +
+                               2*par.dt*dqk_arr[i,j,k]*exp(-2If)
             end
 
             #= Update B (real and imaginary parts)
             BR^(n+1) = BR^(n-1)×e^(-2λdt) - 2dt×[J(ψ,BR) + (kₕ²/2)AI - (1/2)BI×ζ]×e^(-λdt)
             BI^(n+1) = BI^(n-1)×e^(-2λdt) - 2dt×[J(ψ,BI) - (kₕ²/2)AR + (1/2)BR×ζ]×e^(-λdt) =#
-            BRtemp[i,j,k] = Complex(real(Snm1.B[i,j,k]),0)*exp(-2Ifw) -
-                           2*par.dt*( nBRk[i,j,k] +
-                                     0.5*kh2*Complex(imag(Sn.A[i,j,k]),0) -
-                                     0.5*rBIk[i,j,k] )*exp(-Ifw)
-            BItemp[i,j,k] = Complex(imag(Snm1.B[i,j,k]),0)*exp(-2Ifw) -
-                           2*par.dt*( nBIk[i,j,k] -
-                                     0.5*kh2*Complex(real(Sn.A[i,j,k]),0) +
-                                     0.5*rBRk[i,j,k] )*exp(-Ifw)
+            BRtemp_arr[i,j,k] = Complex(real(Bnm1_arr[i,j,k]),0)*exp(-2Ifw) -
+                           2*par.dt*( nBRk_arr[i,j,k] +
+                                     0.5*kh2*Complex(imag(An_arr[i,j,k]),0) -
+                                     0.5*rBIk_arr[i,j,k] )*exp(-Ifw)
+            BItemp_arr[i,j,k] = Complex(imag(Bnm1_arr[i,j,k]),0)*exp(-2Ifw) -
+                           2*par.dt*( nBIk_arr[i,j,k] -
+                                     0.5*kh2*Complex(real(An_arr[i,j,k]),0) +
+                                     0.5*rBRk_arr[i,j,k] )*exp(-Ifw)
         else
-            qtemp[i,j,k] = 0; BRtemp[i,j,k] = 0; BItemp[i,j,k] = 0
+            qtemp_arr[i,j,k] = 0; BRtemp_arr[i,j,k] = 0; BItemp_arr[i,j,k] = 0
         end
     end
 
@@ -475,44 +541,53 @@ function leapfrog_step!(Snp1::State, Sn::State, Snm1::State,
     Damps the computational mode: φ̃^n = φ^n + γ(φ^(n-1) - 2φ^n + φ^(n+1))
     Store filtered values in Snm1 (they become the "n-1" for next step) =#
     γ = par.gamma
-    @inbounds for k in 1:nz, j in 1:ny, i in 1:nx
-        if L[i,j]
+    @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
+        # Get global indices for dealias mask lookup
+        i_global = local_to_global(i, 1, G)
+        j_global = local_to_global(j, 2, G)
+
+        if L[i_global, j_global]
             # Filter q
-            Snm1.q[i,j,k] = Sn.q[i,j,k] + γ*( Snm1.q[i,j,k] - 2Sn.q[i,j,k] + qtemp[i,j,k] )
+            qnm1_arr[i,j,k] = qn_arr[i,j,k] + γ*( qnm1_arr[i,j,k] - 2qn_arr[i,j,k] + qtemp_arr[i,j,k] )
 
             # Filter B
-            Bnp1 = Complex(real(BRtemp[i,j,k]),0) + im*Complex(real(BItemp[i,j,k]),0)
-            Snm1.B[i,j,k] = Sn.B[i,j,k] + γ*( Snm1.B[i,j,k] - 2Sn.B[i,j,k] + Bnp1 )
+            Bnp1 = Complex(real(BRtemp_arr[i,j,k]),0) + im*Complex(real(BItemp_arr[i,j,k]),0)
+            Bnm1_arr[i,j,k] = Bn_arr[i,j,k] + γ*( Bnm1_arr[i,j,k] - 2Bn_arr[i,j,k] + Bnp1 )
         else
-            Snm1.q[i,j,k] = 0; Snm1.B[i,j,k] = 0
+            qnm1_arr[i,j,k] = 0; Bnm1_arr[i,j,k] = 0
         end
     end
 
     #= Step 6: Accept the new solution =#
     Snp1.q .= qtemp
-    @inbounds for k in 1:nz, j in 1:ny, i in 1:nx
-        Snp1.B[i,j,k] = Complex(real(BRtemp[i,j,k]),0) + im*Complex(real(BItemp[i,j,k]),0)
+    @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
+        qnp1_arr[i,j,k] = qtemp_arr[i,j,k]
+        Bnp1_arr[i,j,k] = Complex(real(BRtemp_arr[i,j,k]),0) + im*Complex(real(BItemp_arr[i,j,k]),0)
     end
 
     #= Step 7: Wave feedback on mean flow =#
     wave_feedback_enabled = !par.no_feedback && !par.no_wave_feedback
     if wave_feedback_enabled
         qwk = similar(Snp1.q)
+        qwk_arr = parent(qwk)
 
         # Rebuild BR/BI from updated B
         BRk2 = similar(Snp1.B); BIk2 = similar(Snp1.B)
-        @inbounds for kk in 1:nz, jj in 1:ny, ii in 1:nx
-            BRk2[ii,jj,kk] = Complex(real(Snp1.B[ii,jj,kk]),0)
-            BIk2[ii,jj,kk] = Complex(imag(Snp1.B[ii,jj,kk]),0)
+        BRk2_arr = parent(BRk2); BIk2_arr = parent(BIk2)
+        @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
+            BRk2_arr[i,j,k] = Complex(real(Bnp1_arr[i,j,k]),0)
+            BIk2_arr[i,j,k] = Complex(imag(Bnp1_arr[i,j,k]),0)
         end
 
         compute_qw!(qwk, BRk2, BIk2, par, G, plans; Lmask=L)
 
-        @inbounds for k in 1:nz, j in 1:ny, i in 1:nx
-            if L[i,j]
-                Snp1.q[i,j,k] -= qwk[i,j,k]
+        @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
+            i_global = local_to_global(i, 1, G)
+            j_global = local_to_global(j, 2, G)
+            if L[i_global, j_global]
+                qnp1_arr[i,j,k] -= qwk_arr[i,j,k]
             else
-                Snp1.q[i,j,k] = 0
+                qnp1_arr[i,j,k] = 0
             end
         end
     end
@@ -530,9 +605,10 @@ function leapfrog_step!(Snp1::State, Sn::State, Snm1::State,
     else
         # Normal YBJ path
         BRk3 = similar(Snp1.B); BIk3 = similar(Snp1.B)
-        @inbounds for kk in 1:nz, jj in 1:ny, ii in 1:nx
-            BRk3[ii,jj,kk] = Complex(real(Snp1.B[ii,jj,kk]), 0)
-            BIk3[ii,jj,kk] = Complex(imag(Snp1.B[ii,jj,kk]), 0)
+        BRk3_arr = parent(BRk3); BIk3_arr = parent(BIk3)
+        @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
+            BRk3_arr[i,j,k] = Complex(real(Bnp1_arr[i,j,k]), 0)
+            BIk3_arr[i,j,k] = Complex(imag(Bnp1_arr[i,j,k]), 0)
         end
         sumB!(Snp1.B, G; Lmask=L)
         sigma2 = compute_sigma(par, G, nBRk, nBIk, rBRk, rBIk; Lmask=L)
