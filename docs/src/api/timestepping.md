@@ -84,72 +84,140 @@ The integrating factor `e^{-λΔt}` handles hyperdiffusion exactly.
 
 ## Tendency Computation
 
-### compute_rhs!
+Each time step computes the following tendencies:
+
+**QG Potential Vorticity:**
+```math
+F_q = -J(\psi, q) + \nu_z \frac{\partial^2 q}{\partial z^2}
+```
+
+**Wave Envelope (real/imaginary parts):**
+```math
+F_{BR} = -J(\psi, BR) - \frac{k_h^2}{2}A_I + \frac{1}{2}BI \times \zeta
+```
+```math
+F_{BI} = -J(\psi, BI) + \frac{k_h^2}{2}A_R - \frac{1}{2}BR \times \zeta
+```
+
+### Nonlinear Terms
 
 ```@docs
-compute_rhs_qg!
-compute_rhs_wave!
+convol_waqg!
+refraction_waqg!
 ```
 
-Computes the right-hand side tendencies:
+**Advection:** `convol_waqg!` computes J(ψ, q), J(ψ, BR), J(ψ, BI)
 
-**QG:**
-```math
-F_q = -J(\psi, q) - J(\psi, q^w) + \text{dissipation}
+**Refraction:** `refraction_waqg!` computes B × ζ where ζ = ∇²ψ
+
+### Vertical Diffusion
+
+```@docs
+dissipation_q_nv!
 ```
 
-**Wave:**
-```math
-F_B = -J(\psi, B) - B\frac{\partial\zeta}{\partial t} - i\frac{N^2}{2f_0}\nabla^2 A + \text{dissipation}
-```
+Computes νz ∂²q/∂z² using the tridiagonal solver. Automatically handles 2D decomposition transposes.
 
 ## Integrating Factors
 
 ### Purpose
 
-For stiff diffusion terms, we transform:
+For stiff hyperdiffusion terms, we use an integrating factor approach:
 ```math
-\tilde{q} = q \cdot e^{\nu k^{2p} t}
+\tilde{\phi} = \phi \times e^{\nu k^{2p} t}
 ```
 
-### Functions
+This allows exact treatment of the linear diffusion while using explicit time stepping.
+
+### Function
 
 ```@docs
-compute_integrating_factors
-apply_integrating_factor!
-remove_integrating_factor!
+int_factor
 ```
 
 **Usage:**
 ```julia
-# Setup (once)
-IF_q, IF_B = compute_integrating_factors(grid, params, dt)
+# Compute factor for a spectral mode
+If = int_factor(kx, ky, params; waves=false)   # For mean flow (q)
+Ifw = int_factor(kx, ky, params; waves=true)   # For waves (B)
 
-# Each step
-apply_integrating_factor!(q, IF_q)
-# ... time step ...
-remove_integrating_factor!(q, IF_q)
+# Apply in time stepping
+q_new = q_old * exp(-2*If) - 2*dt * tendency * exp(-If)   # Leapfrog
+q_new = q_old * exp(-If) - dt * tendency                    # Euler
 ```
 
-## Startup Procedure
+## Complete Simulation Loop
 
-### First Steps
-
-```@docs
-startup_ab3!
-```
-
-AB3 requires history. For the first two steps:
-
-1. **Step 1**: Forward Euler
-2. **Step 2**: AB2
+### Setup and Run
 
 ```julia
-# Automatic handling
-for step = 1:nsteps
-    timestep!(state, grid, params, work, plans, a_ell, dt)
-    # First 2 steps use Euler/AB2 automatically
+using QGYBJ
+
+# Initialize
+params = default_params(nx=64, ny=64, nz=32)
+grid = init_grid(params)
+plans = plan_transforms!(grid)
+a_ell = a_ell_ut(params, grid)
+L = dealias_mask(params, grid)
+
+# Create three state arrays for leapfrog
+Snm1 = init_state(grid)  # n-1
+Sn = init_state(grid)    # n
+Snp1 = init_state(grid)  # n+1
+
+# Initialize with random fields
+init_random_psi!(Sn, grid, params, plans; a=a_ell)
+
+# Projection step (Forward Euler initialization)
+first_projection_step!(Sn, grid, params, plans; a=a_ell, dealias_mask=L)
+
+# Copy for n-1 state
+copy_state!(Snm1, Sn)
+
+# Main time loop
+for iter in 1:nsteps
+    leapfrog_step!(Snp1, Sn, Snm1, grid, params, plans; a=a_ell, dealias_mask=L)
+
+    # Rotate time levels
+    Snm1, Sn, Snp1 = Sn, Snp1, Snm1
 end
+```
+
+### Parallel Mode (2D Decomposition)
+
+```julia
+using MPI, PencilArrays, PencilFFTs, QGYBJ
+
+MPI.Init()
+mpi_config = QGYBJ.setup_mpi_environment()
+
+# Initialize with MPI
+params = default_params(nx=256, ny=256, nz=128)
+grid = QGYBJ.init_mpi_grid(params, mpi_config)
+plans = QGYBJ.plan_mpi_transforms(grid, mpi_config)
+workspace = QGYBJ.init_mpi_workspace(grid, mpi_config)
+
+a_ell = a_ell_ut(params, grid)
+L = dealias_mask(params, grid)
+
+# Create states
+Snm1 = QGYBJ.init_mpi_state(grid, mpi_config)
+Sn = QGYBJ.init_mpi_state(grid, mpi_config)
+Snp1 = QGYBJ.init_mpi_state(grid, mpi_config)
+
+# Initialize
+init_random_psi!(Sn, grid, params, plans; a=a_ell)
+first_projection_step!(Sn, grid, params, plans; a=a_ell, dealias_mask=L, workspace=workspace)
+copy_state!(Snm1, Sn)
+
+# Main loop with workspace for 2D decomposition
+for iter in 1:nsteps
+    leapfrog_step!(Snp1, Sn, Snm1, grid, params, plans;
+                   a=a_ell, dealias_mask=L, workspace=workspace)
+    Snm1, Sn, Snp1 = Sn, Snp1, Snm1
+end
+
+MPI.Finalize()
 ```
 
 ## CFL Condition
