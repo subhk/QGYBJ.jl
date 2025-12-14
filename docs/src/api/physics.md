@@ -44,6 +44,12 @@ invert_B_to_A!(state, grid, params, a_ell; workspace=workspace)
 # Updates state.A from state.B
 ```
 
+### Helmholtz Solver
+
+```@docs
+invert_helmholtz!
+```
+
 ## Nonlinear Terms
 
 ### Jacobian
@@ -54,22 +60,13 @@ jacobian_spectral!
 
 **Computes:** ``J(a, b) = \frac{\partial a}{\partial x}\frac{\partial b}{\partial y} - \frac{\partial a}{\partial y}\frac{\partial b}{\partial x}``
 
-**Usage:**
-```julia
-jacobian_spectral!(Jab, a, b, grid, work, plans)
-# Jab contains spectral Jacobian
-```
-
-### Advection
+### Wave Advection
 
 ```@docs
-convol_qg!
 convol_waqg!
 ```
 
-**QG Advection:** ``J(\psi, q)`` - Advection of PV by streamfunction
-
-**Wave Advection:** ``J(\psi, B)`` - Advection of wave envelope
+**Wave Advection:** ``J(\psi, B)`` - Advection of wave envelope by streamfunction
 
 ### Refraction
 
@@ -77,15 +74,15 @@ convol_waqg!
 refraction_waqg!
 ```
 
-**Computes:** ``B \frac{\partial\zeta}{\partial t}`` - Wave refraction by vorticity changes
+**Computes:** ``B \zeta`` - Wave refraction by vorticity
 
 ### Wave Feedback
 
 ```@docs
-wavefb!
+compute_qw!
 ```
 
-**Computes:** ``q^w = \frac{1}{2}\nabla_h^2|A|^2 - \frac{1}{2}\frac{\partial^2|A|^2}{\partial z^2}``
+**Computes:** ``q^w`` - Wave feedback on mean flow (Xie & Vanneste 2015)
 
 ## Velocity Computation
 
@@ -97,49 +94,32 @@ compute_velocities!
 - ``u = -\partial\psi/\partial y``
 - ``v = \partial\psi/\partial x``
 
-**Usage:**
-```julia
-# Basic usage
-compute_velocities!(state, grid; plans=plans, params=params)
-
-# With vertical velocity (omega equation)
-compute_velocities!(state, grid; plans=plans, params=params, compute_w=true)
-
-# Parallel mode with workspace
-compute_velocities!(state, grid; plans=plans, params=params, workspace=workspace)
-# Updates state.u, state.v, and optionally state.w from state.psi
-```
-
-## Dispersion
-
-### Wave Dispersion
+### Vertical Velocity
 
 ```@docs
-wave_dispersion!
+compute_vertical_velocity!
 ```
 
-**Computes:** ``-i\frac{N^2}{2f_0}\nabla_h^2 A``
+### Total Velocities
 
-This term causes horizontal spreading of wave packets.
+```@docs
+compute_total_velocities!
+```
 
 ## Dissipation
 
-### Hyperdiffusion
+### Vertical Diffusion
 
 ```@docs
-apply_dissipation!
+dissipation_q_nv!
 ```
 
-**Applies:**
-```math
-\mathcal{D} = -\nu_{h1}(-\nabla^2)^{p_1} - \nu_{h2}(-\nabla^2)^{p_2} - \nu_z\frac{\partial^2}{\partial z^2}
-```
+**Applies:** Vertical diffusion term ``\nu_z \partial^2 q / \partial z^2``
 
-### Integrating Factors
+### Integrating Factor
 
 ```@docs
-compute_integrating_factors
-apply_integrating_factor!
+int_factor
 ```
 
 For handling stiff diffusion terms efficiently.
@@ -149,35 +129,14 @@ For handling stiff diffusion terms efficiently.
 ### Energy
 
 ```@docs
-flow_kinetic_energy
-flow_potential_energy
-flow_total_energy
 wave_energy
-```
-
-### Enstrophy
-
-```@docs
-relative_enstrophy
-potential_enstrophy
-```
-
-### Spectra
-
-```@docs
-horizontal_energy_spectrum
-vertical_energy_spectrum
+flow_kinetic_energy
 ```
 
 ### Omega Equation
 
 ```@docs
-compute_omega
-```
-
-**Solves:**
-```math
-\nabla^2 w + \frac{N^2}{f_0^2}\frac{\partial^2 w}{\partial z^2} = 2J\left(\frac{\partial\psi}{\partial z}, \nabla^2\psi\right)
+omega_eqn_rhs!
 ```
 
 ## Transform Functions
@@ -201,54 +160,17 @@ Spectral space → Real space
 ### Dealiasing
 
 ```@docs
-apply_dealias!
+dealias_mask
 ```
 
-Removes aliased modes using 2/3 rule.
+Creates dealiasing mask using 2/3 rule.
 
-## Initialization Functions
-
-### Flow Initialization
+## YBJ Normal Mode Functions
 
 ```@docs
-initialize_random_flow!
-initialize_vortex!
-initialize_from_spectrum!
-```
-
-### Wave Initialization
-
-```@docs
-initialize_random_waves!
-initialize_plane_wave!
-initialize_wave_packet!
-```
-
-## Utility Functions
-
-### Gradients
-
-```@docs
-compute_gradient_x!
-compute_gradient_y!
-compute_gradient_z!
-horizontal_laplacian!
-```
-
-### Interpolation
-
-```@docs
-interpolate_to_point
-interpolate_to_particles!
-```
-
-### Statistics
-
-```@docs
-domain_average
-horizontal_mean
-vertical_mean
-compute_rms
+sumB!
+compute_sigma
+compute_A!
 ```
 
 ## Function Signatures Summary
@@ -256,11 +178,11 @@ compute_rms
 | Function | Input | Output | In-place |
 |:---------|:------|:-------|:---------|
 | `invert_q_to_psi!` | q | psi | Yes |
-| `invert_B_to_A!` | B | A | Yes |
+| `invert_B_to_A!` | B | A, C | Yes |
 | `jacobian_spectral!` | a, b | J(a,b) | Yes |
 | `compute_velocities!` | psi | u, v | Yes |
 | `flow_kinetic_energy` | u, v | scalar | No |
-| `wave_energy` | B, A | (E_B, E_A) | No |
+| `wave_energy` | B, A | scalar | No |
 
 ## Performance Notes
 

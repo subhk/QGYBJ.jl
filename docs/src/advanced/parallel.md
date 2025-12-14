@@ -515,10 +515,11 @@ mpi_barrier
 mpi_reduce_sum
 transpose_to_z_pencil!
 transpose_to_xy_pencil!
-local_to_global
+local_to_global_xy
 local_to_global_z
-get_local_range
+get_local_range_xy
 get_local_range_z
 allocate_xy_pencil
 allocate_z_pencil
+local_indices
 ```

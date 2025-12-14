@@ -330,17 +330,26 @@ has_nan = any(isnan, parent(state.psi))
 
 ## API Reference
 
+### Grid Initialization
+
 ```@docs
-Grid
-State
 init_grid
+compute_wavenumbers!
+```
+
+### State Initialization
+
+```@docs
 init_state
 allocate_field
-compute_wavenumbers!
+```
+
+### Index Mapping Functions
+
+```@docs
 get_local_range
 local_to_global
 get_local_dims
-is_parallel_array
 get_kx
 get_ky
 get_kh2

@@ -128,38 +128,113 @@ Install and load these packages first:
     mpi_config = QGYBJ.setup_mpi_environment()
 """
 
+"""
+    setup_mpi_environment(; topology=nothing)
+
+Initialize MPI and return configuration for parallel execution.
+
+Requires MPI.jl, PencilArrays.jl, and PencilFFTs.jl to be loaded.
+Uses 2D pencil decomposition for optimal scalability.
+
+# Keyword Arguments
+- `topology`: Optional tuple (px, py) for process grid. If not specified,
+  computed automatically to be as square as possible.
+
+# Example
+```julia
+using MPI, PencilArrays, PencilFFTs, QGYBJ
+MPI.Init()
+mpi_config = setup_mpi_environment()
+```
+"""
 function setup_mpi_environment(; kwargs...)
     error(MPI_ERROR_MSG)
 end
 
+"""
+    init_mpi_grid(params::QGParams, mpi_config)
+
+Initialize a Grid with MPI-distributed arrays using 2D PencilArrays decomposition.
+
+# Arguments
+- `params`: Model parameters
+- `mpi_config`: MPI configuration from `setup_mpi_environment()`
+
+# Returns
+Grid with distributed arrays in xy-pencil configuration.
+"""
 function init_mpi_grid(params, mpi_config)
     error(MPI_ERROR_MSG)
 end
 
+"""
+    init_mpi_state(grid, mpi_config; T=Float64)
+
+Initialize a State with MPI-distributed PencilArrays.
+
+All fields are allocated as PencilArrays using the grid's xy-pencil decomposition.
+"""
 function init_mpi_state(grid, mpi_config; kwargs...)
     error(MPI_ERROR_MSG)
 end
 
+"""
+    plan_mpi_transforms(grid, mpi_config)
+
+Create PencilFFTs plans for parallel 2D horizontal FFT execution.
+
+Returns plans that handle transposes between pencil configurations automatically.
+"""
 function plan_mpi_transforms(grid, mpi_config)
     error(MPI_ERROR_MSG)
 end
 
+"""
+    gather_to_root(arr, grid, mpi_config)
+
+Gather a distributed PencilArray to the root process.
+
+Returns the full array on rank 0, `nothing` on other ranks.
+"""
 function gather_to_root(arr, grid, mpi_config)
     error(MPI_ERROR_MSG)
 end
 
+"""
+    scatter_from_root(arr, grid, mpi_config)
+
+Scatter an array from root to all processes as PencilArrays.
+"""
 function scatter_from_root(arr, grid, mpi_config)
     error(MPI_ERROR_MSG)
 end
 
+"""
+    mpi_barrier(mpi_config)
+
+Synchronize all MPI processes.
+"""
 function mpi_barrier(mpi_config)
     error(MPI_ERROR_MSG)
 end
 
+"""
+    mpi_reduce_sum(val, mpi_config)
+
+Sum a value across all MPI processes using Allreduce.
+"""
 function mpi_reduce_sum(val, mpi_config)
     error(MPI_ERROR_MSG)
 end
 
+"""
+    local_indices(grid)
+
+Get the local index ranges for the current process.
+
+In serial mode, returns full grid ranges. In MPI mode, returns
+the local portion owned by this process (xy-pencil configuration).
+"""
 function local_indices(grid)
     # This one can work in serial mode - return full range
     if hasproperty(grid, :decomp) && grid.decomp === nothing
@@ -170,20 +245,48 @@ function local_indices(grid)
     error(MPI_ERROR_MSG)
 end
 
+"""
+    write_mpi_field(filename, varname, arr, grid, mpi_config)
+
+Write a distributed field to file (gathers to root first).
+"""
 function write_mpi_field(filename, varname, arr, grid, mpi_config)
     error(MPI_ERROR_MSG)
 end
 
+"""
+    init_mpi_random_field!(arr, grid, amplitude, seed_offset=0)
+
+Initialize a PencilArray with deterministic random values.
+
+Uses hash-based seeding to ensure reproducibility across different process counts.
+"""
 function init_mpi_random_field!(arr, grid, amplitude, seed_offset=0)
     error(MPI_ERROR_MSG)
 end
 
+"""
+    init_mpi_workspace(grid, mpi_config; T=Float64)
+
+Initialize workspace arrays for transpose operations.
+
+Returns z-pencil arrays used for vertical operations (tridiagonal solves,
+vertical derivatives).
+"""
 function init_mpi_workspace(grid, mpi_config; kwargs...)
     error(MPI_ERROR_MSG)
 end
 
-# 2D decomposition functions - transpose operations
-# These stubs support serial mode (when grid.decomp is nothing or doesn't exist)
+"""
+    transpose_to_z_pencil!(dst, src, grid)
+
+Transpose data from xy-pencil to z-pencil configuration.
+
+After this operation, z is fully local on each process, enabling
+vertical operations like tridiagonal solves and vertical derivatives.
+
+In serial mode, this is a simple copy operation.
+"""
 function transpose_to_z_pencil!(dst, src, grid)
     # Serial mode - just copy
     if !hasproperty(grid, :decomp) || grid.decomp === nothing
@@ -193,6 +296,15 @@ function transpose_to_z_pencil!(dst, src, grid)
     error(MPI_ERROR_MSG)
 end
 
+"""
+    transpose_to_xy_pencil!(dst, src, grid)
+
+Transpose data from z-pencil to xy-pencil configuration.
+
+Use this after vertical operations to return to the FFT-ready layout.
+
+In serial mode, this is a simple copy operation.
+"""
 function transpose_to_xy_pencil!(dst, src, grid)
     # Serial mode - just copy
     if !hasproperty(grid, :decomp) || grid.decomp === nothing
@@ -202,7 +314,14 @@ function transpose_to_xy_pencil!(dst, src, grid)
     error(MPI_ERROR_MSG)
 end
 
-# 2D decomposition functions - local range accessors
+"""
+    get_local_range_xy(grid)
+
+Get local index ranges for xy-pencil configuration (used for FFTs).
+
+Returns a tuple of three UnitRanges: `(x_range, y_range, z_range)`.
+In serial mode, returns full grid ranges.
+"""
 function get_local_range_xy(grid)
     if !hasproperty(grid, :decomp) || grid.decomp === nothing
         return (1:grid.nx, 1:grid.ny, 1:grid.nz)
@@ -210,6 +329,14 @@ function get_local_range_xy(grid)
     error(MPI_ERROR_MSG)
 end
 
+"""
+    get_local_range_z(grid)
+
+Get local index ranges for z-pencil configuration (used for vertical operations).
+
+Returns a tuple of three UnitRanges: `(x_range, y_range, z_range)`.
+In serial mode, returns full grid ranges.
+"""
 function get_local_range_z(grid)
     if !hasproperty(grid, :decomp) || grid.decomp === nothing
         return (1:grid.nx, 1:grid.ny, 1:grid.nz)
@@ -217,6 +344,16 @@ function get_local_range_z(grid)
     error(MPI_ERROR_MSG)
 end
 
+"""
+    local_to_global_xy(local_idx, dim, grid)
+
+Convert local index to global index for xy-pencil configuration.
+
+# Arguments
+- `local_idx`: Local index on this process
+- `dim`: Dimension (1=x, 2=y, 3=z)
+- `grid`: Grid structure
+"""
 function local_to_global_xy(local_idx::Int, dim::Int, grid)
     if !hasproperty(grid, :decomp) || grid.decomp === nothing
         return local_idx
@@ -224,6 +361,16 @@ function local_to_global_xy(local_idx::Int, dim::Int, grid)
     error(MPI_ERROR_MSG)
 end
 
+"""
+    local_to_global_z(local_idx, dim, grid)
+
+Convert local index to global index for z-pencil configuration.
+
+# Arguments
+- `local_idx`: Local index on this process
+- `dim`: Dimension (1=x, 2=y, 3=z)
+- `grid`: Grid structure
+"""
 function local_to_global_z(local_idx::Int, dim::Int, grid)
     if !hasproperty(grid, :decomp) || grid.decomp === nothing
         return local_idx
@@ -231,7 +378,16 @@ function local_to_global_z(local_idx::Int, dim::Int, grid)
     error(MPI_ERROR_MSG)
 end
 
-# 2D decomposition functions - pencil allocation
+"""
+    allocate_z_pencil(grid, T=ComplexF64)
+
+Allocate an array in z-pencil configuration for vertical operations.
+
+In z-pencil configuration, z is fully local on each process, enabling
+vertical operations like tridiagonal solves.
+
+In serial mode, returns a standard 3D array.
+"""
 function allocate_z_pencil(grid, ::Type{T}=ComplexF64) where T
     if !hasproperty(grid, :decomp) || grid.decomp === nothing
         return zeros(T, grid.nx, grid.ny, grid.nz)
@@ -239,6 +395,15 @@ function allocate_z_pencil(grid, ::Type{T}=ComplexF64) where T
     error(MPI_ERROR_MSG)
 end
 
+"""
+    allocate_xy_pencil(grid, T=ComplexF64)
+
+Allocate an array in xy-pencil configuration for horizontal operations.
+
+In xy-pencil configuration, data is ready for horizontal FFTs.
+
+In serial mode, returns a standard 3D array.
+"""
 function allocate_xy_pencil(grid, ::Type{T}=ComplexF64) where T
     if !hasproperty(grid, :decomp) || grid.decomp === nothing
         return zeros(T, grid.nx, grid.ny, grid.nz)

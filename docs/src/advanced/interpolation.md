@@ -247,12 +247,6 @@ end
 
 ## API Reference
 
-```@docs
-interpolate
-interpolate_batch!
-interpolate_spectral
-interpolate_horizontal
-interpolate_vertical
-find_cell
-regrid
-```
+The interpolation functionality is provided through the particle advection system.
+See [`interpolate_velocity_at_position`](@ref) in the particles module for the main
+interpolation interface used for Lagrangian particle tracking.

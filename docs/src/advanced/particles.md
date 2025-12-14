@@ -393,9 +393,12 @@ end
 ## API Reference
 
 ```@docs
-create_particles
+ParticleConfig
+ParticleState
+ParticleTracker
+create_particle_config
+initialize_particles!
 advect_particles!
-interpolate_to_particles!
-particle_dispersion
-lagrangian_diffusivity
+interpolate_velocity_at_position
+write_particle_trajectories
 ```

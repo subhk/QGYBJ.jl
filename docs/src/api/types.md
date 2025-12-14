@@ -149,24 +149,6 @@ u = state.u        # size (nx, ny, nz)
 v = state.v        # size (nx, ny, nz)
 ```
 
-## Work Arrays
-
-Pre-allocated temporary arrays for computations.
-
-```@docs
-WorkArrays
-```
-
-### Usage
-
-```julia
-# Create work arrays
-work = create_work_arrays(grid)
-
-# Used internally by timestep
-timestep!(state, grid, params, work, plans, a_ell, dt)
-```
-
 ## FFT Plans
 
 FFTW plan structures for efficient transforms.
@@ -192,24 +174,20 @@ plans = plan_transforms!(grid)
 | `plan_fft` | Forward | Real → Complex |
 | `plan_ifft` | Backward | Complex → Real |
 
-## Elliptic Matrices
+## Setup Model
 
-Pre-computed matrices for elliptic inversions.
-
-```@docs
-EllipticMatrices
-```
-
-### Usage
+The `setup_model` function is the recommended way to initialize all components:
 
 ```julia
-# Setup once
-a_ell = setup_elliptic_matrices(grid, params)
-
-# Use in time stepping
-invert_q_to_psi!(state, grid, params, a_ell)
-invert_B_to_A!(state, grid, params, a_ell)
+par = default_params(nx=64, ny=64, nz=32)
+G, S, plans, a = setup_model(; par)
 ```
+
+This returns:
+- `G`: Grid structure
+- `S`: State structure
+- `plans`: FFT plans
+- `a`: a_ell coefficient array for elliptic inversions
 
 ## Type Hierarchy
 
