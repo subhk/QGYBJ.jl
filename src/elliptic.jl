@@ -400,11 +400,18 @@ invert_B_to_A!(state, grid, params, a_vec)
 ```
 """
 function invert_B_to_A!(S::State, G::Grid, par, a::AbstractVector)
-    nx, ny, nz = G.nx, G.ny, G.nz
+    nz = G.nz
 
-    A = S.A   # Output: wave amplitude
-    B = S.B   # Input: evolved YBJ+ field
-    C = S.C   # Output: A_z (vertical derivative)
+    # Get underlying arrays (works for both Array and PencilArray)
+    A_arr = parent(S.A)   # Output: wave amplitude
+    B_arr = parent(S.B)   # Input: evolved YBJ+ field
+    C_arr = parent(S.C)   # Output: A_z (vertical derivative)
+
+    # Get local dimensions (with 1D y-decomposition: x and z are fully local)
+    nx_local, ny_local, nz_local = size(A_arr)
+
+    # Verify z is fully local
+    @assert nz_local == nz "Vertical dimension must be fully local"
 
     # Tridiagonal diagonals
     dl = zeros(eltype(a), nz)
@@ -418,13 +425,21 @@ function invert_B_to_A!(S::State, G::Grid, par, a::AbstractVector)
     r_ut = isdefined(PARENT, :rho_ut) ? PARENT.rho_ut(par, G) : ones(eltype(a), nz)
     r_st = isdefined(PARENT, :rho_st) ? PARENT.rho_st(par, G) : ones(eltype(a), nz)
 
-    for j in 1:ny, i in 1:nx
-        kh2 = G.kh2[i,j]
+    for j_local in 1:ny_local, i_local in 1:nx_local
+        # Get global indices for wavenumber lookup
+        i_global = local_to_global(i_local, 1, G)
+        j_global = local_to_global(j_local, 2, G)
+
+        kx_val = G.kx[i_global]
+        ky_val = G.ky[j_global]
+        kh2 = kx_val^2 + ky_val^2
 
         # Handle kh² = 0 mode
         if kh2 == 0
-            @inbounds A[i,j,:] .= 0
-            @inbounds C[i,j,:] .= 0
+            @inbounds for k in 1:nz
+                A_arr[i_local, j_local, k] = 0
+                C_arr[i_local, j_local, k] = 0
+            end
             continue
         end
 
@@ -450,11 +465,11 @@ function invert_B_to_A!(S::State, G::Grid, par, a::AbstractVector)
 
         #= RHS = dz² × Bu × B
         The Bu factor comes from the nondimensionalization =#
-        rhs_r = similar(dl)
-        rhs_i = similar(dl)
+        rhs_r = zeros(eltype(a), nz)
+        rhs_i = zeros(eltype(a), nz)
         @inbounds for k in 1:nz
-            rhs_r[k] = Δ2 * par.Bu * real(B[i,j,k])
-            rhs_i[k] = Δ2 * par.Bu * imag(B[i,j,k])
+            rhs_r[k] = Δ2 * par.Bu * real(B_arr[i_local, j_local, k])
+            rhs_i[k] = Δ2 * par.Bu * imag(B_arr[i_local, j_local, k])
         end
 
         # Solve for A
@@ -464,16 +479,16 @@ function invert_B_to_A!(S::State, G::Grid, par, a::AbstractVector)
         thomas_solve!(soli, dl, d, du, rhs_i)
 
         @inbounds for k in 1:nz
-            A[i,j,k] = solr[k] + im*soli[k]
+            A_arr[i_local, j_local, k] = solr[k] + im*soli[k]
         end
 
         #= Compute C = A_z using forward differences
         This is used for wave vertical velocity computation =#
         @inbounds for k in 1:nz-1
-            C[i,j,k] = (A[i,j,k+1] - A[i,j,k])/Δ
+            C_arr[i_local, j_local, k] = (A_arr[i_local, j_local, k+1] - A_arr[i_local, j_local, k])/Δ
         end
         # Top boundary: A_z = 0
-        C[i,j,nz] = 0
+        C_arr[i_local, j_local, nz] = 0
     end
 
     return S
