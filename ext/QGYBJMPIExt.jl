@@ -298,7 +298,8 @@ function QGYBJ.plan_mpi_transforms(grid::Grid, mpi_config::MPIConfig)
 
     # Create transform for horizontal dimensions only (1 and 2)
     # The vertical dimension (3) remains in physical space
-    transform = Transforms.FFT()
+    # Use PencilFFTs.Transforms submodule for transform types
+    transform = PencilFFTs.Transforms.FFT()
 
     # Create the plan - transform dims 1 and 2 (x and y)
     plan = PencilFFTs.PencilFFTPlan(pencil, transform, (1, 2))

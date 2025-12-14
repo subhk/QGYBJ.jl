@@ -53,6 +53,11 @@ end
     init_parallel_grid(params::QGParams, pconfig::ParallelConfig)
 
 Initialize grid with proper parallel decomposition.
+
+NOTE: This is a legacy interface. For proper MPI support, use the extension module:
+    using MPI, PencilArrays, PencilFFTs, QGYBJ
+    mpi_config = QGYBJ.setup_mpi_environment()
+    grid = QGYBJ.init_mpi_grid(params, mpi_config)
 """
 function init_parallel_grid(params::QGParams, pconfig::ParallelConfig)
     T = Float64
@@ -62,45 +67,32 @@ function init_parallel_grid(params::QGParams, pconfig::ParallelConfig)
     z = T.(collect(range(0, 2π; length=nz)))
     dz = diff(z)
 
-    # Wavenumbers
+    # Wavenumbers (same on all processes)
     kx = T.([i <= nx÷2 ? (2π/params.Lx)*(i-1) : (2π/params.Lx)*(i-1-nx) for i in 1:nx])
     ky = T.([j <= ny÷2 ? (2π/params.Ly)*(j-1) : (2π/params.Ly)*(j-1-ny) for j in 1:ny])
 
-    # Initialize decomposition
+    # Initialize decomposition - this legacy interface only supports serial mode
+    # For proper MPI support, use the extension module with init_mpi_grid()
     decomp = nothing
     kh2 = Array{T}(undef, nx, ny)
-    
+
     if pconfig.use_mpi
-        try
-            @eval import PencilArrays
-            
-            # Create pencil decomposition
-            # For 3D (x,y,z) data, typically decompose in y and z dimensions
-            decomp = PencilArrays.Pencil((nx, ny, nz), pconfig.comm)
-            
-            # Create distributed kh2 array
-            kh2_pencil = PencilArrays.allocate_array(decomp, T)
-            
-            # Compute kh2 on each process's local portion
-            local_indices = PencilArrays.range_local(decomp)
-            for j in local_indices[2], i in local_indices[1]
-                kh2_pencil[i,j,:] .= kx[i]^2 + ky[j]^2
-            end
-            
-            kh2 = kh2_pencil
-            
-        catch e
-            @warn "Failed to initialize PencilArrays decomposition: $e"
-            # Fall back to serial
-            @inbounds for j in 1:ny, i in 1:nx
-                kh2[i,j] = kx[i]^2 + ky[j]^2
-            end
-        end
-    else
-        # Serial computation
-        @inbounds for j in 1:ny, i in 1:nx
-            kh2[i,j] = kx[i]^2 + ky[j]^2
-        end
+        @warn """
+        ParallelConfig.use_mpi=true but this legacy interface does not fully support MPI.
+        For proper MPI parallelization, use the extension module:
+
+            using MPI, PencilArrays, PencilFFTs, QGYBJ
+            MPI.Init()
+            mpi_config = QGYBJ.setup_mpi_environment()
+            grid = QGYBJ.init_mpi_grid(params, mpi_config)
+
+        Falling back to serial mode.
+        """
+    end
+
+    # Serial computation of kh2
+    @inbounds for j in 1:ny, i in 1:nx
+        kh2[i,j] = kx[i]^2 + ky[j]^2
     end
 
     return Grid{T, typeof(kh2)}(nx, ny, nz, params.Lx, params.Ly, dx, dy, z, dz, kx, ky, kh2, decomp)
@@ -110,36 +102,25 @@ end
     init_parallel_state(grid::Grid, pconfig::ParallelConfig; T=Float64)
 
 Initialize state with distributed arrays when using MPI.
+
+NOTE: This is a legacy interface. For proper MPI support, use the extension module:
+    using MPI, PencilArrays, PencilFFTs, QGYBJ
+    mpi_config = QGYBJ.setup_mpi_environment()
+    state = QGYBJ.init_mpi_state(grid, mpi_config)
 """
 function init_parallel_state(grid::Grid, pconfig::ParallelConfig; T=Float64)
-    if grid.decomp !== nothing
-        # Use PencilArrays for distributed storage
-        @eval import PencilArrays
-        # Spectral fields (complex)
-        q   = PencilArrays.allocate_array(grid.decomp, Complex{T}); fill!(q, 0)
-        psi = PencilArrays.allocate_array(grid.decomp, Complex{T}); fill!(psi, 0)
-        A   = PencilArrays.allocate_array(grid.decomp, Complex{T}); fill!(A, 0)
-        B   = PencilArrays.allocate_array(grid.decomp, Complex{T}); fill!(B, 0)
-        C   = PencilArrays.allocate_array(grid.decomp, Complex{T}); fill!(C, 0)
-        
-        # Real space fields
-        u = PencilArrays.allocate_array(grid.decomp, T); fill!(u, 0)
-        v = PencilArrays.allocate_array(grid.decomp, T); fill!(v, 0)
-        w = PencilArrays.allocate_array(grid.decomp, T); fill!(w, 0)
-        
-    else
-        # Serial arrays
-        sz = (grid.nx, grid.ny, grid.nz)
-        q   = Array{Complex{T}}(undef, sz); fill!(q, 0)
-        psi = Array{Complex{T}}(undef, sz); fill!(psi, 0)
-        A   = Array{Complex{T}}(undef, sz); fill!(A, 0)
-        B   = Array{Complex{T}}(undef, sz); fill!(B, 0)
-        C   = Array{Complex{T}}(undef, sz); fill!(C, 0)
-        u   = Array{T}(undef, sz); fill!(u, 0)
-        v   = Array{T}(undef, sz); fill!(v, 0)
-        w   = Array{T}(undef, sz); fill!(w, 0)
-    end
-    
+    # This legacy interface only creates serial arrays
+    # For proper MPI support, use the extension module with init_mpi_state()
+    sz = (grid.nx, grid.ny, grid.nz)
+    q   = Array{Complex{T}}(undef, sz); fill!(q, 0)
+    psi = Array{Complex{T}}(undef, sz); fill!(psi, 0)
+    A   = Array{Complex{T}}(undef, sz); fill!(A, 0)
+    B   = Array{Complex{T}}(undef, sz); fill!(B, 0)
+    C   = Array{Complex{T}}(undef, sz); fill!(C, 0)
+    u   = Array{T}(undef, sz); fill!(u, 0)
+    v   = Array{T}(undef, sz); fill!(v, 0)
+    w   = Array{T}(undef, sz); fill!(w, 0)
+
     return State{T, typeof(u), typeof(q)}(q, psi, A, B, C, u, v, w)
 end
 
@@ -148,22 +129,14 @@ end
     gather_array_for_io(arr, grid::Grid, pconfig::ParallelConfig)
 
 Gather distributed array to rank 0 for I/O operations.
+
+NOTE: This is a legacy interface. For proper MPI gathering, use the extension module:
+    gathered = QGYBJ.gather_to_root(arr, grid, mpi_config)
 """
 function gather_array_for_io(arr, grid::Grid, pconfig::ParallelConfig)
-    if grid.decomp === nothing || !pconfig.use_mpi
-        return arr  # Already local
-    end
-    
-    try
-        PA = Base.require(:PencilArrays)
-        # Gather to a global array on rank 0
-        gathered = PA.gather(arr)
-        
-        return gathered
-    catch e
-        @warn "Failed to gather array: $e"
-        return arr
-    end
+    # This legacy interface just returns the array as-is
+    # For proper MPI gathering, use the extension module with gather_to_root()
+    return arr
 end
 
 # Parallel I/O functions moved to netcdf_io.jl for unified interface
@@ -253,44 +226,36 @@ end
     init_parallel_random_psi!(psik, grid, amplitude, pconfig)
 
 Initialize random stream function with parallel support.
+
+NOTE: This is a legacy interface. For proper MPI initialization, use the extension module:
+    QGYBJ.init_mpi_random_field!(psik, grid, amplitude, seed_offset)
 """
 function init_parallel_random_psi!(psik, grid, amplitude, pconfig)
-    # Initialize random field ensuring consistency across processes
-    # This is complex and requires careful handling of random number generation
-    
-    if grid.decomp === nothing
-        for k in 1:grid.nz, j in 1:grid.ny, i in 1:grid.nx
-            φ = 2π * ((hash((i,j,k)) % 1_000_000) / 1_000_000)
-            psik[i,j,k] = amplitude * cis(φ)
-        end
-        return psik
-    end
-    local_ranges = PencilArrays.range_local(grid.decomp)
-    for k in local_ranges[3], j in local_ranges[2], i in local_ranges[1]
+    # Hash-based deterministic initialization (works in serial)
+    # For proper MPI support, use the extension module with init_mpi_random_field!
+    for k in 1:grid.nz, j in 1:grid.ny, i in 1:grid.nx
         φ = 2π * ((hash((i,j,k)) % 1_000_000) / 1_000_000)
         psik[i,j,k] = amplitude * cis(φ)
     end
+    return psik
 end
 
 """
     init_parallel_random_waves!(Bk, grid, amplitude, pconfig)
 
 Initialize random wave field with parallel support.
+
+NOTE: This is a legacy interface. For proper MPI initialization, use the extension module:
+    QGYBJ.init_mpi_random_field!(Bk, grid, amplitude, seed_offset)
 """
 function init_parallel_random_waves!(Bk, grid, amplitude, pconfig)
-    # Similar to psi initialization but for wave field
-    if grid.decomp === nothing
-        for k in 1:grid.nz, j in 1:grid.ny, i in 1:grid.nx
-            φ = 2π * ((hash((i,j,k,:waves)) % 1_000_000) / 1_000_000)
-            Bk[i,j,k] = amplitude * cis(φ)
-        end
-        return Bk
-    end
-    local_ranges = PencilArrays.range_local(grid.decomp)
-    for k in local_ranges[3], j in local_ranges[2], i in local_ranges[1]
+    # Hash-based deterministic initialization (works in serial)
+    # For proper MPI support, use the extension module with init_mpi_random_field!
+    for k in 1:grid.nz, j in 1:grid.ny, i in 1:grid.nx
         φ = 2π * ((hash((i,j,k,:waves)) % 1_000_000) / 1_000_000)
         Bk[i,j,k] = amplitude * cis(φ)
     end
+    return Bk
 end
 
 # ParallelOutputManager removed - now using unified OutputManager in netcdf_io.jl
