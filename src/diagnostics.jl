@@ -66,7 +66,7 @@ The RHS of the omega equation drives the ageostrophic vertical velocity.
 =#
 
 """
-    omega_eqn_rhs!(rhs, psi, G, plans; Lmask)
+    omega_eqn_rhs!(rhs, psi, G, plans; Lmask=nothing, workspace=nothing)
 
 Compute the RHS forcing for the QG omega equation.
 
@@ -114,6 +114,7 @@ Strong RHS forcing occurs where:
 - `G::Grid`: Grid structure
 - `plans`: FFT plans
 - `Lmask`: Optional dealiasing mask
+- `workspace`: Optional pre-allocated workspace for 2D decomposition
 
 # Returns
 Modified rhs array with the omega equation forcing.
@@ -121,31 +122,63 @@ Modified rhs array with the omega equation forcing.
 # Fortran Correspondence
 Matches `omega_eqn_rhs` computation in the Fortran implementation.
 """
-function omega_eqn_rhs!(rhs, psi, G::Grid, plans; Lmask=nothing)
+function omega_eqn_rhs!(rhs, psi, G::Grid, plans; Lmask=nothing, workspace=nothing)
+    # Check if we need 2D decomposition with transposes
+    need_transpose = G.decomp !== nothing && hasfield(typeof(G.decomp), :pencil_z)
+
+    if need_transpose
+        _omega_eqn_rhs_2d!(rhs, psi, G, plans, Lmask, workspace)
+    else
+        _omega_eqn_rhs_direct!(rhs, psi, G, plans, Lmask)
+    end
+    return rhs
+end
+
+# Direct computation when z is fully local (serial or 1D decomposition)
+function _omega_eqn_rhs_direct!(rhs, psi, G::Grid, plans, Lmask)
     nx, ny, nz = G.nx, G.ny, G.nz
     L = isnothing(Lmask) ? trues(nx,ny) : Lmask
     dz = nz > 1 ? (G.z[2]-G.z[1]) : 1.0
+
+    # Get local dimensions
+    psi_arr = parent(psi)
+    nx_local, ny_local, nz_local = size(psi_arr)
+
+    # Verify z is fully local
+    @assert nz_local == nz "Vertical dimension must be fully local for omega RHS"
+
     # psi_z in spectral space (simple finite difference)
     psizk = similar(psi)
-    @inbounds for k in 1:nz, j in 1:ny, i in 1:nx
+    psizk_arr = parent(psizk)
+    @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
         if k == nz
-            psizk[i,j,k] = 0  # Neumann top
+            psizk_arr[i,j,k] = 0  # Neumann top
         else
-            psizk[i,j,k] = (psi[i,j,k+1] - psi[i,j,k]) / dz
+            psizk_arr[i,j,k] = (psi_arr[i,j,k+1] - psi_arr[i,j,k]) / dz
         end
     end
+
     # Build needed spectral derivatives
     bxk = similar(psi); byk = similar(psi)
     xxk = similar(psi); xyk = similar(psi)
-    @inbounds for k in 1:nz, j in 1:ny, i in 1:nx
-        kh2 = G.kh2[i,j]
-        bxk[i,j,k] = im*G.kx[i]*psizk[i,j,k]
-        byk[i,j,k] = im*G.ky[j]*psizk[i,j,k]
+    bxk_arr = parent(bxk); byk_arr = parent(byk)
+    xxk_arr = parent(xxk); xyk_arr = parent(xyk)
+
+    @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
+        i_global = local_to_global(i, 1, G)
+        j_global = local_to_global(j, 2, G)
+        kh2 = G.kh2[i_global, j_global]
+        kx = G.kx[i_global]
+        ky = G.ky[j_global]
+
+        bxk_arr[i,j,k] = im*kx*psizk_arr[i,j,k]
+        byk_arr[i,j,k] = im*ky*psizk_arr[i,j,k]
         # average psi between k and k+1; at top use psi at top
-        ψavg = k < nz ? 0.5*(psi[i,j,k+1] + psi[i,j,k]) : psi[i,j,k]
-        xxk[i,j,k] = -im*G.kx[i]*kh2*ψavg
-        xyk[i,j,k] = -im*G.ky[j]*kh2*ψavg
+        ψavg = k < nz ? 0.5*(psi_arr[i,j,k+1] + psi_arr[i,j,k]) : psi_arr[i,j,k]
+        xxk_arr[i,j,k] = -im*kx*kh2*ψavg
+        xyk_arr[i,j,k] = -im*ky*kh2*ψavg
     end
+
     # To real space
     bxr = similar(psi); byr = similar(psi)
     xxr = similar(psi); xyr = similar(psi)
@@ -153,23 +186,129 @@ function omega_eqn_rhs!(rhs, psi, G::Grid, plans; Lmask=nothing)
     fft_backward!(byr, byk, plans)
     fft_backward!(xxr, xxk, plans)
     fft_backward!(xyr, xyk, plans)
+
+    bxr_arr = parent(bxr); byr_arr = parent(byr)
+    xxr_arr = parent(xxr); xyr_arr = parent(xyr)
+
     # Real-space RHS
     rhsr = similar(psi)
-    @inbounds for k in 1:nz, j in 1:ny, i in 1:nx
-        rhsr[i,j,k] = 2.0 * ( real(bxr[i,j,k])*real(xyr[i,j,k]) - real(byr[i,j,k])*real(xxr[i,j,k]) )
+    rhsr_arr = parent(rhsr)
+    @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
+        rhsr_arr[i,j,k] = 2.0 * ( real(bxr_arr[i,j,k])*real(xyr_arr[i,j,k]) - real(byr_arr[i,j,k])*real(xxr_arr[i,j,k]) )
     end
+
     # Back to spectral
     fft_forward!(rhs, rhsr, plans)
+
     # Normalize and dealias
+    rhs_arr = parent(rhs)
     norm = nx*ny
-    @inbounds for k in 1:nz, j in 1:ny, i in 1:nx
-        if L[i,j]
-            rhs[i,j,k] /= norm
+    @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
+        i_global = local_to_global(i, 1, G)
+        j_global = local_to_global(j, 2, G)
+        if L[i_global, j_global]
+            rhs_arr[i,j,k] /= norm
         else
-            rhs[i,j,k] = 0
+            rhs_arr[i,j,k] = 0
         end
     end
-    return rhs
+end
+
+# 2D decomposition version with transposes
+function _omega_eqn_rhs_2d!(rhs, psi, G::Grid, plans, Lmask, workspace)
+    nx, ny, nz = G.nx, G.ny, G.nz
+    L = isnothing(Lmask) ? trues(nx,ny) : Lmask
+    dz = nz > 1 ? (G.z[2]-G.z[1]) : 1.0
+
+    # Allocate z-pencil workspace
+    psi_z = workspace !== nothing && hasfield(typeof(workspace), :psi_z) ? workspace.psi_z : allocate_z_pencil(G, ComplexF64)
+    psiz_z = allocate_z_pencil(G, ComplexF64)
+    psiavg_z = allocate_z_pencil(G, ComplexF64)
+
+    # Transpose psi to z-pencil for vertical operations
+    transpose_to_z_pencil!(psi_z, psi, G)
+
+    # Compute psi_z and psi_avg in z-pencil configuration (z now fully local)
+    psi_z_arr = parent(psi_z)
+    psiz_z_arr = parent(psiz_z)
+    psiavg_z_arr = parent(psiavg_z)
+
+    nx_local_z, ny_local_z, nz_local = size(psi_z_arr)
+    @assert nz_local == nz "After transpose, z must be fully local"
+
+    @inbounds for k in 1:nz, j in 1:ny_local_z, i in 1:nx_local_z
+        if k == nz
+            psiz_z_arr[i,j,k] = 0  # Neumann top
+            psiavg_z_arr[i,j,k] = psi_z_arr[i,j,k]
+        else
+            psiz_z_arr[i,j,k] = (psi_z_arr[i,j,k+1] - psi_z_arr[i,j,k]) / dz
+            psiavg_z_arr[i,j,k] = 0.5*(psi_z_arr[i,j,k+1] + psi_z_arr[i,j,k])
+        end
+    end
+
+    # Transpose back to xy-pencil for horizontal operations
+    psizk = similar(psi)
+    psiavgk = similar(psi)
+    transpose_to_xy_pencil!(psizk, psiz_z, G)
+    transpose_to_xy_pencil!(psiavgk, psiavg_z, G)
+
+    # Get local dimensions for xy-pencil
+    psizk_arr = parent(psizk)
+    psiavgk_arr = parent(psiavgk)
+    nx_local, ny_local, nz_local_xy = size(psizk_arr)
+
+    # Build needed spectral derivatives in xy-pencil
+    bxk = similar(psi); byk = similar(psi)
+    xxk = similar(psi); xyk = similar(psi)
+    bxk_arr = parent(bxk); byk_arr = parent(byk)
+    xxk_arr = parent(xxk); xyk_arr = parent(xyk)
+
+    @inbounds for k in 1:nz_local_xy, j in 1:ny_local, i in 1:nx_local
+        i_global = local_to_global(i, 1, G)
+        j_global = local_to_global(j, 2, G)
+        kh2 = G.kh2[i_global, j_global]
+        kx = G.kx[i_global]
+        ky = G.ky[j_global]
+
+        bxk_arr[i,j,k] = im*kx*psizk_arr[i,j,k]
+        byk_arr[i,j,k] = im*ky*psizk_arr[i,j,k]
+        xxk_arr[i,j,k] = -im*kx*kh2*psiavgk_arr[i,j,k]
+        xyk_arr[i,j,k] = -im*ky*kh2*psiavgk_arr[i,j,k]
+    end
+
+    # To real space (FFTs in xy-pencil)
+    bxr = similar(psi); byr = similar(psi)
+    xxr = similar(psi); xyr = similar(psi)
+    fft_backward!(bxr, bxk, plans)
+    fft_backward!(byr, byk, plans)
+    fft_backward!(xxr, xxk, plans)
+    fft_backward!(xyr, xyk, plans)
+
+    bxr_arr = parent(bxr); byr_arr = parent(byr)
+    xxr_arr = parent(xxr); xyr_arr = parent(xyr)
+
+    # Real-space RHS
+    rhsr = similar(psi)
+    rhsr_arr = parent(rhsr)
+    @inbounds for k in 1:nz_local_xy, j in 1:ny_local, i in 1:nx_local
+        rhsr_arr[i,j,k] = 2.0 * ( real(bxr_arr[i,j,k])*real(xyr_arr[i,j,k]) - real(byr_arr[i,j,k])*real(xxr_arr[i,j,k]) )
+    end
+
+    # Back to spectral
+    fft_forward!(rhs, rhsr, plans)
+
+    # Normalize and dealias
+    rhs_arr = parent(rhs)
+    norm = nx*ny
+    @inbounds for k in 1:nz_local_xy, j in 1:ny_local, i in 1:nx_local
+        i_global = local_to_global(i, 1, G)
+        j_global = local_to_global(j, 2, G)
+        if L[i_global, j_global]
+            rhs_arr[i,j,k] /= norm
+        else
+            rhs_arr[i,j,k] = 0
+        end
+    end
 end
 
 #=
@@ -199,12 +338,16 @@ This is a key diagnostic for:
 Total kinetic energy (domain sum, not mean) in nondimensional units.
 
 # Note
-This is NOT normalized by volume. For energy density, divide by nx×ny×nz.
+- This is NOT normalized by volume. For energy density, divide by nx×ny×nz.
+- In MPI mode, this returns LOCAL energy. Use mpi_reduce_sum for global total.
 """
 function flow_kinetic_energy(u, v)
+    # Works with any array (regular or PencilArray)
+    u_arr = parent(u)
+    v_arr = parent(v)
     KE = 0.0
-    @inbounds for i in eachindex(u)
-        KE += 0.5 * (u[i]^2 + v[i]^2)
+    @inbounds for i in eachindex(u_arr)
+        KE += 0.5 * (u_arr[i]^2 + v_arr[i]^2)
     end
     return KE
 end
@@ -235,24 +378,39 @@ This function returns the vertical average:
 4. Average over vertical levels
 
 # Returns
-2D array (nx, ny) of vertically-averaged wave energy density.
+2D array (nx_local, ny_local) of vertically-averaged wave energy density.
+
+# Note
+In MPI mode with 2D decomposition, this returns LOCAL data only.
+For full domain visualization, gather data to root first.
 """
 function wave_energy_vavg(B, G::Grid, plans)
     nx, ny, nz = G.nx, G.ny, G.nz
+
+    # Get local dimensions
+    B_arr = parent(B)
+    nx_local, ny_local, nz_local = size(B_arr)
+
     # Build BRk, BIk and invert to real
     BRk = similar(B); BIk = similar(B)
-    @inbounds for k in 1:nz, j in 1:ny, i in 1:nx
-        BRk[i,j,k] = Complex(real(B[i,j,k]), 0)
-        BIk[i,j,k] = Complex(imag(B[i,j,k]), 0)
+    BRk_arr = parent(BRk); BIk_arr = parent(BIk)
+
+    @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
+        BRk_arr[i,j,k] = Complex(real(B_arr[i,j,k]), 0)
+        BIk_arr[i,j,k] = Complex(imag(B_arr[i,j,k]), 0)
     end
+
     BRr = similar(BRk); BIr = similar(BIk)
     fft_backward!(BRr, BRk, plans)
     fft_backward!(BIr, BIk, plans)
+
+    BRr_arr = parent(BRr); BIr_arr = parent(BIr)
+
     # Accumulate 0.5|B|^2 and normalize by nx*ny (IFFT unnormalized) and nz
-    WE = zeros(Float64, nx, ny)
+    WE = zeros(Float64, nx_local, ny_local)
     norm = nx*ny
-    @inbounds for k in 1:nz, j in 1:ny, i in 1:nx
-        WE[i,j] += 0.5*((real(BRr[i,j,k])/norm)^2 + (real(BIr[i,j,k])/norm)^2)
+    @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
+        WE[i,j] += 0.5*((real(BRr_arr[i,j,k])/norm)^2 + (real(BIr_arr[i,j,k])/norm)^2)
     end
     WE ./= nz
     return WE
