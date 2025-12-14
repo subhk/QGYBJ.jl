@@ -576,8 +576,10 @@ function compute_qw!(qwk, BRk, BIk, par, G::Grid, plans; Lmask=nothing)
         else
             qwk_arr[i_local, j_local, k] = 0
         end
-        # Scale by W2F = (Uw/U)² (wave-to-flow velocity ratio)
-        qwk_arr[i_local, j_local, k] *= par.W2F
+        # Scale by Ro * W2F to match Fortran (derivatives.f90 line 1027)
+        # W2F = (Uw/U)² (wave-to-flow velocity ratio)
+        # Ro = U/(f*L) (Rossby number)
+        qwk_arr[i_local, j_local, k] *= (par.Ro * par.W2F)
     end
 
     return qwk

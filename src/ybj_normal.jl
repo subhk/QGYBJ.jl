@@ -274,6 +274,10 @@ function _compute_sigma_direct(par::QGParams, G::Grid, nBRk, nBIk, rBRk, rBIk, L
             sigma[i,j] = 0
         end
     end
+
+    # Scale by Bu*Ro to match Fortran (derivatives.f90 line 1067)
+    sigma .*= (par.Bu * par.Ro)
+
     return sigma
 end
 
@@ -318,6 +322,10 @@ function _compute_sigma_2d(par::QGParams, G::Grid, nBRk, nBIk, rBRk, rBIk, Lmask
             sigma[i,j] = 0
         end
     end
+
+    # Scale by Bu*Ro to match Fortran (derivatives.f90 line 1067)
+    sigma .*= (par.Bu * par.Ro)
+
     return sigma
 end
 
