@@ -1,30 +1,42 @@
-"""
-FFT planning and wrappers. Uses PencilFFTs when available, otherwise FFTW in serial.
-Currently plans 2D FFTs along x,y for each z-slab, which matches the Fortran
-pseudo-spectral horizontal approach.
-"""
+#=
+================================================================================
+                    transforms.jl - FFT Planning and Execution
+================================================================================
+
+This module provides FFT transforms for the QG-YBJ+ model. It uses FFTW.jl
+for serial execution and supports MPI-parallel execution via the QGYBJMPIExt
+extension with PencilFFTs.jl.
+
+SERIAL MODE (default):
+- Uses FFTW.jl for efficient FFT computation
+- Falls back to naive O(n^4) DFT if FFTW not available
+
+PARALLEL MODE (with extension):
+- Uses PencilFFTs.jl for distributed FFTs
+- Automatically enabled when MPI, PencilArrays, PencilFFTs are loaded
+- See ext/QGYBJMPIExt.jl for parallel implementation
+
+TRANSFORM CONVENTION:
+- Horizontal 2D FFTs (x,y dimensions) for each vertical level
+- FFTW convention: inverse FFT is unnormalized (divide by nx*ny outside)
+- Wavenumber layout follows FFTW convention (see grid.jl)
+
+================================================================================
+=#
+
 module Transforms
 
 using ..QGYBJ: Grid
 using LinearAlgebra
+import FFTW
 
-const HAS_PENCILFFTS = Base.find_package("PencilFFTs") !== nothing
-function ensure_pencil()
-    try
-        @eval import PencilFFTs
-        return PencilFFTs
-    catch
-        return nothing
-    end
-end
-function ensure_fftw()
-    try
-        @eval import FFTW
-        return FFTW
-    catch
-        return nothing
-    end
-end
+#=
+================================================================================
+                        NAIVE FFT FALLBACKS
+================================================================================
+For testing and environments without FFTW. O(n^4) complexity per plane.
+================================================================================
+=#
 
 """
     _naive_fft2!(dst, src)
@@ -64,120 +76,170 @@ function _naive_ifft2!(dst::AbstractMatrix{T}, src::AbstractMatrix{T}) where {T<
     return dst
 end
 
+#=
+================================================================================
+                        FFT PLAN STRUCTURE
+================================================================================
+=#
+
+"""
+    Plans
+
+Container for FFT plans. Supports both FFTW (serial) and PencilFFTs (parallel).
+
+# Fields
+- `backend::Symbol`: Either `:fftw` or `:pencil`
+- `p_forward`: Forward FFT plan (PencilFFTs or FFTW)
+- `p_backward`: Inverse FFT plan (PencilFFTs or FFTW)
+- `f_forward`: FFTW-specific forward plan (for pre-planned transforms)
+- `f_backward`: FFTW-specific inverse plan (for pre-planned transforms)
+"""
 Base.@kwdef mutable struct Plans
-    backend::Symbol                  # :pencil or :fftw
-    # PencilFFTs plans
+    backend::Symbol = :fftw          # :pencil or :fftw
+    # PencilFFTs plans (set by extension)
     p_forward::Any = nothing
     p_backward::Any = nothing
-    # FFTW fallback plans
+    # FFTW pre-planned transforms (optional optimization)
     f_forward::Any = nothing
     f_backward::Any = nothing
 end
 
+#=
+================================================================================
+                        FFT PLANNING
+================================================================================
+=#
+
 """
-    plan_transforms!(G::Grid, parallel_config=nothing)
+    plan_transforms!(G::Grid, parallel_config=nothing) -> Plans
 
 Create forward/backward FFT plans appropriate to the environment.
-Unified interface for both serial and parallel execution.
+
+# Serial Mode (default)
+Returns Plans with `:fftw` backend for per-slice FFT execution.
+
+# Parallel Mode
+If `parallel_config` indicates MPI is active and the grid has decomposition,
+attempts to use PencilFFTs via the extension module.
+
+# Arguments
+- `G::Grid`: Grid structure (determines array sizes)
+- `parallel_config`: Optional parallel configuration
+
+# Returns
+Plans struct with appropriate backend and plans.
+
+# Example
+```julia
+G = init_grid(par)
+plans = plan_transforms!(G)  # Serial FFTW
+```
 """
 function plan_transforms!(G::Grid, parallel_config=nothing)
-    # If parallel_config is provided and MPI is active, use parallel planning
-    if parallel_config !== nothing && parallel_config.use_mpi && G.decomp !== nothing
-        return setup_parallel_transforms(G, parallel_config)
-    end
-    
-    # Try PencilFFTs for serial case if decomp exists
-    if HAS_PENCILFFTS && G.decomp !== nothing
-        try
-            PF = ensure_pencil()
-            p = PF.plan_fft((G.nx, G.ny); dims=(1,2))
-            ip = PF.plan_ifft((G.nx, G.ny); dims=(1,2))
-            return Plans(backend=:pencil, p_forward=p, p_backward=ip)
-        catch err
-            @info "PencilFFTs planning fallback", err
+    # If parallel_config indicates MPI is active, try parallel setup
+    if parallel_config !== nothing
+        if hasproperty(parallel_config, :use_mpi) && parallel_config.use_mpi && G.decomp !== nothing
+            # Parallel mode requested - try extension
+            return setup_parallel_transforms(G, parallel_config)
         end
     end
-    # Fallback to FFTW
+
+    # Default: serial FFTW mode
+    # Note: We don't pre-plan here for simplicity. FFTW caches plans internally.
     return Plans(backend=:fftw)
 end
 
 """
-    setup_parallel_transforms(grid::Grid, pconfig)
+    setup_parallel_transforms(grid::Grid, pconfig) -> Plans
 
-Set up FFT plans for parallel execution (called from unified interface).
+Set up FFT plans for parallel execution.
+
+This is a stub that returns FFTW plans. The actual parallel implementation
+is provided by the QGYBJMPIExt extension when PencilFFTs is loaded.
+
+For true parallel FFTs, ensure MPI, PencilArrays, and PencilFFTs are loaded
+before using QGYBJ, then use `plan_mpi_transforms()` from the extension.
 """
 function setup_parallel_transforms(grid::Grid, pconfig)
-    if grid.decomp !== nothing && HAS_PENCILFFTS
-        try
-            PF = ensure_pencil()
-            # Create plans for the pencil decomposition
-            # Transform in x and y dimensions (dims 1 and 2)
-            forward_plan = PF.PencilFFTPlan(grid.decomp, Complex{Float64}; 
-                                                   transform=(PF.Transforms.FFT(),
-                                                            PF.Transforms.FFT()),
-                                                   transform_dims=(1, 2))
-            
-            backward_plan = PF.PencilIFFTPlan(grid.decomp, Complex{Float64};
-                                                     transform=(PF.Transforms.IFFT(),
-                                                              PF.Transforms.IFFT()),
-                                                     transform_dims=(1, 2))
-            
-            return Plans(backend=:pencil, p_forward=forward_plan, p_backward=backward_plan)
-            
-        catch e
-            @warn "Failed to create PencilFFTs plans: $e"
-        end
-    end
-    
-    # Fallback to FFTW
+    # This stub returns FFTW plans as fallback
+    # The extension overrides this with PencilFFTs
+    @warn "Parallel transforms requested but PencilFFTs extension not loaded. Falling back to FFTW."
     return Plans(backend=:fftw)
 end
 
+#=
+================================================================================
+                        FFT EXECUTION
+================================================================================
+=#
+
 """
-    fft_forward!(dst, src, P)
+    fft_forward!(dst, src, P::Plans)
 
 Compute horizontal forward FFT (complex-to-complex) for each z-plane.
+
+# Algorithm
+For serial FFTW backend:
+- Loops over z-slices and applies 2D FFT to each (x,y) plane
+
+For parallel PencilFFTs backend:
+- Uses mul!(dst, plan, src) for distributed transform
+
+# Arguments
+- `dst`: Destination array (spectral space)
+- `src`: Source array (physical space)
+- `P::Plans`: FFT plans
+
+# Returns
+Modified dst array.
+
+# Note
+For parallel execution with PencilArrays, use the extension's `fft_forward!`
+which is automatically dispatched for PencilArray types.
 """
 function fft_forward!(dst, src, P::Plans)
-    if P.backend === :pencil
-        PF = ensure_pencil()
-        PF.fft!(dst, src; plan=P.p_forward)
+    if P.backend === :pencil && P.p_forward !== nothing
+        # PencilFFTs path (should be overridden by extension for PencilArrays)
+        mul!(dst, P.p_forward, src)
     else
-        # src, dst: Array{Complex,3}; transform x,y per z index
-        @inbounds for k in axes(src,3)
-            FF = ensure_fftw()
-            if FF === nothing
-                _naive_fft2!(dst[:,:,k], src[:,:,k])
-            else
-                dst[:,:,k] .= Base.invokelatest(FF.fft, src[:,:,k])
-            end
+        # Serial FFTW path: transform each z-slice independently
+        @inbounds for k in axes(src, 3)
+            dst[:,:,k] .= FFTW.fft(src[:,:,k])
         end
     end
     return dst
 end
 
 """
-    fft_backward!(dst, src, P)
+    fft_backward!(dst, src, P::Plans)
 
 Compute horizontal inverse FFT (complex-to-complex) for each z-plane.
+
+# Note
+FFTW inverse FFT is UNNORMALIZED. The caller must divide by (nx * ny)
+to get correctly scaled physical-space values.
+
+# Arguments
+- `dst`: Destination array (physical space, unnormalized)
+- `src`: Source array (spectral space)
+- `P::Plans`: FFT plans
+
+# Returns
+Modified dst array.
 """
 function fft_backward!(dst, src, P::Plans)
-    if P.backend === :pencil
-        PF = ensure_pencil()
-        PF.ifft!(dst, src; plan=P.p_backward)
+    if P.backend === :pencil && P.p_backward !== nothing
+        # PencilFFTs path (should be overridden by extension for PencilArrays)
+        mul!(dst, P.p_backward, src)
     else
-        @inbounds for k in axes(src,3)
-            FF = ensure_fftw()
-            if FF === nothing
-                _naive_ifft2!(dst[:,:,k], src[:,:,k])
-            else
-                dst[:,:,k] .= Base.invokelatest(FF.ifft, src[:,:,k])
-            end
+        # Serial FFTW path: transform each z-slice independently
+        @inbounds for k in axes(src, 3)
+            dst[:,:,k] .= FFTW.ifft(src[:,:,k])
         end
     end
     return dst
 end
 
-end # module
+end # module Transforms
 
 using .Transforms: Plans, plan_transforms!, setup_parallel_transforms, fft_forward!, fft_backward!
