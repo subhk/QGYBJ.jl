@@ -60,29 +60,12 @@ jacobian_spectral!
 
 **Computes:** ``J(a, b) = \frac{\partial a}{\partial x}\frac{\partial b}{\partial y} - \frac{\partial a}{\partial y}\frac{\partial b}{\partial x}``
 
-### Wave Advection
+### Wave Advection and Refraction
 
-```@docs
-convol_waqg!
-```
-
-**Wave Advection:** ``J(\psi, B)`` - Advection of wave envelope by streamfunction
-
-### Refraction
-
-```@docs
-refraction_waqg!
-```
-
-**Computes:** ``B \zeta`` - Wave refraction by vorticity
-
-### Wave Feedback
-
-```@docs
-compute_qw!
-```
-
-**Computes:** ``q^w`` - Wave feedback on mean flow (Xie & Vanneste 2015)
+The wave nonlinear terms are documented in the [Time Stepping API](timestepping.md):
+- `convol_waqg!` - Computes ``J(\psi, B)`` (advection of wave envelope by streamfunction)
+- `refraction_waqg!` - Computes ``B \zeta`` (wave refraction by vorticity)
+- `compute_qw!` - Computes wave feedback on mean flow ``q^w``
 
 ## Velocity Computation
 
@@ -110,19 +93,9 @@ compute_total_velocities!
 
 ### Vertical Diffusion
 
-```@docs
-dissipation_q_nv!
-```
-
-**Applies:** Vertical diffusion term ``\nu_z \partial^2 q / \partial z^2``
-
-### Integrating Factor
-
-```@docs
-int_factor
-```
-
-For handling stiff diffusion terms efficiently.
+Dissipation functions are documented in the [Time Stepping API](timestepping.md):
+- `dissipation_q_nv!` - Applies vertical diffusion ``\nu_z \partial^2 q / \partial z^2``
+- `int_factor` - Integrating factor for stiff hyperdiffusion terms
 
 ## Diagnostics Functions
 
@@ -130,8 +103,9 @@ For handling stiff diffusion terms efficiently.
 
 ```@docs
 wave_energy
-flow_kinetic_energy
 ```
+
+Flow energy can be computed from velocity fields using standard summation.
 
 ### Omega Equation
 

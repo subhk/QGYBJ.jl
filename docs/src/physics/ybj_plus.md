@@ -190,11 +190,12 @@ E_B, E_A = wave_energy(state.B, state.A)
 
 ### Key Functions
 
-```@docs
-invert_B_to_A!
-refraction_waqg!
-convol_waqg!
-```
+The YBJ+ implementation uses these core functions:
+- `invert_B_to_A!` - Solve L⁺ operator for wave amplitude A from envelope B
+- `refraction_waqg!` - Compute wave refraction by vorticity
+- `convol_waqg!` - Compute wave advection by geostrophic flow
+
+See the [Physics API Reference](../api/physics.md) for detailed documentation.
 
 ### Code Locations
 

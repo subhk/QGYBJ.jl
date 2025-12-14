@@ -376,12 +376,8 @@ end
 
 ## API Reference
 
-```@docs
-flow_kinetic_energy
-flow_potential_energy
-wave_energy
-relative_enstrophy
-potential_enstrophy
-compute_omega
-horizontal_energy_spectrum
-```
+See the [Physics API Reference](../api/physics.md) for complete documentation of diagnostic functions:
+- `wave_energy` - Wave energy diagnostics
+- `omega_eqn_rhs!` - Omega equation RHS computation
+
+Additional diagnostic utilities are available through the model interface.

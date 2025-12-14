@@ -205,13 +205,9 @@ heatmap(A2[:, :, end], title="Initial Wave Intensity")
 
 ## API Reference
 
-```@docs
-initialize_random_flow!
-initialize_random_waves!
-initialize_vortex!
-initialize_dipole!
-initialize_jet!
-initialize_plane_wave!
-initialize_wave_packet!
-initialize_from_spectrum!
-```
+Initial conditions can be set using:
+- `init_random_psi!` - Initialize random streamfunction field
+- Direct assignment to `state.q`, `state.B` in spectral space
+- Reading from NetCDF files using `ncread_psi!`, `ncread_la!`
+
+See the [Grid & State API](../api/grid_state.md) for state initialization functions.

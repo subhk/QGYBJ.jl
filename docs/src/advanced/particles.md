@@ -392,13 +392,8 @@ end
 
 ## API Reference
 
-```@docs
-ParticleConfig
-ParticleState
-ParticleTracker
-create_particle_config
-initialize_particles!
-advect_particles!
-interpolate_velocity_at_position
-write_particle_trajectories
-```
+See the [Particle API Reference](../api/particles.md) for complete documentation of:
+- `ParticleConfig`, `ParticleState`, `ParticleTracker`
+- `create_particle_config`, `initialize_particles!`
+- `advect_particles!`, `interpolate_velocity_at_position`
+- `write_particle_trajectories`

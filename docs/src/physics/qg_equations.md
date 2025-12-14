@@ -167,11 +167,12 @@ See [Wave-Mean Interaction](@ref wave-mean) for details.
 
 ### Key Functions
 
-```@docs
-invert_q_to_psi!
-jacobian_spectral!
-compute_velocities!
-```
+The QG equation implementation uses these core functions:
+- `invert_q_to_psi!` - Solve elliptic equation for streamfunction
+- `jacobian_spectral!` - Compute Jacobian pseudo-spectrally
+- `compute_velocities!` - Get (u, v) from streamfunction
+
+See the [Physics API Reference](../api/physics.md) for detailed documentation.
 
 ### Code Location
 

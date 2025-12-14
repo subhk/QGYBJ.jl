@@ -319,14 +319,13 @@ for step in 1:nsteps
 end
 ```
 
-## API Reference
+## API Summary
 
-```@docs
-first_projection_step!
-leapfrog_step!
-convol_waqg!
-refraction_waqg!
-dissipation_q_nv!
-int_factor
-compute_qw!
-```
+All time stepping functions documented above:
+- `first_projection_step!` - Forward Euler initialization step
+- `leapfrog_step!` - Main leapfrog integration with Robert-Asselin filter
+- `convol_waqg!` - Nonlinear advection computation
+- `refraction_waqg!` - Wave refraction term
+- `dissipation_q_nv!` - Vertical diffusion
+- `int_factor` - Integrating factor for hyperdiffusion
+- `compute_qw!` - Wave feedback term (see [Physics API](physics.md))

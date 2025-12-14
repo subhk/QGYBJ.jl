@@ -446,10 +446,9 @@ end
 
 ## API Reference
 
-```@docs
-init_output!
-write_output!
-close_output!
-save_checkpoint
-load_checkpoint
-```
+For I/O operations, use the following approaches:
+- **NetCDF reading**: Use `NCDatasets.jl` directly as shown above
+- **Initial conditions**: `ncread_psi!`, `ncread_la!` for loading spectral fields
+- **Parallel I/O**: `gather_to_root`, `scatter_from_root` for 2D decomposition
+
+See the [Grid & State API](../api/grid_state.md) for field initialization functions.
