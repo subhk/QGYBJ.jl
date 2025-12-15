@@ -238,7 +238,7 @@ function compute_stratification_profile(profile::StratificationProfile{T}, G::Gr
 end
 
 """
-    compute_stratification_coefficients(N2_profile::Vector, G::Grid; Bu::Real=1.0)
+    compute_stratification_coefficients(N2_profile::Vector, G::Grid; f0_sq::Real=1.0)
 
 Compute stratification-dependent coefficients for the model.
 
@@ -246,25 +246,25 @@ Following the Fortran init_base_state routine:
 - r_1 = 1.0 (unity for Boussinesq)
 - r_2 = N² (buoyancy frequency squared)
 - r_3 = 0.0 (not used in standard QG formulation)
-- a_ell = Bu/N² (elliptic coefficient for PV inversion)
+- a_ell = f²/N² (elliptic coefficient for PV inversion)
 - rho = 1.0 (Boussinesq approximation)
 
 # Arguments
 - `N2_profile::Vector`: Buoyancy frequency squared N²(z) at each vertical level
 - `G::Grid`: Grid structure
-- `Bu::Real`: Burger number (default 1.0)
+- `f0_sq::Real`: Coriolis parameter squared f² (default 1.0)
 
 # Returns
 Named tuple with coefficients:
 - `r_1`: Unity array (length nz)
 - `r_2`: N² profile (length nz)
 - `r_3`: Zero array (length nz)
-- `a_ell_u`: Bu/N² at unstaggered points (length nz)
-- `a_ell_s`: Bu/N² at staggered points (length nz)
+- `a_ell_u`: f²/N² at unstaggered points (length nz)
+- `a_ell_s`: f²/N² at staggered points (length nz)
 - `rho_u`: Unity density at unstaggered points (length nz)
 - `rho_s`: Unity density at staggered points (length nz)
 """
-function compute_stratification_coefficients(N2_profile::Vector{T}, G::Grid; Bu::Real=T(1.0)) where T
+function compute_stratification_coefficients(N2_profile::Vector{T}, G::Grid; f0_sq::Real=T(1.0)) where T
     nz = G.nz
     dz = nz > 1 ? (G.z[2] - G.z[1]) : T(2π / nz)
 
