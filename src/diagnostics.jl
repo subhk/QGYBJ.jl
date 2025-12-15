@@ -138,77 +138,77 @@ end
 function _omega_eqn_rhs_direct!(rhs, psi, G::Grid, plans, Lmask)
     nx, ny, nz = G.nx, G.ny, G.nz
     L = isnothing(Lmask) ? trues(nx,ny) : Lmask
-    dz = nz > 1 ? (G.z[2]-G.z[1]) : 1.0
+    Δz = nz > 1 ? (G.z[2]-G.z[1]) : 1.0
 
     # Get local dimensions
-    psi_arr = parent(psi)
-    nx_local, ny_local, nz_local = size(psi_arr)
+    ψ_arr = parent(psi)
+    nx_local, ny_local, nz_local = size(ψ_arr)
 
     # Verify z is fully local
     @assert nz_local == nz "Vertical dimension must be fully local for omega RHS"
 
-    # psi_z in spectral space (simple finite difference)
-    psizk = similar(psi)
-    psizk_arr = parent(psizk)
+    # ψ_z in spectral space (simple finite difference)
+    ψzₖ = similar(psi)
+    ψzₖ_arr = parent(ψzₖ)
     @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
         if k == nz
-            psizk_arr[i,j,k] = 0  # Neumann top
+            ψzₖ_arr[i,j,k] = 0  # Neumann top
         else
-            psizk_arr[i,j,k] = (psi_arr[i,j,k+1] - psi_arr[i,j,k]) / dz
+            ψzₖ_arr[i,j,k] = (ψ_arr[i,j,k+1] - ψ_arr[i,j,k]) / Δz
         end
     end
 
     # Build needed spectral derivatives
-    bxk = similar(psi); byk = similar(psi)
-    xxk = similar(psi); xyk = similar(psi)
-    bxk_arr = parent(bxk); byk_arr = parent(byk)
-    xxk_arr = parent(xxk); xyk_arr = parent(xyk)
+    bxₖ = similar(psi); byₖ = similar(psi)
+    xxₖ = similar(psi); xyₖ = similar(psi)
+    bxₖ_arr = parent(bxₖ); byₖ_arr = parent(byₖ)
+    xxₖ_arr = parent(xxₖ); xyₖ_arr = parent(xyₖ)
 
     @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
         i_global = local_to_global(i, 1, G)
         j_global = local_to_global(j, 2, G)
-        kx = G.kx[i_global]
-        ky = G.ky[j_global]
-        # Compute kh2 from global kx, ky arrays (works in both serial and parallel)
-        kh2 = kx^2 + ky^2
+        kₓ = G.kx[i_global]
+        kᵧ = G.ky[j_global]
+        # Compute kₕ² from global kx, ky arrays (works in both serial and parallel)
+        kₕ² = kₓ^2 + kᵧ^2
 
-        bxk_arr[i,j,k] = im*kx*psizk_arr[i,j,k]
-        byk_arr[i,j,k] = im*ky*psizk_arr[i,j,k]
+        bxₖ_arr[i,j,k] = im*kₓ*ψzₖ_arr[i,j,k]
+        byₖ_arr[i,j,k] = im*kᵧ*ψzₖ_arr[i,j,k]
         # average psi between k and k+1; at top use psi at top
-        ψavg = k < nz ? 0.5*(psi_arr[i,j,k+1] + psi_arr[i,j,k]) : psi_arr[i,j,k]
-        xxk_arr[i,j,k] = -im*kx*kh2*ψavg
-        xyk_arr[i,j,k] = -im*ky*kh2*ψavg
+        ψavg = k < nz ? 0.5*(ψ_arr[i,j,k+1] + ψ_arr[i,j,k]) : ψ_arr[i,j,k]
+        xxₖ_arr[i,j,k] = -im*kₓ*kₕ²*ψavg
+        xyₖ_arr[i,j,k] = -im*kᵧ*kₕ²*ψavg
     end
 
     # To real space
-    bxr = similar(psi); byr = similar(psi)
-    xxr = similar(psi); xyr = similar(psi)
-    fft_backward!(bxr, bxk, plans)
-    fft_backward!(byr, byk, plans)
-    fft_backward!(xxr, xxk, plans)
-    fft_backward!(xyr, xyk, plans)
+    bxᵣ = similar(psi); byᵣ = similar(psi)
+    xxᵣ = similar(psi); xyᵣ = similar(psi)
+    fft_backward!(bxᵣ, bxₖ, plans)
+    fft_backward!(byᵣ, byₖ, plans)
+    fft_backward!(xxᵣ, xxₖ, plans)
+    fft_backward!(xyᵣ, xyₖ, plans)
 
-    bxr_arr = parent(bxr); byr_arr = parent(byr)
-    xxr_arr = parent(xxr); xyr_arr = parent(xyr)
+    bxᵣ_arr = parent(bxᵣ); byᵣ_arr = parent(byᵣ)
+    xxᵣ_arr = parent(xxᵣ); xyᵣ_arr = parent(xyᵣ)
 
     # Real-space RHS
-    rhsr = similar(psi)
-    rhsr_arr = parent(rhsr)
+    rhsᵣ = similar(psi)
+    rhsᵣ_arr = parent(rhsᵣ)
     @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
-        rhsr_arr[i,j,k] = 2.0 * ( real(bxr_arr[i,j,k])*real(xyr_arr[i,j,k]) - real(byr_arr[i,j,k])*real(xxr_arr[i,j,k]) )
+        rhsᵣ_arr[i,j,k] = 2.0 * ( real(bxᵣ_arr[i,j,k])*real(xyᵣ_arr[i,j,k]) - real(byᵣ_arr[i,j,k])*real(xxᵣ_arr[i,j,k]) )
     end
 
     # Back to spectral
-    fft_forward!(rhs, rhsr, plans)
+    fft_forward!(rhs, rhsᵣ, plans)
 
     # Normalize and dealias
     rhs_arr = parent(rhs)
-    norm = nx*ny
+    N = nx*ny
     @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
         i_global = local_to_global(i, 1, G)
         j_global = local_to_global(j, 2, G)
         if L[i_global, j_global]
-            rhs_arr[i,j,k] /= norm
+            rhs_arr[i,j,k] /= N
         else
             rhs_arr[i,j,k] = 0
         end
@@ -219,94 +219,94 @@ end
 function _omega_eqn_rhs_2d!(rhs, psi, G::Grid, plans, Lmask, workspace)
     nx, ny, nz = G.nx, G.ny, G.nz
     L = isnothing(Lmask) ? trues(nx,ny) : Lmask
-    dz = nz > 1 ? (G.z[2]-G.z[1]) : 1.0
+    Δz = nz > 1 ? (G.z[2]-G.z[1]) : 1.0
 
     # Allocate z-pencil workspace
-    psi_z = workspace !== nothing && hasfield(typeof(workspace), :psi_z) ? workspace.psi_z : allocate_z_pencil(G, ComplexF64)
-    psiz_z = allocate_z_pencil(G, ComplexF64)
-    psiavg_z = allocate_z_pencil(G, ComplexF64)
+    ψ_z = workspace !== nothing && hasfield(typeof(workspace), :psi_z) ? workspace.psi_z : allocate_z_pencil(G, ComplexF64)
+    ψz_z = allocate_z_pencil(G, ComplexF64)
+    ψavg_z = allocate_z_pencil(G, ComplexF64)
 
     # Transpose psi to z-pencil for vertical operations
-    transpose_to_z_pencil!(psi_z, psi, G)
+    transpose_to_z_pencil!(ψ_z, psi, G)
 
-    # Compute psi_z and psi_avg in z-pencil configuration (z now fully local)
-    psi_z_arr = parent(psi_z)
-    psiz_z_arr = parent(psiz_z)
-    psiavg_z_arr = parent(psiavg_z)
+    # Compute ψ_z and ψ_avg in z-pencil configuration (z now fully local)
+    ψ_z_arr = parent(ψ_z)
+    ψz_z_arr = parent(ψz_z)
+    ψavg_z_arr = parent(ψavg_z)
 
-    nx_local_z, ny_local_z, nz_local = size(psi_z_arr)
+    nx_local_z, ny_local_z, nz_local = size(ψ_z_arr)
     @assert nz_local == nz "After transpose, z must be fully local"
 
     @inbounds for k in 1:nz, j in 1:ny_local_z, i in 1:nx_local_z
         if k == nz
-            psiz_z_arr[i,j,k] = 0  # Neumann top
-            psiavg_z_arr[i,j,k] = psi_z_arr[i,j,k]
+            ψz_z_arr[i,j,k] = 0  # Neumann top
+            ψavg_z_arr[i,j,k] = ψ_z_arr[i,j,k]
         else
-            psiz_z_arr[i,j,k] = (psi_z_arr[i,j,k+1] - psi_z_arr[i,j,k]) / dz
-            psiavg_z_arr[i,j,k] = 0.5*(psi_z_arr[i,j,k+1] + psi_z_arr[i,j,k])
+            ψz_z_arr[i,j,k] = (ψ_z_arr[i,j,k+1] - ψ_z_arr[i,j,k]) / Δz
+            ψavg_z_arr[i,j,k] = 0.5*(ψ_z_arr[i,j,k+1] + ψ_z_arr[i,j,k])
         end
     end
 
     # Transpose back to xy-pencil for horizontal operations
-    psizk = similar(psi)
-    psiavgk = similar(psi)
-    transpose_to_xy_pencil!(psizk, psiz_z, G)
-    transpose_to_xy_pencil!(psiavgk, psiavg_z, G)
+    ψzₖ = similar(psi)
+    ψavgₖ = similar(psi)
+    transpose_to_xy_pencil!(ψzₖ, ψz_z, G)
+    transpose_to_xy_pencil!(ψavgₖ, ψavg_z, G)
 
     # Get local dimensions for xy-pencil
-    psizk_arr = parent(psizk)
-    psiavgk_arr = parent(psiavgk)
-    nx_local, ny_local, nz_local_xy = size(psizk_arr)
+    ψzₖ_arr = parent(ψzₖ)
+    ψavgₖ_arr = parent(ψavgₖ)
+    nx_local, ny_local, nz_local_xy = size(ψzₖ_arr)
 
     # Build needed spectral derivatives in xy-pencil
-    bxk = similar(psi); byk = similar(psi)
-    xxk = similar(psi); xyk = similar(psi)
-    bxk_arr = parent(bxk); byk_arr = parent(byk)
-    xxk_arr = parent(xxk); xyk_arr = parent(xyk)
+    bxₖ = similar(psi); byₖ = similar(psi)
+    xxₖ = similar(psi); xyₖ = similar(psi)
+    bxₖ_arr = parent(bxₖ); byₖ_arr = parent(byₖ)
+    xxₖ_arr = parent(xxₖ); xyₖ_arr = parent(xyₖ)
 
     @inbounds for k in 1:nz_local_xy, j in 1:ny_local, i in 1:nx_local
         i_global = local_to_global(i, 1, G)
         j_global = local_to_global(j, 2, G)
-        kx = G.kx[i_global]
-        ky = G.ky[j_global]
-        # Compute kh2 from global kx, ky arrays (works in both serial and parallel)
-        kh2 = kx^2 + ky^2
+        kₓ = G.kx[i_global]
+        kᵧ = G.ky[j_global]
+        # Compute kₕ² from global kx, ky arrays (works in both serial and parallel)
+        kₕ² = kₓ^2 + kᵧ^2
 
-        bxk_arr[i,j,k] = im*kx*psizk_arr[i,j,k]
-        byk_arr[i,j,k] = im*ky*psizk_arr[i,j,k]
-        xxk_arr[i,j,k] = -im*kx*kh2*psiavgk_arr[i,j,k]
-        xyk_arr[i,j,k] = -im*ky*kh2*psiavgk_arr[i,j,k]
+        bxₖ_arr[i,j,k] = im*kₓ*ψzₖ_arr[i,j,k]
+        byₖ_arr[i,j,k] = im*kᵧ*ψzₖ_arr[i,j,k]
+        xxₖ_arr[i,j,k] = -im*kₓ*kₕ²*ψavgₖ_arr[i,j,k]
+        xyₖ_arr[i,j,k] = -im*kᵧ*kₕ²*ψavgₖ_arr[i,j,k]
     end
 
     # To real space (FFTs in xy-pencil)
-    bxr = similar(psi); byr = similar(psi)
-    xxr = similar(psi); xyr = similar(psi)
-    fft_backward!(bxr, bxk, plans)
-    fft_backward!(byr, byk, plans)
-    fft_backward!(xxr, xxk, plans)
-    fft_backward!(xyr, xyk, plans)
+    bxᵣ = similar(psi); byᵣ = similar(psi)
+    xxᵣ = similar(psi); xyᵣ = similar(psi)
+    fft_backward!(bxᵣ, bxₖ, plans)
+    fft_backward!(byᵣ, byₖ, plans)
+    fft_backward!(xxᵣ, xxₖ, plans)
+    fft_backward!(xyᵣ, xyₖ, plans)
 
-    bxr_arr = parent(bxr); byr_arr = parent(byr)
-    xxr_arr = parent(xxr); xyr_arr = parent(xyr)
+    bxᵣ_arr = parent(bxᵣ); byᵣ_arr = parent(byᵣ)
+    xxᵣ_arr = parent(xxᵣ); xyᵣ_arr = parent(xyᵣ)
 
     # Real-space RHS
-    rhsr = similar(psi)
-    rhsr_arr = parent(rhsr)
+    rhsᵣ = similar(psi)
+    rhsᵣ_arr = parent(rhsᵣ)
     @inbounds for k in 1:nz_local_xy, j in 1:ny_local, i in 1:nx_local
-        rhsr_arr[i,j,k] = 2.0 * ( real(bxr_arr[i,j,k])*real(xyr_arr[i,j,k]) - real(byr_arr[i,j,k])*real(xxr_arr[i,j,k]) )
+        rhsᵣ_arr[i,j,k] = 2.0 * ( real(bxᵣ_arr[i,j,k])*real(xyᵣ_arr[i,j,k]) - real(byᵣ_arr[i,j,k])*real(xxᵣ_arr[i,j,k]) )
     end
 
     # Back to spectral
-    fft_forward!(rhs, rhsr, plans)
+    fft_forward!(rhs, rhsᵣ, plans)
 
     # Normalize and dealias
     rhs_arr = parent(rhs)
-    norm = nx*ny
+    N = nx*ny
     @inbounds for k in 1:nz_local_xy, j in 1:ny_local, i in 1:nx_local
         i_global = local_to_global(i, 1, G)
         j_global = local_to_global(j, 2, G)
         if L[i_global, j_global]
-            rhs_arr[i,j,k] /= norm
+            rhs_arr[i,j,k] /= N
         else
             rhs_arr[i,j,k] = 0
         end
