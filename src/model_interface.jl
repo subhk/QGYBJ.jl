@@ -506,7 +506,7 @@ function compute_potential_energy(state::State, grid::Grid, plans, N2_profile::V
 end
 
 """
-    compute_wave_energy(state::State, grid::Grid, plans; Bu::Real=1.0)
+    compute_wave_energy(state::State, grid::Grid, plans)
 
 Compute wave energy from the YBJ+ wave envelope B.
 
@@ -519,12 +519,11 @@ with proper dealiasing correction.
 - `state::State`: Current model state with B (wave envelope)
 - `grid::Grid`: Grid structure
 - `plans`: FFT plans
-- `Bu::Real`: Burger number (default 1.0)
 
 # Returns
 Domain-integrated wave energy (scalar).
 """
-function compute_wave_energy(state::State, grid::Grid, plans; Bu::Real=1.0)
+function compute_wave_energy(state::State, grid::Grid, plans)
     T = eltype(real(state.B[1]))
     nz = grid.nz
     nx = grid.nx
