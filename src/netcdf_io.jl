@@ -396,6 +396,16 @@ function write_parallel_netcdf_file(filepath, S::State, G::Grid, plans, time, pa
             z_var[:] = G.z  # Use actual grid z-values
             time_var[1] = time
 
+            # Add coordinate attributes for consistency
+            x_var.attrib["units"] = "radians"
+            x_var.attrib["long_name"] = "x coordinate"
+            y_var.attrib["units"] = "radians"
+            y_var.attrib["long_name"] = "y coordinate"
+            z_var.attrib["units"] = "nondimensional"
+            z_var.attrib["long_name"] = "z coordinate (vertical, nondimensional [0, 2π])"
+            time_var.attrib["units"] = "model time units"
+            time_var.attrib["long_name"] = "time"
+
             # Create and write data variables (already normalized by fft_backward!)
             psi_var = NCDatasets.defVar(ds, "psi", Float64, ("x", "y", "z"))
             LAr_var = NCDatasets.defVar(ds, "LAr", Float64, ("x", "y", "z"))
@@ -983,10 +993,17 @@ function ncdump_psi(S::State, G::Grid, plans; path="psi.out.nc")
         # Set coordinate values
         dx = 2π / G.nx
         dy = 2π / G.ny
-        dz = G.nz > 1 ? (G.z[end] - G.z[1]) / (G.nz - 1) : 2π / G.nz
         x_var[:] = collect(0:dx:(2π-dx))
         y_var[:] = collect(0:dy:(2π-dy))
         z_var[:] = G.z
+
+        # Add coordinate attributes for consistency
+        x_var.attrib["units"] = "radians"
+        x_var.attrib["long_name"] = "x coordinate"
+        y_var.attrib["units"] = "radians"
+        y_var.attrib["long_name"] = "y coordinate"
+        z_var.attrib["units"] = "nondimensional"
+        z_var.attrib["long_name"] = "z coordinate (vertical, nondimensional [0, 2π])"
 
         # Write psi (already normalized by fft_backward!)
         psi_var = NCDatasets.defVar(ds, "psi", Float64, ("x", "y", "z"))
@@ -1029,10 +1046,17 @@ function ncdump_la(S::State, G::Grid, plans; path="la.out.nc")
         # Set coordinate values
         dx = 2π / G.nx
         dy = 2π / G.ny
-        dz = G.nz > 1 ? (G.z[end] - G.z[1]) / (G.nz - 1) : 2π / G.nz
         x_var[:] = collect(0:dx:(2π-dx))
         y_var[:] = collect(0:dy:(2π-dy))
         z_var[:] = G.z
+
+        # Add coordinate attributes for consistency
+        x_var.attrib["units"] = "radians"
+        x_var.attrib["long_name"] = "x coordinate"
+        y_var.attrib["units"] = "radians"
+        y_var.attrib["long_name"] = "y coordinate"
+        z_var.attrib["units"] = "nondimensional"
+        z_var.attrib["long_name"] = "z coordinate (vertical, nondimensional [0, 2π])"
 
         # Write wave field real and imaginary parts (already normalized)
         LAr_var = NCDatasets.defVar(ds, "LAr", Float64, ("x", "y", "z"))
