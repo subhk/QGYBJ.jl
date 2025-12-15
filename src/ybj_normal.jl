@@ -310,22 +310,22 @@ function _compute_sigma_2d(par::QGParams, G::Grid, nBRk, nBIk, rBRk, rBIk, Lmask
     nx_local_z, ny_local_z, nz_local = size(nBRk_z_arr)
     @assert nz_local == nz "After transpose, z must be fully local"
 
-    sigma = zeros(ComplexF64, nx_local_z, ny_local_z)
+    σ = zeros(ComplexF64, nx_local_z, ny_local_z)
 
     @inbounds for j in 1:ny_local_z, i in 1:nx_local_z
         i_global = local_to_global_z(i, 1, G)
         j_global = local_to_global_z(j, 2, G)
-        # Compute kh2 from global kx, ky arrays (works in both serial and parallel)
-        kh2 = G.kx[i_global]^2 + G.ky[j_global]^2
+        # Compute kₕ² from global kx, ky arrays (works in both serial and parallel)
+        kₕ² = G.kx[i_global]^2 + G.ky[j_global]^2
 
-        if L[i_global, j_global] && kh2 > 0
+        if L[i_global, j_global] && kₕ² > 0
             s = 0.0 + 0.0im
             for k in 1:nz
-                s += ( rBRk_z_arr[i,j,k] + 2*nBIk_z_arr[i,j,k] + im*( rBIk_z_arr[i,j,k] - 2*nBRk_z_arr[i,j,k] ) )/kh2
+                s += ( rBRk_z_arr[i,j,k] + 2*nBIk_z_arr[i,j,k] + im*( rBIk_z_arr[i,j,k] - 2*nBRk_z_arr[i,j,k] ) )/kₕ²
             end
-            sigma[i,j] = s
+            σ[i,j] = s
         else
-            sigma[i,j] = 0
+            σ[i,j] = 0
         end
     end
 
