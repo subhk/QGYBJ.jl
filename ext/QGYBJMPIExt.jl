@@ -810,18 +810,17 @@ function QGYBJ.scatter_from_root(arr, grid::Grid, mpi_config::MPIConfig)
         # Root extracts and sends each process's portion
         for rank in 0:(mpi_config.nprocs - 1)
             # Convert MPI rank to PencilArrays linear index
-            # PencilArrays uses column-major ordering for the 2D topology:
-            # Linear index n corresponds to coordinates (i, j) where:
-            #   i = ((n-1) % px) + 1
-            #   j = ((n-1) ÷ px) + 1
-            # MPI rank to coordinates (assuming row-major MPI ordering):
+            # MPI ranks are assigned in row-major order over the 2D topology (px × py):
+            #   rank = coord_x + coord_y * px  (0-indexed)
+            # So to get coordinates:
             #   coord_x = rank % px
             #   coord_y = rank ÷ px
-            # PencilArrays linear index (column-major):
+            # PencilArrays uses 1-indexed linear indices in column-major order:
             #   linear_idx = coord_x + coord_y * px + 1
+            # This happens to equal rank + 1 for this topology ordering.
             coord_x = rank % topo[1]
             coord_y = rank ÷ topo[1]
-            linear_idx = coord_x + coord_y * topo[1] + 1  # 1-indexed
+            linear_idx = coord_x + coord_y * topo[1] + 1  # 1-indexed (equals rank + 1)
 
             # Get the range for this process using range_remote (not range_local!)
             # range_local only returns the current process's range

@@ -227,33 +227,38 @@ end
 """
     init_pencil_decomposition!(G::Grid)
 
-Initialize PencilArrays MPI decomposition for parallel execution.
+**DEPRECATED**: This function is a legacy stub and does not properly initialize
+MPI decomposition.
 
-This attempts to set up distributed arrays using MPI. If MPI or PencilArrays
-are not available, the grid remains in serial mode with `G.decomp = nothing`.
+For proper MPI parallelization, use the extension module instead:
 
-# Usage
 ```julia
-# After initializing MPI in your script:
 using MPI
-MPI.Init()
+using PencilArrays
+using PencilFFTs
+using QGYBJ
 
-G = init_grid(par)
-init_pencil_decomposition!(G)  # Enable parallel mode
+MPI.Init()
+mpi_config = QGYBJ.setup_mpi_environment()
+grid = QGYBJ.init_mpi_grid(params, mpi_config)  # Creates grid with decomposition
+state = QGYBJ.init_mpi_state(grid, mpi_config)
+plans = QGYBJ.plan_mpi_transforms(grid, mpi_config)
 ```
 
-# Note
-Safe to call even without MPI - silently falls back to serial mode.
+This function now only issues a deprecation warning and returns the grid unchanged.
 """
 function init_pencil_decomposition!(G::Grid)
-    try
-        @eval import MPI
-        @eval import PencilArrays
-        comm = MPI.COMM_WORLD
-        G.decomp = PencilArrays.PencilDecomposition((G.nx, G.ny, G.nz), comm)
-    catch
-        # Stay in serial mode - no error, just no parallelization
-    end
+    @warn """
+    init_pencil_decomposition! is deprecated and does not work correctly.
+
+    For MPI parallelization, use the extension module:
+        using MPI, PencilArrays, PencilFFTs, QGYBJ
+        MPI.Init()
+        mpi_config = QGYBJ.setup_mpi_environment()
+        grid = QGYBJ.init_mpi_grid(params, mpi_config)
+
+    The grid will remain in serial mode (G.decomp = nothing).
+    """ maxlog=1
     return G
 end
 

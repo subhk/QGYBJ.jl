@@ -477,9 +477,10 @@ end
 function _invert_helmholtz_2d!(dstk, rhs, G::Grid, par, a, b, scale_kh2, bot_bc, top_bc, workspace)
     nz = G.nz
 
-    # Allocate z-pencil workspace
+    # Use z-pencil workspace arrays to avoid repeated allocations
+    # work_z is used for input (rhs), psi_z is used for output (dst)
     rhs_z = workspace !== nothing ? workspace.work_z : allocate_z_pencil(G, ComplexF64)
-    dst_z = allocate_z_pencil(G, ComplexF64)
+    dst_z = workspace !== nothing ? workspace.psi_z : allocate_z_pencil(G, ComplexF64)
 
     # Transpose to z-pencil
     transpose_to_z_pencil!(rhs_z, rhs, G)
