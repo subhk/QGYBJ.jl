@@ -85,18 +85,26 @@ end
 """
     Plans
 
-Container for FFT plans. Supports both FFTW (serial) and PencilFFTs (parallel).
+Container for FFT plans. Used for serial FFTW execution.
+
+For parallel execution with PencilFFTs, the extension module (QGYBJMPIExt)
+provides `MPIPlans` which wraps `PencilFFTPlan` and uses `ldiv!` for the
+normalized inverse transform.
 
 # Fields
-- `backend::Symbol`: Either `:fftw` or `:pencil`
-- `p_forward`: Forward FFT plan (PencilFFTs or FFTW)
-- `p_backward`: Inverse FFT plan (PencilFFTs or FFTW)
+- `backend::Symbol`: Always `:fftw` for this struct
+- `p_forward`: Reserved for future FFTW plan caching
+- `p_backward`: Reserved for future FFTW plan caching
 - `f_forward`: FFTW-specific forward plan (for pre-planned transforms)
 - `f_backward`: FFTW-specific inverse plan (for pre-planned transforms)
+
+# Note
+When MPI/PencilArrays/PencilFFTs are loaded, use `plan_mpi_transforms()` instead,
+which returns `MPIPlans` from the extension module.
 """
 Base.@kwdef mutable struct Plans
-    backend::Symbol = :fftw          # :pencil or :fftw
-    # PencilFFTs plans (set by extension)
+    backend::Symbol = :fftw          # :fftw for serial mode
+    # Reserved for future FFTW plan caching
     p_forward::Any = nothing
     p_backward::Any = nothing
     # FFTW pre-planned transforms (optional optimization)
