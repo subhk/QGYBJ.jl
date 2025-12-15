@@ -159,16 +159,16 @@ function parallel_initialization_from_config(config, pconfig)
         Ly = config.domain.Ly,
         dt = config.dt,
         nt = ceil(Int, config.total_time / config.dt),
-        f0 = config.f0,
-        nu_h = config.nu_h,
-        nu_v = config.nu_v,
+        f₀ = config.f0,
+        νₕ = config.nu_h,
+        νᵥ = config.nu_v,
         linear_vert_structure = 0,
         stratification = config.stratification.type,
         W2F = T(1e-6),
-        gamma = T(1e-3),
-        nuh1 = T(0.01), nuh2 = T(10.0), ilap1 = 2, ilap2 = 6,
-        nuh1w = T(0.0), nuh2w = T(10.0), ilap1w = 2, ilap2w = 6,
-        nuz = T(0.0),
+        γ = T(1e-3),
+        νₕ₁ = T(0.01), νₕ₂ = T(10.0), ilap1 = 2, ilap2 = 6,
+        νₕ₁ʷ = T(0.0), νₕ₂ʷ = T(10.0), ilap1w = 2, ilap2w = 6,
+        νz = T(0.0),
         inviscid = config.inviscid,
         linear = config.linear,
         no_dispersion = config.no_dispersion,
@@ -178,11 +178,11 @@ function parallel_initialization_from_config(config, pconfig)
         fixed_flow = config.fixed_mean_flow,
         no_wave_feedback = config.no_wave_feedback,
         # Skewed Gaussian parameters (from config)
-        N02_sg = config.stratification.N02_sg,
-        N12_sg = config.stratification.N12_sg,
-        sigma_sg = config.stratification.sigma_sg,
-        z0_sg = config.stratification.z0_sg,
-        alpha_sg = config.stratification.alpha_sg
+        N₀²_sg = config.stratification.N02_sg,
+        N₁²_sg = config.stratification.N12_sg,
+        σ_sg = config.stratification.sigma_sg,
+        z₀_sg = config.stratification.z0_sg,
+        α_sg = config.stratification.alpha_sg
     )
     
     # Initialize parallel grid and state
