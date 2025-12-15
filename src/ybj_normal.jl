@@ -420,11 +420,11 @@ function compute_A!(A::AbstractArray{<:Complex,3}, C::AbstractArray{<:Complex,3}
 end
 
 # Direct computation when z is fully local
-function _compute_A_direct!(A, C, BRk, BIk, sigma, par, G, Lmask)
+function _compute_A_direct!(A, C, BRk, BIk, σ, par, G, Lmask)
     nx, ny, nz = G.nx, G.ny, G.nz
     L = isnothing(Lmask) ? trues(nx,ny) : Lmask
-    N2 = N2_ut(par, G)
-    dz = nz > 1 ? (G.z[2]-G.z[1]) : 1.0
+    N² = N2_ut(par, G)
+    Δz = nz > 1 ? (G.z[2]-G.z[1]) : 1.0
 
     A_arr = parent(A)
     C_arr = parent(C)
@@ -437,32 +437,32 @@ function _compute_A_direct!(A, C, BRk, BIk, sigma, par, G, Lmask)
     @inbounds for j in 1:ny_local, i in 1:nx_local
         i_global = local_to_global(i, 1, G)
         j_global = local_to_global(j, 2, G)
-        # Compute kh2 from global kx, ky arrays (works in both serial and parallel)
-        kh2 = G.kx[i_global]^2 + G.ky[j_global]^2
+        # Compute kₕ² from global kx, ky arrays (works in both serial and parallel)
+        kₕ² = G.kx[i_global]^2 + G.ky[j_global]^2
 
-        if L[i_global, j_global] && kh2 > 0
-            # Stage 1: build \tilde{A} by cumulative vertical integration
+        if L[i_global, j_global] && kₕ² > 0
+            # Stage 1: build Ã by cumulative vertical integration
             sBR = 0.0 + 0.0im
             sBI = 0.0 + 0.0im
             A_arr[i,j,1] = 0
             for k in 2:nz
                 sBR += BRk_arr[i,j,k-1]
                 sBI += BIk_arr[i,j,k-1]
-                A_arr[i,j,k] = A_arr[i,j,k-1] + ( sBR + im*sBI ) * N2[k-1]*dz*dz
+                A_arr[i,j,k] = A_arr[i,j,k-1] + ( sBR + im*sBI ) * N²[k-1]*Δz*Δz
             end
             # Stage 2: compute vertical sum
             sumA = 0.0 + 0.0im
             for k in 1:nz
                 sumA += A_arr[i,j,k]
             end
-            # Adjust to enforce mean(A) = sigma(i,j)/nz
-            adj = (sigma[i,j] - sumA)/nz
+            # Adjust to enforce mean(A) = σ(i,j)/nz
+            adj = (σ[i,j] - sumA)/nz
             for k in 1:nz
                 A_arr[i,j,k] += adj
             end
             # C = A_z, forward diff; top C=0
             for k in 1:nz-1
-                C_arr[i,j,k] = (A_arr[i,j,k+1] - A_arr[i,j,k])/dz
+                C_arr[i,j,k] = (A_arr[i,j,k+1] - A_arr[i,j,k])/Δz
             end
             C_arr[i,j,nz] = 0
         else
@@ -474,11 +474,11 @@ function _compute_A_direct!(A, C, BRk, BIk, sigma, par, G, Lmask)
 end
 
 # 2D decomposition version with transposes
-function _compute_A_2d!(A, C, BRk, BIk, sigma, par, G, Lmask, workspace)
+function _compute_A_2d!(A, C, BRk, BIk, σ, par, G, Lmask, workspace)
     nx, ny, nz = G.nx, G.ny, G.nz
     L = isnothing(Lmask) ? trues(nx,ny) : Lmask
-    N2 = N2_ut(par, G)
-    dz = nz > 1 ? (G.z[2]-G.z[1]) : 1.0
+    N² = N2_ut(par, G)
+    Δz = nz > 1 ? (G.z[2]-G.z[1]) : 1.0
 
     # Transpose inputs to z-pencil
     BRk_z = allocate_z_pencil(G, ComplexF64)
@@ -500,10 +500,10 @@ function _compute_A_2d!(A, C, BRk, BIk, sigma, par, G, Lmask, workspace)
     @inbounds for j in 1:ny_local_z, i in 1:nx_local_z
         i_global = local_to_global_z(i, 1, G)
         j_global = local_to_global_z(j, 2, G)
-        # Compute kh2 from global kx, ky arrays (works in both serial and parallel)
-        kh2 = G.kx[i_global]^2 + G.ky[j_global]^2
+        # Compute kₕ² from global kx, ky arrays (works in both serial and parallel)
+        kₕ² = G.kx[i_global]^2 + G.ky[j_global]^2
 
-        if L[i_global, j_global] && kh2 > 0
+        if L[i_global, j_global] && kₕ² > 0
             # Stage 1: cumulative vertical integration
             sBR = 0.0 + 0.0im
             sBI = 0.0 + 0.0im
@@ -511,21 +511,21 @@ function _compute_A_2d!(A, C, BRk, BIk, sigma, par, G, Lmask, workspace)
             for k in 2:nz
                 sBR += BRk_z_arr[i,j,k-1]
                 sBI += BIk_z_arr[i,j,k-1]
-                A_z_arr[i,j,k] = A_z_arr[i,j,k-1] + ( sBR + im*sBI ) * N2[k-1]*dz*dz
+                A_z_arr[i,j,k] = A_z_arr[i,j,k-1] + ( sBR + im*sBI ) * N²[k-1]*Δz*Δz
             end
-            # Stage 2: apply sigma constraint
-            # Note: sigma is computed in z-pencil configuration, so indexing matches
+            # Stage 2: apply σ constraint
+            # Note: σ is computed in z-pencil configuration, so indexing matches
             sumA = 0.0 + 0.0im
             for k in 1:nz
                 sumA += A_z_arr[i,j,k]
             end
-            adj = (sigma[i,j] - sumA)/nz
+            adj = (σ[i,j] - sumA)/nz
             for k in 1:nz
                 A_z_arr[i,j,k] += adj
             end
             # Stage 3: vertical derivative
             for k in 1:nz-1
-                C_z_arr[i,j,k] = (A_z_arr[i,j,k+1] - A_z_arr[i,j,k])/dz
+                C_z_arr[i,j,k] = (A_z_arr[i,j,k+1] - A_z_arr[i,j,k])/Δz
             end
             C_z_arr[i,j,nz] = 0
         else
