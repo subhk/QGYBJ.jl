@@ -114,7 +114,7 @@ Base.@kwdef mutable struct QGParams{T}
     #= ====================================================================
                             PHYSICAL PARAMETERS
     ==================================================================== =#
-    f0::T                      # Coriolis parameter (1.0 for nondimensional)
+    f₀::T                      # Coriolis parameter (1.0 for nondimensional)
 
     #= ====================================================================
                         VISCOSITY / HYPERVISCOSITY
@@ -125,39 +125,39 @@ Base.@kwdef mutable struct QGParams{T}
 
     Typical values from Fortran test1:
     - ilap1=2, ilap2=6 (biharmonic + hyper-6)
-    - nuh1~0.01, nuh2~10.0 for 256³ resolution
+    - νₕ₁~0.01, νₕ₂~10.0 for 256³ resolution
     ==================================================================== =#
-    nu_h::T                    # Generic horizontal viscosity (legacy)
-    nu_v::T                    # Generic vertical viscosity (legacy)
+    νₕ::T                      # Generic horizontal viscosity (legacy)
+    νᵥ::T                      # Generic vertical viscosity (legacy)
 
     # Mean flow hyperdiffusion
-    nuh1::T                    # First hyperviscosity coefficient (flow)
-    nuh2::T                    # Second hyperviscosity coefficient (flow)
+    νₕ₁::T                     # First hyperviscosity coefficient (flow)
+    νₕ₂::T                     # Second hyperviscosity coefficient (flow)
     ilap1::Int                 # First Laplacian power (e.g., 2 = biharmonic)
     ilap2::Int                 # Second Laplacian power (e.g., 6 = hyper-6)
 
     # Wave field hyperdiffusion
-    nuh1w::T                   # First hyperviscosity coefficient (waves)
-    nuh2w::T                   # Second hyperviscosity coefficient (waves)
+    νₕ₁ʷ::T                    # First hyperviscosity coefficient (waves)
+    νₕ₂ʷ::T                    # Second hyperviscosity coefficient (waves)
     ilap1w::Int                # First Laplacian power for waves
     ilap2w::Int                # Second Laplacian power for waves
 
     # Vertical diffusion
-    nuz::T                     # Vertical diffusion coefficient for q
+    νz::T                      # Vertical diffusion coefficient for q
 
     #= ====================================================================
                         PHYSICAL PARAMETERS
     ====================================================================
     These are the key physical parameters that control the wave dynamics:
-    - f0: Coriolis parameter (default 1.0)
-    - N2: Buoyancy frequency squared N² (default 1.0 for constant_N)
+    - f₀: Coriolis parameter (default 1.0)
+    - N²: Buoyancy frequency squared (default 1.0 for constant_N)
 
     The wave dispersion coefficient is: N²/(2f)
     The elliptic coefficient is: a = f²/N² (= 1/N² when f=1)
     ==================================================================== =#
-    N2::T                      # Buoyancy frequency squared N² (default 1.0)
+    N²::T                      # Buoyancy frequency squared (default 1.0)
     W2F::T                     # (Uw/U)² = wave-to-flow velocity ratio squared
-    gamma::T                   # Robert-Asselin filter parameter (typ. 10⁻³)
+    γ::T                       # Robert-Asselin filter parameter (typ. 10⁻³)
 
     #= ====================================================================
                             FLAGS AND SWITCHES
@@ -199,11 +199,11 @@ Base.@kwdef mutable struct QGParams{T}
 
     Default values are from Fortran test1 (nondimensional, L3=2π domain).
     ==================================================================== =#
-    N02_sg::T                  # Background N² value (N₀²)
-    N12_sg::T                  # Peak N² amplitude (N₁²)
-    sigma_sg::T                # Width of pycnocline (σ)
-    z0_sg::T                   # Center depth of pycnocline (z₀)
-    alpha_sg::T                # Skewness parameter (α)
+    N₀²_sg::T                  # Background N² value (N₀²)
+    N₁²_sg::T                  # Peak N² amplitude (N₁²)
+    σ_sg::T                    # Width of pycnocline (σ)
+    z₀_sg::T                   # Center depth of pycnocline (z₀)
+    α_sg::T                    # Skewness parameter (α)
 
     #= ====================================================================
                     OPTIONAL VERTICAL PROFILES (Advanced)
@@ -211,9 +211,9 @@ Base.@kwdef mutable struct QGParams{T}
     These allow overriding default density/stratification profiles with
     custom user-provided profiles. If nothing, defaults are computed.
     ==================================================================== =#
-    rho_ut_profile::Union{Nothing,Vector{T}} = nothing   # Unstaggered density weights
-    rho_st_profile::Union{Nothing,Vector{T}} = nothing   # Staggered density weights
-    b_ell_profile::Union{Nothing,Vector{T}} = nothing    # b_ell coefficient profile
+    ρ_ut_profile::Union{Nothing,Vector{T}} = nothing   # Unstaggered density weights
+    ρ_st_profile::Union{Nothing,Vector{T}} = nothing   # Staggered density weights
+    b_ell_profile::Union{Nothing,Vector{T}} = nothing  # b_ell coefficient profile
 end
 
 """
