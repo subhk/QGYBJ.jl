@@ -26,7 +26,7 @@ Rearranging for the vertical operator (in spectral space):
     a(z) ∂²ψ/∂z² + b(z) ∂ψ/∂z - kₕ² ψ = q
 
 where:
-    a(z) = f²/N²(z) = Bu/N² (in nondimensional units)
+    a(z) = f²/N²(z) (elliptic coefficient)
     b(z) = coefficient from variable N² (often zero for constant density)
     kₕ² = kₓ² + kᵧ² (horizontal wavenumber squared)
 
@@ -80,7 +80,7 @@ This is the core elliptic inversion that relates QGPV to streamfunction.
 PHYSICS:
     q = ∇²ψ + (1/a_ell) ∂²ψ/∂z²
 
-where a_ell = Bu/N² is the "elliptic coefficient" that varies with
+where a_ell = f²/N² is the "elliptic coefficient" that varies with
 stratification.
 
 The discrete equation for interior points is:
@@ -105,7 +105,7 @@ with Neumann boundary conditions ψ_z = 0 at top and bottom.
 # Arguments
 - `S::State`: State struct containing `q` (input) and `psi` (output)
 - `G::Grid`: Grid struct with wavenumbers and vertical coordinates
-- `a::AbstractVector`: Elliptic coefficient a_ell(z) = Bu/N²(z), length nz
+- `a::AbstractVector`: Elliptic coefficient a_ell(z) = f²/N²(z), length nz
 - `par`: Optional QGParams for density weighting (defaults to unity weights)
 - `workspace`: Optional z-pencil workspace arrays for 2D decomposition
 
@@ -127,7 +127,7 @@ This matches `psi_solver` in elliptic.f90.
 
 # Example
 ```julia
-a_vec = a_ell_ut(params, G)  # Compute a_ell = Bu/N²
+a_vec = a_ell_ut(params, G)  # Compute a_ell = f²/N²
 invert_q_to_psi!(state, grid; a=a_vec)
 ```
 """
@@ -634,8 +634,8 @@ with Neumann boundary conditions A_z = 0 at top and bottom.
 # Arguments
 - `S::State`: State containing `B` (input), `A` and `C` (output)
 - `G::Grid`: Grid struct
-- `par`: QGParams (for Burger number Bu)
-- `a::AbstractVector`: Elliptic coefficient a_ell(z) = Bu/N²(z)
+- `par`: QGParams (for f0, N2 parameters)
+- `a::AbstractVector`: Elliptic coefficient a_ell(z) = f²/N²(z)
 - `workspace`: Optional z-pencil workspace for 2D decomposition
 
 # Output Fields
@@ -717,8 +717,8 @@ function _invert_B_to_A_direct!(S::State, G::Grid, par, a::AbstractVector)
         rhsᵣ = zeros(eltype(a), nz)
         rhsᵢ = zeros(eltype(a), nz)
         @inbounds for k in 1:nz
-            rhsᵣ[k] = Δz² * Bu * real(B_arr[i_local, j_local, k])
-            rhsᵢ[k] = Δz² * Bu * imag(B_arr[i_local, j_local, k])
+            rhsᵣ[k] = Δz² * a_ell_coeff * real(B_arr[i_local, j_local, k])
+            rhsᵢ[k] = Δz² * a_ell_coeff * imag(B_arr[i_local, j_local, k])
         end
 
         solᵣ = copy(rhsᵣ)
