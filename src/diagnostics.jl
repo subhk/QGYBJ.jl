@@ -477,7 +477,7 @@ Matches the potential energy computation in `diag_zentrum` (ps term).
 function flow_potential_energy_spectral(bk, G::Grid, par; Lmask=nothing)
     nx, ny, nz = G.nx, G.ny, G.nz
     L = isnothing(Lmask) ? trues(nx, ny) : Lmask
-    Bu = par.Bu
+    a_ell_coeff = par.f0^2 / par.N2  # Elliptic coefficient f²/N²
 
     # Get local dimensions
     bk_arr = parent(bk)
@@ -517,14 +517,14 @@ function flow_potential_energy_spectral(bk, G::Grid, par; Lmask=nothing)
             j_global = local_to_global(j, 2, G)
 
             if L[i_global, j_global]
-                # PE contribution: (Bu × ρ₁/ρ₂) × |b|²
-                pe_k += (Bu * ρ₁ₖ / ρ₂ₖ) * abs2(bk_arr[i,j,k])
+                # PE contribution: (a_ell × ρ₁/ρ₂) × |b|²
+                pe_k += (a_ell_coeff * ρ₁ₖ / ρ₂ₖ) * abs2(bk_arr[i,j,k])
             end
         end
 
         # Dealiasing correction
         if local_to_global(1, 1, G) == 1 && local_to_global(1, 2, G) == 1
-            pe_k -= 0.5 * (Bu * ρ₁ₖ / ρ₂ₖ) * abs2(bk_arr[1,1,k])
+            pe_k -= 0.5 * (a_ell_coeff * ρ₁ₖ / ρ₂ₖ) * abs2(bk_arr[1,1,k])
         end
 
         # Weight by density and accumulate
