@@ -167,16 +167,15 @@ function write_serial_state_file(manager::OutputManager, S::State, G::Grid, plan
     filepath = joinpath(manager.output_dir, filename)
     
     # Convert spectral fields to real space
+    # Note: fft_backward! uses FFTW.ifft which is already normalized (divides by nx*ny)
     psir = similar(S.psi)
     fft_backward!(psir, S.psi, plans)
-    
-    BRr = similar(S.B)
-    BIr = similar(S.B) 
-    fft_backward!(BRr, real.(S.B), plans)
-    fft_backward!(BIr, imag.(S.B), plans)
-    
-    # Normalization factor for IFFT
-    norm_factor = G.nx * G.ny
+
+    # For wave field B: first transform full complex B to physical space,
+    # then extract real and imaginary parts of the PHYSICAL field
+    # B = BR + i*BI where BR, BI are real fields in physical space
+    Br = similar(S.B)
+    fft_backward!(Br, S.B, plans)  # Full complex IFFT
     
     NCDatasets.Dataset(filepath, "c") do ds
         # Define dimensions
@@ -212,21 +211,23 @@ function write_serial_state_file(manager::OutputManager, S::State, G::Grid, plan
         time_var.attrib["long_name"] = "time"
         
         # Stream function
+        # Note: psir is already normalized by fft_backward!, no additional division needed
         if manager.save_psi
             psi_var = defVar(ds, "psi", Float64, ("x", "y", "z"))
-            psi_var[:,:,:] = real.(psir) / norm_factor
+            psi_var[:,:,:] = real.(psir)
             psi_var.attrib["units"] = "m²/s"
             psi_var.attrib["long_name"] = "stream function"
         end
-        
+
         # Wave fields (L+A real and imaginary parts)
+        # Extract real and imag parts of the PHYSICAL field Br (already normalized)
         if manager.save_waves
             LAr_var = defVar(ds, "LAr", Float64, ("x", "y", "z"))
             LAi_var = defVar(ds, "LAi", Float64, ("x", "y", "z"))
-            
-            LAr_var[:,:,:] = real.(BRr) / norm_factor
-            LAi_var[:,:,:] = real.(BIr) / norm_factor
-            
+
+            LAr_var[:,:,:] = real.(Br)  # Real part of physical wave field
+            LAi_var[:,:,:] = imag.(Br)  # Imaginary part of physical wave field
+
             LAr_var.attrib["units"] = "wave amplitude"
             LAr_var.attrib["long_name"] = "L+A real part"
             LAi_var.attrib["units"] = "wave amplitude"
