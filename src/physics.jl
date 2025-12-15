@@ -113,11 +113,12 @@ Matches `a_ell(k)` computed in `init_base_state` (init.f90).
 function a_ell_ut(par::QGParams, G::Grid)
     nz = G.nz
     a = similar(G.z)
+    f0_sq = par.f0^2
 
     if par.stratification === :constant_N
-        #= Constant N²: simplest case, a = 1/1 = 1 everywhere =#
+        #= Constant N²: a = f²/N² =#
         @inbounds for k in 1:nz
-            a[k] = 1.0 / 1.0  # Normalized
+            a[k] = f0_sq / par.N2
         end
 
     elseif par.stratification === :skewed_gaussian
@@ -131,8 +132,8 @@ function a_ell_ut(par::QGParams, G::Grid)
         N02 = par.N02_sg; N12 = par.N12_sg; σ = par.sigma_sg; z0 = par.z0_sg; α = par.alpha_sg
         @inbounds for k in 1:nz
             z = G.z[k]
-            N2 = N12*exp(-((z - z0)^2)/(σ^2))*(1 + erf(α*(z - z0)/(σ*sqrt(2.0)))) + N02
-            a[k] = 1.0 / N2  # a = 1/N² (nondimensional)
+            N2_z = N12*exp(-((z - z0)^2)/(σ^2))*(1 + erf(α*(z - z0)/(σ*sqrt(2.0)))) + N02
+            a[k] = f0_sq / N2_z  # a = f²/N²(z)
         end
 
     else
