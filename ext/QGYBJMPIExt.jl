@@ -46,6 +46,11 @@ using MPI
 using PencilArrays
 using PencilFFTs
 
+# Explicit imports from PencilArrays for clarity and forward compatibility
+import PencilArrays: Pencil, PencilArray, MPITopology, Transpose
+import PencilArrays: range_local, transpose!, gather
+import PencilFFTs: PencilFFTPlan, first_pencil, last_pencil
+
 # Import types we need to extend
 import QGYBJ: Grid, State, QGParams, Plans
 import QGYBJ: plan_transforms!, fft_forward!, fft_backward!
@@ -782,13 +787,27 @@ end
     allocate_z_pencil(grid::Grid, ::Type{T}=ComplexF64) where T
 
 Allocate an array in z-pencil configuration for vertical operations.
+
+# Return Type
+- **Serial mode** (`grid.decomp === nothing`): Returns `Array{T,3}` of size (nx, ny, nz)
+- **Parallel mode**: Returns `PencilArray{T,3}` with z-pencil decomposition
+
+Both types support the same array operations via duck typing. Use `parent(arr)`
+to access the underlying contiguous storage for performance-critical loops.
+
+# Example
+```julia
+work = allocate_z_pencil(grid, ComplexF64)
+parent_arr = parent(work)  # Works for both Array and PencilArray
+```
 """
 function QGYBJ.allocate_z_pencil(grid::Grid, ::Type{T}=ComplexF64) where T
     decomp = grid.decomp
     if decomp === nothing
-        # Serial mode
+        # Serial mode - return standard Array
         return zeros(T, grid.nx, grid.ny, grid.nz)
     end
+    # Parallel mode - return PencilArray with z-pencil decomposition
     arr = PencilArray{T}(undef, decomp.pencil_z)
     fill!(arr, zero(T))
     return arr
@@ -797,14 +816,28 @@ end
 """
     allocate_xy_pencil(grid::Grid, ::Type{T}=ComplexF64) where T
 
-Allocate an array in xy-pencil configuration for horizontal operations.
+Allocate an array in xy-pencil configuration for horizontal operations (FFTs).
+
+# Return Type
+- **Serial mode** (`grid.decomp === nothing`): Returns `Array{T,3}` of size (nx, ny, nz)
+- **Parallel mode**: Returns `PencilArray{T,3}` with xy-pencil decomposition
+
+Both types support the same array operations via duck typing. Use `parent(arr)`
+to access the underlying contiguous storage for performance-critical loops.
+
+# Example
+```julia
+work = allocate_xy_pencil(grid, ComplexF64)
+parent_arr = parent(work)  # Works for both Array and PencilArray
+```
 """
 function QGYBJ.allocate_xy_pencil(grid::Grid, ::Type{T}=ComplexF64) where T
     decomp = grid.decomp
     if decomp === nothing
-        # Serial mode
+        # Serial mode - return standard Array
         return zeros(T, grid.nx, grid.ny, grid.nz)
     end
+    # Parallel mode - return PencilArray with xy-pencil decomposition
     arr = PencilArray{T}(undef, decomp.pencil_xy)
     fill!(arr, zero(T))
     return arr
