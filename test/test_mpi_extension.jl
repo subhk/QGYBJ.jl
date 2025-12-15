@@ -22,7 +22,11 @@ using Test
 # Check if we're running in serial mode
 const SERIAL_MODE = "--serial" in ARGS
 
-if SERIAL_MODE
+function run_serial_tests()
+    # Load QGYBJ using @eval to allow non-top-level loading
+    @eval using QGYBJ
+    @eval using QGYBJ: QGParams, Grid, State, Plans, plan_transforms!, fft_forward!, fft_backward!
+
     println("=" ^ 60)
     println("QGYBJ.jl Serial Mode Test")
     println("=" ^ 60)
@@ -30,13 +34,11 @@ if SERIAL_MODE
 
     @testset "Serial Mode Tests" begin
         @testset "Module Loading" begin
-            @test_nowarn using QGYBJ
+            @test @isdefined QGYBJ
             println("  ✓ QGYBJ module loaded")
         end
 
         @testset "Basic Types" begin
-            using QGYBJ: QGParams, Grid, State
-
             params = QGYBJ.default_params(nx=32, ny=32, nz=16)
             @test params.nx == 32
             @test params.ny == 32
@@ -54,11 +56,9 @@ if SERIAL_MODE
         end
 
         @testset "FFT Transforms (Serial)" begin
-            using QGYBJ: Plans, plan_transforms!, fft_forward!, fft_backward!
-
             params = QGYBJ.default_params(nx=32, ny=32, nz=16)
             grid = QGYBJ.init_grid(params)
-            plans = plan_transforms!(grid)
+            plans = QGYBJ.plan_transforms!(grid)
 
             @test plans.backend == :fftw
             println("  ✓ FFTW plans created")
@@ -68,8 +68,8 @@ if SERIAL_MODE
             dst = similar(src)
             dst2 = similar(src)
 
-            fft_forward!(dst, src, plans)
-            fft_backward!(dst2, dst, plans)
+            QGYBJ.fft_forward!(dst, src, plans)
+            QGYBJ.fft_backward!(dst2, dst, plans)
 
             # FFTW.ifft is normalized (divides by N automatically)
             # So no manual normalization needed
@@ -88,27 +88,18 @@ if SERIAL_MODE
 
     println()
     println("All serial tests passed!")
+end
 
-else
-    # MPI Mode
-    println("Loading MPI packages...")
+function run_mpi_tests()
+    # Load MPI packages using @eval
+    @eval using MPI
+    @eval using PencilArrays
+    @eval using PencilFFTs
+    @eval using QGYBJ
 
-    using MPI
-    using PencilArrays
-    using PencilFFTs
-    using QGYBJ
+    MPI.Init()
 
-    function main()
-        MPI.Init()
-
-        try
-            run_mpi_tests()
-        finally
-            MPI.Finalize()
-        end
-    end
-
-    function run_mpi_tests()
+    try
         comm = MPI.COMM_WORLD
         rank = MPI.Comm_rank(comm)
         nprocs = MPI.Comm_size(comm)
@@ -311,7 +302,14 @@ else
             println()
             println("All MPI tests passed!")
         end
+    finally
+        MPI.Finalize()
     end
+end
 
-    main()
+# Run appropriate tests based on mode
+if SERIAL_MODE
+    run_serial_tests()
+else
+    run_mpi_tests()
 end
