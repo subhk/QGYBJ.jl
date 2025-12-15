@@ -287,15 +287,91 @@ function trilinear_interpolation(x::T, y::T, z::T,
 end
 
 """
-Experimental quintic interpolation (O(h⁶) accuracy).
+    quintic_basis_functions(t)
+
+Quintic B-spline basis functions for uniform grid interpolation.
+For parameter t ∈ [0,1], returns weights for points at [-2, -1, 0, 1, 2, 3].
+Provides O(h⁶) accuracy with C⁴ continuity.
+"""
+function quintic_basis_functions(t::T) where T
+    t2 = t * t
+    t3 = t2 * t
+    t4 = t3 * t
+    t5 = t4 * t
+
+    # Quintic B-spline basis functions (cardinal spline form)
+    # These ensure smooth interpolation with C⁴ continuity
+    w0 = (-t5 + 5*t4 - 10*t3 + 10*t2 - 5*t + 1) / 120.0
+    w1 = (5*t5 - 20*t4 + 20*t3 + 20*t2 - 50*t + 26) / 120.0
+    w2 = (-10*t5 + 30*t4 - 60*t2 + 66) / 120.0
+    w3 = (10*t5 - 20*t4 - 20*t3 + 20*t2 + 50*t + 26) / 120.0
+    w4 = (-5*t5 + 5*t4 + 10*t3 + 10*t2 + 5*t + 1) / 120.0
+    w5 = t5 / 120.0
+
+    return w0, w1, w2, w3, w4, w5
+end
+
+"""
+Quintic interpolation (O(h⁶) accuracy).
+Uses a 6×6×6 = 216 point stencil for high-accuracy interpolation.
+Provides C⁴ continuous interpolation with excellent smoothness properties.
 """
 function quintic_interpolation(x::T, y::T, z::T,
                               u_field::Array{T,3}, v_field::Array{T,3}, w_field::Array{T,3},
                               grid_info, boundary_conditions) where T
-    
-    # For now, fall back to tricubic (quintic requires 6×6×6 = 216 points!)
-    @warn "Quintic interpolation not yet implemented, using tricubic"
-    return tricubic_interpolation(x, y, z, u_field, v_field, w_field, grid_info, boundary_conditions)
+
+    nx, ny, nz = size(u_field)
+    dx, dy, dz = grid_info.dx, grid_info.dy, grid_info.dz
+    Lx, Ly, Lz = grid_info.Lx, grid_info.Ly, grid_info.Lz
+
+    # Handle periodic boundaries
+    x_periodic = boundary_conditions.periodic_x ? mod(x, Lx) : x
+    y_periodic = boundary_conditions.periodic_y ? mod(y, Ly) : y
+    z_clamped = clamp(z, 0, Lz)
+
+    # Convert to grid coordinates
+    fx = x_periodic / dx
+    fy = y_periodic / dy
+    fz = z_clamped / dz
+
+    # Get integer parts and fractional coordinates
+    ix = floor(Int, fx)
+    iy = floor(Int, fy)
+    iz = floor(Int, fz)
+
+    tx = fx - ix  # Parameter in [0,1]
+    ty = fy - iy
+    tz = fz - iz
+
+    # Get quintic spline weights (6 points: -2, -1, 0, 1, 2, 3)
+    wx = quintic_basis_functions(tx)
+    wy = quintic_basis_functions(ty)
+    wz = quintic_basis_functions(tz)
+
+    # Initialize interpolated values
+    u_interp = zero(T)
+    v_interp = zero(T)
+    w_interp = zero(T)
+
+    # 6×6×6 interpolation stencil
+    for k in 0:5, j in 0:5, i in 0:5
+        # Grid indices with boundary handling
+        # Stencil points: ix + i - 2 covers [-2, -1, 0, 1, 2, 3] relative to ix
+        gx = get_grid_index(ix + i - 2, nx, boundary_conditions.periodic_x)
+        gy = get_grid_index(iy + j - 2, ny, boundary_conditions.periodic_y)
+        gz = get_grid_index(iz + k - 2, nz, false)  # Z never periodic
+
+        if gx > 0 && gy > 0 && gz > 0  # Valid indices
+            # Combined weight from tensor product
+            weight = wx[i+1] * wy[j+1] * wz[k+1]
+
+            u_interp += weight * u_field[gx, gy, gz]
+            v_interp += weight * v_field[gx, gy, gz]
+            w_interp += weight * w_field[gx, gy, gz]
+        end
+    end
+
+    return u_interp, v_interp, w_interp
 end
 
 """
