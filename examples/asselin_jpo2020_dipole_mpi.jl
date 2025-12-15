@@ -8,7 +8,6 @@ MPI-parallel version of the barotropic dipole simulation from:
     Asselin, O., L. N. Thomas, W. R. Young, and L. Rainville (2020)
     "Refraction and Straining of Near-Inertial Waves by Barotropic Eddies"
     Journal of Physical Oceanography, 50, 3439-3454
-    DOI: 10.1175/JPO-D-20-0109.1
 
 USAGE:
 ------
@@ -27,62 +26,32 @@ using QGYBJ
 using Printf
 
 # ============================================================================
-#                       PHYSICAL PARAMETERS (from paper)
+#                       MODEL PARAMETERS
 # ============================================================================
 
-# Domain dimensions (dimensional)
-const L_domain = 70e3      # Horizontal domain size [m]
-const H_depth = 3000.0     # Ocean depth [m]
+# Grid resolution
+const nx = 128
+const ny = 128
+const nz = 64
 
-# Coriolis parameter at 58.5N
-const f_dim = 1.24e-4      # [s^-1]
+# Time stepping
+const n_inertial_periods = 15
+const dt = 0.001
+const T_inertial = 2π  # Inertial period when f=1
+const nt = round(Int, n_inertial_periods * T_inertial / dt)
 
-# Stratification (uniform)
-const N2_dim = 1e-5        # [s^-2]
-const N_dim = sqrt(N2_dim) # [s^-1]
-
-# Dipole flow parameters
-const U_jet = 0.335        # Max jet velocity [m/s] (33.5 cm/s)
-const gamma_max = 2.7e-9   # Max vorticity gradient [m^-1 s^-1]
-
-# Compute dipole wavenumber
-const kappa_dim = sqrt(gamma_max / (2 * U_jet))
-
-# Wave initial condition
-const u0_wave = 0.10       # Initial wave velocity [m/s] (10 cm/s)
-const sigma_wave = 30.0    # Surface layer depth [m]
-
-# ============================================================================
-#                       NONDIMENSIONALIZATION
-# ============================================================================
-
-const L_scale = L_domain / (2π)
-const H_scale = H_depth / (2π)
-const U_scale = U_jet
-const T_scale = L_scale / U_scale
-
-# Nondimensional parameters
-const Ro = U_scale / (f_dim * L_scale)
-const Bu = (N_dim * H_scale / (f_dim * L_scale))^2
-const W2F = (u0_wave / U_scale)^2
-
-# Nondimensional wave parameters
-const u0_nd = u0_wave / U_scale
-const sigma_nd = sigma_wave / H_scale
-
-# Inertial period
-const T_inertial_dim = 2π / f_dim
-const T_inertial_nd = T_inertial_dim / T_scale
+# Flow and wave parameters (nondimensional)
+const U_flow = 1.0     # Max flow velocity
+const u0_wave = 0.3    # Wave amplitude (relative to flow)
+const sigma_z = 0.01 * 2π  # Surface layer depth
 
 # ============================================================================
 #                       MAIN FUNCTION
 # ============================================================================
 
 function main()
-    # Initialize MPI
     MPI.Init()
     mpi_config = QGYBJ.setup_mpi_environment()
-
     is_root = mpi_config.is_root
 
     if is_root
@@ -91,46 +60,22 @@ function main()
         println("="^70)
         println("\nRunning on $(mpi_config.nprocs) processes")
         println("Topology: $(mpi_config.topology)")
-
-        println("\nDimensional Parameters:")
-        @printf("  Domain:        %.0f km x %.0f km x %.1f km\n", L_domain/1e3, L_domain/1e3, H_depth/1e3)
-        @printf("  Coriolis f:    %.2e s^-1\n", f_dim)
-        @printf("  Stratification N^2: %.1e s^-2\n", N2_dim)
-        @printf("  Jet velocity U:    %.1f cm/s\n", U_jet*100)
-        @printf("  Wave velocity u0:  %.1f cm/s\n", u0_wave*100)
-
-        println("\nNondimensional Numbers:")
-        @printf("  Rossby number Ro:  %.3f\n", Ro)
-        @printf("  Burger number Bu:  %.2f\n", Bu)
-        @printf("  Nondim inertial period: %.2f\n", T_inertial_nd)
-    end
-
-    # ========================================================================
-    #                       MODEL PARAMETERS
-    # ========================================================================
-
-    const nx = 128
-    const ny = 128
-    const nz = 64
-
-    const n_inertial_periods = 15
-    const dt = 0.001
-    const nt = round(Int, n_inertial_periods * T_inertial_nd / dt)
-
-    if is_root
         println("\nSimulation Setup:")
-        @printf("  Resolution:    %d x %d x %d\n", nx, ny, nz)
-        @printf("  Time step dt:  %.4f (nondim)\n", dt)
+        @printf("  Resolution:    %d × %d × %d\n", nx, ny, nz)
+        @printf("  Time step dt:  %.4f\n", dt)
         @printf("  Total steps:   %d\n", nt)
+        @printf("  Duration:      %.1f inertial periods\n", n_inertial_periods)
     end
 
-    # Create parameter struct
+    # Parameters with Ro=Bu=1 (dimensional-like)
     par = QGYBJ.QGParams{Float64}(
         nx = nx, ny = ny, nz = nz,
         Lx = 2π, Ly = 2π,
         dt = dt, nt = nt,
         f0 = 1.0,
-        Ro = Ro, Bu = Bu, W2F = W2F,
+        Ro = 1.0,  # Dimensional-like
+        Bu = 1.0,  # Dimensional-like
+        W2F = u0_wave^2,
         gamma = 1e-3,
         nuh1 = 1e-4, ilap1 = 2,
         nuh2 = 1e-2, ilap2 = 6,
@@ -151,39 +96,27 @@ function main()
         N02_sg = 1.0, N12_sg = 0.0, sigma_sg = 1.0, z0_sg = π, alpha_sg = 0.0
     )
 
-    # ========================================================================
-    #                       INITIALIZE DISTRIBUTED GRID AND STATE
-    # ========================================================================
-
-    if is_root
-        println("\nInitializing distributed grid and state...")
-    end
+    # Initialize distributed grid and state
+    if is_root; println("\nInitializing distributed grid and state..."); end
 
     G = QGYBJ.init_mpi_grid(par, mpi_config)
     S = QGYBJ.init_mpi_state(G, mpi_config)
     workspace = QGYBJ.init_mpi_workspace(G, mpi_config)
     plans = QGYBJ.plan_mpi_transforms(G, mpi_config)
 
-    # Get local ranges for initialization
     local_range = QGYBJ.get_local_range_xy(G)
-
     z = G.z
-    dx = G.dx
-    dy = G.dy
+    dx, dy = G.dx, G.dy
 
     # ========================================================================
     #                       SET UP DIPOLE STREAMFUNCTION
     # ========================================================================
 
-    if is_root
-        println("Setting up dipole streamfunction...")
-    end
+    if is_root; println("Setting up dipole streamfunction..."); end
 
     const k_dipole = 1.0
-    const psi_amp = 1.0 / k_dipole
+    const psi_amp = U_flow / k_dipole
 
-    # Initialize psi in real space using local indices
-    # Access parent array for direct indexing
     psi_local = parent(S.psi)
 
     for k_local in axes(psi_local, 3)
@@ -194,19 +127,15 @@ function main()
             for i_local in axes(psi_local, 1)
                 i_global = local_range[1][i_local]
                 x = (i_global - 1) * dx
-
-                # Dipole streamfunction (in real space for now)
                 psi_val = psi_amp * sin(k_dipole * (x - π/2)) * cos(k_dipole * y)
                 psi_local[i_local, j_local, k_local] = complex(psi_val)
             end
         end
     end
 
-    # FFT the real-space psi to spectral space
-    # Note: S.psi is already a PencilArray, the plans handle the distributed FFT
     QGYBJ.fft_forward!(S.psi, S.psi, plans)
 
-    # Compute q = nabla^2 psi (in spectral space)
+    # Compute q = -kh² × ψ
     q_local = parent(S.q)
     psi_local = parent(S.psi)
 
@@ -228,31 +157,24 @@ function main()
     #                       SET UP WAVE INITIAL CONDITION
     # ========================================================================
 
-    if is_root
-        println("Setting up wave initial condition...")
-    end
+    if is_root; println("Setting up wave initial condition..."); end
 
-    # Surface-confined wave: only (kx,ky)=(0,0) mode is nonzero
-    # This mode is on rank 0 (i_global=1, j_global=1)
     z_surface = 2π
-
     B_local = parent(S.B)
 
     for k_local in axes(B_local, 3)
         k_global = local_range[3][k_local]
         z_k = z[k_global]
+        depth = z_surface - z_k
+        wave_profile = exp(-(depth^2) / (sigma_z^2))
 
         for j_local in axes(B_local, 2)
             j_global = local_range[2][j_local]
             for i_local in axes(B_local, 1)
                 i_global = local_range[1][i_local]
-
-                # Only set (kx,ky)=(0,0) mode
+                # Only (0,0) mode
                 if i_global == 1 && j_global == 1
-                    d_nd = z_surface - z_k
-                    d_phys = d_nd * H_scale
-                    wave_profile = exp(-(d_phys^2) / (sigma_wave^2))
-                    B_local[i_local, j_local, k_local] = u0_nd * wave_profile * (nx * ny)
+                    B_local[i_local, j_local, k_local] = u0_wave * wave_profile * (nx * ny)
                 else
                     B_local[i_local, j_local, k_local] = 0.0
                 end
@@ -261,18 +183,13 @@ function main()
     end
 
     # ========================================================================
-    #                       DIAGNOSTIC SETUP
+    #                       TIME INTEGRATION
     # ========================================================================
 
     a_ell = QGYBJ.a_ell_ut(par, G)
     L_mask = QGYBJ.dealias_mask(G)
 
-    # Compute velocities from psi
     QGYBJ.compute_velocities!(S, G; plans=plans, params=par, workspace=workspace)
-
-    # ========================================================================
-    #                       TIME INTEGRATION
-    # ========================================================================
 
     if is_root
         println("\n" * "="^70)
@@ -280,44 +197,37 @@ function main()
         println("="^70)
     end
 
-    output_interval_IP = 1.0
-    output_interval_steps = round(Int, output_interval_IP * T_inertial_nd / dt)
+    output_interval_steps = round(Int, T_inertial / dt)
 
-    # Initial diagnostics (local computation, then MPI reduce)
+    # Initial diagnostics
     local_EB = sum(abs2.(parent(S.B)))
     global_EB = QGYBJ.mpi_reduce_sum(local_EB, mpi_config)
 
     if is_root
-        @printf("\nt = 0.0 IP: E_B = %.4e\n", global_EB)
+        @printf("\nt = 0.0 IP: E_B = %.4e\n", global_EB / (nx * ny * nz))
     end
 
-    # First projection step
-    if is_root
-        println("\nRunning projection step...")
-    end
+    # First step
+    if is_root; println("\nRunning projection step..."); end
     QGYBJ.first_projection_step!(S, G, par, plans; a=a_ell, dealias_mask=L_mask, workspace=workspace)
 
-    # Create states for leapfrog
     Sn = deepcopy(S)
     Snm1 = deepcopy(S)
     Snp1 = deepcopy(S)
 
-    # Main time loop
+    # Main loop
     for step in 1:nt
         QGYBJ.leapfrog_step!(Snp1, Sn, Snm1, G, par, plans;
                              a=a_ell, dealias_mask=L_mask, workspace=workspace)
-
         Snm1, Sn, Snp1 = Sn, Snp1, Snm1
 
-        # Output diagnostics
         if step % output_interval_steps == 0
-            t_IP = step * dt / T_inertial_nd
-
+            t_IP = step * dt / T_inertial
             local_EB = sum(abs2.(parent(Sn.B)))
             global_EB = QGYBJ.mpi_reduce_sum(local_EB, mpi_config)
 
             if is_root
-                @printf("t = %.1f IP: E_B = %.4e\n", t_IP, global_EB)
+                @printf("t = %.1f IP: E_B = %.4e\n", t_IP, global_EB / (nx * ny * nz))
             end
         end
     end
@@ -329,9 +239,7 @@ function main()
     end
 
     MPI.Finalize()
-
     return nothing
 end
 
-# Run
 main()
