@@ -388,51 +388,51 @@ refraction_waqg!(rBR, rBI, BR, BI, psi, grid, plans; Lmask=L)
 # rBR, rBI now contain the refraction tendencies
 ```
 """
-function refraction_waqg!(rBRk, rBIk, BRk, BIk, psik, G::Grid, plans; Lmask=nothing)
+function refraction_waqg!(rBRk, rBIk, BRk, BIk, ψₖ, G::Grid, plans; Lmask=nothing)
     nx, ny, nz = G.nx, G.ny, G.nz
 
     # Get underlying arrays
-    psi_arr = parent(psik)
+    ψ_arr = parent(ψₖ)
     rBRk_arr = parent(rBRk); rBIk_arr = parent(rBIk)
-    nx_local, ny_local, nz_local = size(psi_arr)
+    nx_local, ny_local, nz_local = size(ψ_arr)
 
     # Dealiasing: use inline check for efficiency when Lmask not provided
     use_inline_dealias = isnothing(Lmask)
     @inline should_keep(i_g, j_g) = use_inline_dealias ? PARENT.is_dealiased(i_g, j_g, nx, ny) : Lmask[i_g, j_g]
 
     #= Compute relative vorticity ζ = ∇²ψ = -kₕ²ψ̂ =#
-    zetak = similar(psik)
-    zetak_arr = parent(zetak)
+    ζₖ = similar(ψₖ)
+    ζₖ_arr = parent(ζₖ)
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
         i_global = local_to_global(i_local, 1, G)
         j_global = local_to_global(j_local, 2, G)
-        kx_val = G.kx[i_global]
-        ky_val = G.ky[j_global]
-        kh2 = kx_val^2 + ky_val^2
-        zetak_arr[i_local, j_local, k] = -kh2*psi_arr[i_local, j_local, k]
+        kₓ = G.kx[i_global]
+        kᵧ = G.ky[j_global]
+        kₕ² = kₓ^2 + kᵧ^2
+        ζₖ_arr[i_local, j_local, k] = -kₕ²*ψ_arr[i_local, j_local, k]
     end
 
     #= Transform to real space =#
-    zetar = similar(zetak)
-    BRr = similar(BRk); BIr = similar(BIk)
-    fft_backward!(zetar, zetak, plans)
-    fft_backward!(BRr, BRk, plans)
-    fft_backward!(BIr, BIk, plans)
+    ζᵣ = similar(ζₖ)
+    BRᵣ = similar(BRk); BIᵣ = similar(BIk)
+    fft_backward!(ζᵣ, ζₖ, plans)
+    fft_backward!(BRᵣ, BRk, plans)
+    fft_backward!(BIᵣ, BIk, plans)
 
-    zetar_arr = parent(zetar)
-    BRr_arr = parent(BRr); BIr_arr = parent(BIr)
+    ζᵣ_arr = parent(ζᵣ)
+    BRᵣ_arr = parent(BRᵣ); BIᵣ_arr = parent(BIᵣ)
 
     #= Compute products in real space: rB = ζ × B =#
-    rBRr = similar(BRr); rBIr = similar(BIr)
-    rBRr_arr = parent(rBRr); rBIr_arr = parent(rBIr)
+    rBRᵣ = similar(BRᵣ); rBIᵣ = similar(BIᵣ)
+    rBRᵣ_arr = parent(rBRᵣ); rBIᵣ_arr = parent(rBIᵣ)
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
-        rBRr_arr[i_local, j_local, k] = real(zetar_arr[i_local, j_local, k])*real(BRr_arr[i_local, j_local, k])
-        rBIr_arr[i_local, j_local, k] = real(zetar_arr[i_local, j_local, k])*real(BIr_arr[i_local, j_local, k])
+        rBRᵣ_arr[i_local, j_local, k] = real(ζᵣ_arr[i_local, j_local, k])*real(BRᵣ_arr[i_local, j_local, k])
+        rBIᵣ_arr[i_local, j_local, k] = real(ζᵣ_arr[i_local, j_local, k])*real(BIᵣ_arr[i_local, j_local, k])
     end
 
     #= Transform back to spectral and apply dealiasing =#
-    fft_forward!(rBRk, rBRr, plans)
-    fft_forward!(rBIk, rBIr, plans)
+    fft_forward!(rBRk, rBRᵣ, plans)
+    fft_forward!(rBIk, rBIᵣ, plans)
     rBRk_arr = parent(rBRk); rBIk_arr = parent(rBIk)
 
     norm = nx*ny
