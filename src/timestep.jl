@@ -518,7 +518,9 @@ function leapfrog_step!(Snp1::State, Sn::State, Snm1::State,
         j_global = local_to_global(j, 2, G)
 
         if L[i_global, j_global]
-            kx = G.kx[i_global]; ky = G.ky[j_global]; kh2 = G.kh2[i_global, j_global]
+            kx = G.kx[i_global]; ky = G.ky[j_global]
+            # Compute kh2 from global kx, ky arrays (works in both serial and parallel)
+            kh2 = kx^2 + ky^2
             If  = int_factor(kx, ky, par; waves=false)
             Ifw = int_factor(kx, ky, par; waves=true)
 
