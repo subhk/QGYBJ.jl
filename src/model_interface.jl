@@ -10,6 +10,7 @@ using ..QGYBJ: QGParams, Grid, State, setup_model, default_params
 using ..QGYBJ: plan_transforms!, init_grid, init_state
 using ..QGYBJ: first_projection_step!, leapfrog_step!
 using ..QGYBJ: invert_q_to_psi!, compute_velocities!
+using ..QGYBJ: local_to_global
 
 # Note: config.jl, netcdf_io.jl, initialization.jl, stratification.jl, parallel_interface.jl
 # are included in QGYBJ.jl before this file to avoid duplicate includes
@@ -357,65 +358,280 @@ function compute_and_output_diagnostics!(sim::QGYBJSimulation{T}) where T
 end
 
 """
-    compute_kinetic_energy(state::State, grid::Grid, plans)
+    compute_kinetic_energy(state::State, grid::Grid, plans; Bu::Real=1.0, Ar2::Real=1.0)
 
-Compute domain-integrated kinetic energy.
+Compute domain-integrated kinetic energy following the Fortran diag_zentrum routine.
+
+The kinetic energy is computed as:
+    KE = (1/2) ∑_{kx,ky,z} (|u|² + |v|² + Ar² |w|²)
+
+with proper dealiasing correction (subtract 0.5 × value at kx=ky=0).
+
+# Arguments
+- `state::State`: Current model state with psi (streamfunction)
+- `grid::Grid`: Grid structure with wavenumbers
+- `plans`: FFT plans
+- `Bu::Real`: Burger number (default 1.0)
+- `Ar2::Real`: Aspect ratio squared (default 1.0)
+
+# Returns
+Domain-integrated kinetic energy (scalar).
 """
-function compute_kinetic_energy(state::State, grid::Grid, plans)
-    # This is a simplified version - would need proper velocity computation
-    psir = similar(state.psi, Float64)
-    fft_backward!(psir, state.psi, plans)
-    
-    # Rough estimate from stream function
-    KE = 0.5 * sum(abs2, psir) / (grid.nx * grid.ny * grid.nz)
+function compute_kinetic_energy(state::State, grid::Grid, plans; Bu::Real=1.0, Ar2::Real=1.0)
+    T = eltype(real(state.psi[1]))
+    nz = grid.nz
+    nx = grid.nx
+    ny = grid.ny
+
+    # Compute velocities from streamfunction in spectral space
+    # u = -∂ψ/∂y = -i*ky*ψ, v = ∂ψ/∂x = i*kx*ψ
+    psi_arr = parent(state.psi)
+    nx_local, ny_local, nz_local = size(psi_arr)
+
+    KE = T(0)
+
+    for k in 1:nz_local
+        KE_level = T(0)
+        KE_zero_mode = T(0)
+
+        for j_local in 1:ny_local, i_local in 1:nx_local
+            # Get wavenumbers
+            i_global = hasfield(typeof(grid), :decomp) && grid.decomp !== nothing ?
+                       local_to_global(i_local, 1, grid) : i_local
+            j_global = hasfield(typeof(grid), :decomp) && grid.decomp !== nothing ?
+                       local_to_global(j_local, 2, grid) : j_local
+
+            kx_val = grid.kx[min(i_global, length(grid.kx))]
+            ky_val = grid.ky[min(j_global, length(grid.ky))]
+
+            psi_k = psi_arr[i_local, j_local, k]
+
+            # u = -i*ky*psi, v = i*kx*psi
+            u_k = -im * ky_val * psi_k
+            v_k = im * kx_val * psi_k
+
+            # |u|² + |v|² = ky²|ψ|² + kx²|ψ|² = kh²|ψ|²
+            energy_mode = abs2(u_k) + abs2(v_k)
+            KE_level += energy_mode
+
+            # Track zero mode for dealiasing correction
+            if kx_val == 0 && ky_val == 0
+                KE_zero_mode = energy_mode
+            end
+        end
+
+        # Dealiasing correction: subtract 0.5 × zero mode
+        KE_level -= T(0.5) * KE_zero_mode
+        KE += KE_level
+    end
+
+    # Normalize by grid size
+    KE *= T(0.5) / (nx * ny * nz)
     return KE
 end
 
 """
-    compute_potential_energy(state::State, grid::Grid, plans, N2_profile::Vector)
+    compute_potential_energy(state::State, grid::Grid, plans, N2_profile::Vector; Bu::Real=1.0)
 
-Compute domain-integrated potential energy.
+Compute domain-integrated potential energy following the Fortran diag_zentrum routine.
+
+The potential energy is computed from buoyancy as:
+    PE = (1/2) ∑_{kx,ky,z} |b|² × (Bu × r_1/r_2)
+
+where b = ∂ψ/∂z / r_1 (thermal wind balance).
+
+# Arguments
+- `state::State`: Current model state with psi (streamfunction)
+- `grid::Grid`: Grid structure
+- `plans`: FFT plans
+- `N2_profile::Vector`: Buoyancy frequency squared N²(z)
+- `Bu::Real`: Burger number (default 1.0)
+
+# Returns
+Domain-integrated potential energy (scalar).
 """
-function compute_potential_energy(state::State, grid::Grid, plans, N2_profile::Vector{T}) where T
-    # Simplified calculation
-    psir = similar(state.psi, Float64)
-    fft_backward!(psir, state.psi, plans)
-    
+function compute_potential_energy(state::State, grid::Grid, plans, N2_profile::Vector{T}; Bu::Real=T(1.0)) where T
+    nz = grid.nz
+    nx = grid.nx
+    ny = grid.ny
+    dz = nz > 1 ? (grid.z[2] - grid.z[1]) : T(1.0)
+
+    psi_arr = parent(state.psi)
+    nx_local, ny_local, nz_local = size(psi_arr)
+
     PE = T(0)
-    for k in 1:grid.nz
-        PE += N2_profile[k] * sum(abs2, view(psir, :, :, k))
+
+    for k in 1:nz_local
+        PE_level = T(0)
+        PE_zero_mode = T(0)
+
+        # r_1 = 1.0 (Boussinesq), r_2 = N²
+        r_1 = T(1.0)
+        r_2 = N2_profile[min(k, length(N2_profile))]
+        coeff = Bu * r_1 / max(r_2, eps(T))
+
+        for j_local in 1:ny_local, i_local in 1:nx_local
+            # Compute buoyancy b = ∂ψ/∂z / r_1 using finite differences
+            if k < nz_local
+                psi_up = psi_arr[i_local, j_local, k+1]
+                psi_curr = psi_arr[i_local, j_local, k]
+                b_k = (psi_up - psi_curr) / (r_1 * dz)
+            else
+                # At top boundary, use one-sided difference or set to zero (Neumann BC)
+                b_k = complex(T(0))
+            end
+
+            energy_mode = abs2(b_k) * coeff
+            PE_level += energy_mode
+
+            # Track zero mode
+            i_global = hasfield(typeof(grid), :decomp) && grid.decomp !== nothing ?
+                       local_to_global(i_local, 1, grid) : i_local
+            j_global = hasfield(typeof(grid), :decomp) && grid.decomp !== nothing ?
+                       local_to_global(j_local, 2, grid) : j_local
+            kx_val = grid.kx[min(i_global, length(grid.kx))]
+            ky_val = grid.ky[min(j_global, length(grid.ky))]
+
+            if kx_val == 0 && ky_val == 0
+                PE_zero_mode = energy_mode
+            end
+        end
+
+        # Dealiasing correction
+        PE_level -= T(0.5) * PE_zero_mode
+        PE += PE_level
     end
-    PE *= 0.5 / (grid.nx * grid.ny * grid.nz)
-    
+
+    PE *= T(0.5) / (nx * ny * nz)
     return PE
 end
 
 """
-    compute_wave_energy(state::State, grid::Grid, plans)
+    compute_wave_energy(state::State, grid::Grid, plans; Bu::Real=1.0)
 
-Compute wave energy.
+Compute wave energy from the YBJ+ wave envelope B.
+
+Wave energy is computed as:
+    WE = (1/2) ∑_{kx,ky,z} |B|²
+
+with proper dealiasing correction.
+
+# Arguments
+- `state::State`: Current model state with B (wave envelope)
+- `grid::Grid`: Grid structure
+- `plans`: FFT plans
+- `Bu::Real`: Burger number (default 1.0)
+
+# Returns
+Domain-integrated wave energy (scalar).
 """
-function compute_wave_energy(state::State, grid::Grid, plans)
-    Br = similar(state.B, Float64)
-    fft_backward!(Br, real.(state.B), plans)
-    
-    WE = 0.5 * sum(abs2, Br) / (grid.nx * grid.ny * grid.nz)
+function compute_wave_energy(state::State, grid::Grid, plans; Bu::Real=1.0)
+    T = eltype(real(state.B[1]))
+    nz = grid.nz
+    nx = grid.nx
+    ny = grid.ny
+
+    B_arr = parent(state.B)
+    nx_local, ny_local, nz_local = size(B_arr)
+
+    WE = T(0)
+
+    for k in 1:nz_local
+        WE_level = T(0)
+        WE_zero_mode = T(0)
+
+        for j_local in 1:ny_local, i_local in 1:nx_local
+            B_k = B_arr[i_local, j_local, k]
+            energy_mode = abs2(B_k)
+            WE_level += energy_mode
+
+            # Track zero mode
+            i_global = hasfield(typeof(grid), :decomp) && grid.decomp !== nothing ?
+                       local_to_global(i_local, 1, grid) : i_local
+            j_global = hasfield(typeof(grid), :decomp) && grid.decomp !== nothing ?
+                       local_to_global(j_local, 2, grid) : j_local
+            kx_val = grid.kx[min(i_global, length(grid.kx))]
+            ky_val = grid.ky[min(j_global, length(grid.ky))]
+
+            if kx_val == 0 && ky_val == 0
+                WE_zero_mode = energy_mode
+            end
+        end
+
+        # Dealiasing correction
+        WE_level -= T(0.5) * WE_zero_mode
+        WE += WE_level
+    end
+
+    WE *= T(0.5) / (nx * ny * nz)
     return WE
 end
 
 """
     compute_enstrophy(state::State, grid::Grid, plans)
 
-Compute domain-integrated enstrophy.
+Compute domain-integrated enstrophy (mean squared vorticity).
+
+Enstrophy is computed as:
+    Z = (1/2) ∑_{kx,ky,z} |ζ|²
+
+where ζ = ∇²ψ = -kh²ψ is the relative vorticity (in spectral space).
+
+# Arguments
+- `state::State`: Current model state with psi (streamfunction)
+- `grid::Grid`: Grid structure with wavenumbers
+- `plans`: FFT plans
+
+# Returns
+Domain-integrated enstrophy (scalar).
 """
 function compute_enstrophy(state::State, grid::Grid, plans)
-    # This would require proper vorticity calculation
-    # For now, simplified estimate
-    psir = similar(state.psi, Float64)
-    fft_backward!(psir, state.psi, plans)
-    
-    enstrophy = sum(abs2, psir) / (grid.nx * grid.ny * grid.nz)
-    return enstrophy
+    T = eltype(real(state.psi[1]))
+    nz = grid.nz
+    nx = grid.nx
+    ny = grid.ny
+
+    psi_arr = parent(state.psi)
+    nx_local, ny_local, nz_local = size(psi_arr)
+
+    Z = T(0)
+
+    for k in 1:nz_local
+        Z_level = T(0)
+        Z_zero_mode = T(0)
+
+        for j_local in 1:ny_local, i_local in 1:nx_local
+            # Get wavenumbers
+            i_global = hasfield(typeof(grid), :decomp) && grid.decomp !== nothing ?
+                       local_to_global(i_local, 1, grid) : i_local
+            j_global = hasfield(typeof(grid), :decomp) && grid.decomp !== nothing ?
+                       local_to_global(j_local, 2, grid) : j_local
+
+            kx_val = grid.kx[min(i_global, length(grid.kx))]
+            ky_val = grid.ky[min(j_global, length(grid.ky))]
+            kh2 = kx_val^2 + ky_val^2
+
+            psi_k = psi_arr[i_local, j_local, k]
+
+            # Relative vorticity ζ = ∇²ψ = -kh²ψ (in spectral space)
+            zeta_k = -kh2 * psi_k
+
+            enstrophy_mode = abs2(zeta_k)
+            Z_level += enstrophy_mode
+
+            # Track zero mode
+            if kx_val == 0 && ky_val == 0
+                Z_zero_mode = enstrophy_mode
+            end
+        end
+
+        # Dealiasing correction
+        Z_level -= T(0.5) * Z_zero_mode
+        Z += Z_level
+    end
+
+    Z *= T(0.5) / (nx * ny * nz)
+    return Z
 end
 
 """
