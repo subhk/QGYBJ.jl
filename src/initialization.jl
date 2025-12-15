@@ -377,7 +377,7 @@ function create_wave_packet(G::Grid, kx0::Int, ky0::Int, sigma_k::Real, amplitud
 end
 
 """
-    add_balanced_component!(S::State, G::Grid, params::QGParams, plans)
+    add_balanced_component!(S::State, G::Grid, params::QGParams, plans; N2_profile=nothing)
 
 Add balanced component to the flow by computing geostrophically consistent fields.
 
@@ -387,8 +387,25 @@ This function:
 3. Computes buoyancy b = ∂ψ/∂z (from thermal wind balance)
 
 Based on init_psi_generic and init_q from the Fortran implementation.
+
+# Arguments
+- `S::State`: Model state with streamfunction psi
+- `G::Grid`: Grid structure
+- `params::QGParams`: Model parameters (includes Bu)
+- `plans`: FFT plans
+- `N2_profile::Vector`: Optional N²(z) profile. If not provided, uses constant N²=1.
+
+# Example
+```julia
+# With constant stratification
+add_balanced_component!(state, grid, params, plans)
+
+# With variable stratification
+N2 = compute_stratification_profile(strat_profile, grid)
+add_balanced_component!(state, grid, params, plans; N2_profile=N2)
+```
 """
-function add_balanced_component!(S::State, G::Grid, params::QGParams, plans)
+function add_balanced_component!(S::State, G::Grid, params::QGParams, plans; N2_profile=nothing)
     @info "Adding balanced component to initial state"
 
     nz = G.nz
@@ -397,8 +414,31 @@ function add_balanced_component!(S::State, G::Grid, params::QGParams, plans)
 
     # Get elliptic coefficient a_ell = Bu/N²
     # For constant N², a_ell = Bu (Burger number)
-    # For variable N², would need N²(z) profile
-    a_ell = fill(params.Bu, nz)
+    # For variable N², a_ell[k] = Bu/N²[k]
+    if N2_profile === nothing || isempty(N2_profile)
+        # Constant stratification N² = 1
+        a_ell = fill(Float64(params.Bu), nz)
+        @info "Using constant stratification (N² = 1)"
+    else
+        # Variable stratification from profile
+        if length(N2_profile) != nz
+            @warn "N2_profile length ($(length(N2_profile))) != nz ($nz), interpolating..."
+            # Simple linear interpolation if sizes don't match
+            N2_interp = zeros(Float64, nz)
+            for k in 1:nz
+                # Map k to position in N2_profile
+                pos = (k - 1) / (nz - 1) * (length(N2_profile) - 1) + 1
+                k_low = max(1, floor(Int, pos))
+                k_high = min(length(N2_profile), k_low + 1)
+                w = pos - k_low
+                N2_interp[k] = (1 - w) * N2_profile[k_low] + w * N2_profile[k_high]
+            end
+            a_ell = [params.Bu / max(N2_interp[k], eps(Float64)) for k in 1:nz]
+        else
+            a_ell = [params.Bu / max(N2_profile[k], eps(Float64)) for k in 1:nz]
+        end
+        @info "Using variable stratification from N² profile"
+    end
 
     # Density weights (unity for Boussinesq)
     r_ut = ones(Float64, nz)  # rho at unstaggered (u) points
