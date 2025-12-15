@@ -964,10 +964,13 @@ function compute_wave_velocities!(S::State, G::Grid; plans=nothing, params=nothi
     u_wave_real_arr = parent(u_wave_real)
     v_wave_real_arr = parent(v_wave_real)
 
-    # IFFT is normalized - add wave velocities to existing QG velocities directly
+    # Normalization for consistency with pseudo-spectral convention
+    norm = nx * ny
+
+    # Add wave velocities to existing QG velocities
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
-        u_arr[i_local, j_local, k] += real(u_wave_real_arr[i_local, j_local, k])
-        v_arr[i_local, j_local, k] += real(v_wave_real_arr[i_local, j_local, k])
+        u_arr[i_local, j_local, k] += real(u_wave_real_arr[i_local, j_local, k]) / norm
+        v_arr[i_local, j_local, k] += real(v_wave_real_arr[i_local, j_local, k]) / norm
     end
 
     return S
