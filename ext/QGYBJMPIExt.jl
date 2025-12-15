@@ -47,7 +47,7 @@ using PencilArrays
 using PencilFFTs
 
 # Explicit imports from PencilArrays for clarity and forward compatibility
-import PencilArrays: Pencil, PencilArray, MPITopology, Transpose
+import PencilArrays: Pencil, PencilArray, MPITopology
 import PencilArrays: range_local, range_remote, transpose!, gather
 import PencilFFTs: PencilFFTPlan, first_pencil, last_pencil
 
@@ -164,22 +164,23 @@ multiple pencil configurations for different operations.
 - `local_range_z`: Local index ranges in z-pencil configuration
 - `global_dims`: Global array dimensions (nx, ny, nz)
 - `topology`: 2D process topology (px, py)
-- `transpose_xy_to_z`: Transpose plan from xy to z pencils
-- `transpose_z_to_xy`: Transpose plan from z to xy pencils
+
+# Transpose Operations
+Transpositions between pencil configurations are performed using PencilArrays'
+`transpose!(dst, src)` function, which automatically infers the transposition
+from the pencil configurations of the source and destination arrays.
 
 # Type Parameters
 Using `Any` for pencil types to ensure compatibility across PencilArrays versions.
 The actual types are Pencil{3,2,...} for 3D data with 2D decomposition.
 """
-struct PencilDecomp{P1, P2, T1, T2}
+struct PencilDecomp{P1, P2}
     pencil_xy::P1                         # 3D data, 2D decomposition for FFTs
     pencil_z::P2                          # 3D data, 2D decomposition with z local
     local_range_xy::NTuple{3, UnitRange{Int}}
     local_range_z::NTuple{3, UnitRange{Int}}
     global_dims::NTuple{3, Int}
     topology::Tuple{Int,Int}
-    transpose_xy_to_z::T1
-    transpose_z_to_xy::T2
 end
 
 """
@@ -243,9 +244,8 @@ function create_pencil_decomposition(nx::Int, ny::Int, nz::Int, mpi_config::MPIC
     local_range_xy = range_local(pencil_xy)
     local_range_z = range_local(pencil_z)
 
-    # Create transpose operations between pencil configurations
-    transpose_xy_to_z = Transpose(pencil_xy, pencil_z)
-    transpose_z_to_xy = Transpose(pencil_z, pencil_xy)
+    # Note: Transpose operations are performed using transpose!(dst, src) directly
+    # on PencilArrays, which infers the transposition from the array pencil configs
 
     return PencilDecomp(
         pencil_xy,
@@ -253,9 +253,7 @@ function create_pencil_decomposition(nx::Int, ny::Int, nz::Int, mpi_config::MPIC
         local_range_xy,
         local_range_z,
         (nx, ny, nz),
-        topo,
-        transpose_xy_to_z,
-        transpose_z_to_xy
+        topo
     )
 end
 
@@ -271,9 +269,15 @@ end
 Transpose data from xy-pencil to z-pencil configuration.
 After this operation, z is fully local on each process.
 Use this before vertical operations (tridiagonal solves, vertical derivatives).
+
+# Note
+PencilArrays' `transpose!(dst, src)` automatically infers the transposition
+from the pencil configurations of the source and destination arrays.
 """
 function transpose_to_z_pencil!(dst::PencilArray, src::PencilArray, decomp::PencilDecomp)
-    transpose!(dst, src, decomp.transpose_xy_to_z)
+    # dst should be in z-pencil config, src in xy-pencil config
+    # transpose! infers the operation from the array pencil configurations
+    transpose!(dst, src)
     return dst
 end
 
@@ -282,9 +286,15 @@ end
 
 Transpose data from z-pencil to xy-pencil configuration.
 Use this after vertical operations to return to the FFT-ready layout.
+
+# Note
+PencilArrays' `transpose!(dst, src)` automatically infers the transposition
+from the pencil configurations of the source and destination arrays.
 """
 function transpose_to_xy_pencil!(dst::PencilArray, src::PencilArray, decomp::PencilDecomp)
-    transpose!(dst, src, decomp.transpose_z_to_xy)
+    # dst should be in xy-pencil config, src in z-pencil config
+    # transpose! infers the operation from the array pencil configurations
+    transpose!(dst, src)
     return dst
 end
 
