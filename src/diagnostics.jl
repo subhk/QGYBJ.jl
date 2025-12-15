@@ -769,18 +769,18 @@ Three components of wave energy:
    This is the envelope-based kinetic energy, analogous to KE ~ ∫(u² + v²)dV.
 
 2. **Wave Potential Energy (WPE)**:
-   WPE = Σₖ (0.5/(ρ₂×Bu)) × kh² × (|CRₖ|² + |CIₖ|²)
+   WPE = Σₖ (0.5/(ρ₂×a_ell)) × kh² × (|CRₖ|² + |CIₖ|²)
 
-   where C = ∂A/∂z. This represents the potential energy from vertical wave structure.
+   where C = ∂A/∂z and a_ell = f²/N². This represents the potential energy from vertical wave structure.
 
 3. **Wave Correction Energy (WCE)**:
-   WCE = Σₖ (1/8) × (1/Bu²) × kh⁴ × (|ARₖ|² + |AIₖ|²)
+   WCE = Σₖ (1/8) × (1/a_ell²) × kh⁴ × (|ARₖ|² + |AIₖ|²)
 
    Higher-order correction term from the YBJ+ formulation.
 
 # Algorithm
 1. Loop over all spectral modes with dealiasing mask L
-2. Accumulate |B|², kh²|C|²/(ρ₂×Bu), kh⁴|A|²/(8×Bu²)
+2. Accumulate |B|², kh²|C|²/(ρ₂×a_ell), kh⁴|A|²/(8×a_ell²)
 3. Apply dealiasing correction: subtract half the kh=0 mode from WKE
 4. Integrate over z (sum local, divide by nz)
 
@@ -789,7 +789,7 @@ Three components of wave energy:
 - `AR, AI`: Real and imaginary parts of wave amplitude A (spectral)
 - `CR, CI`: Real and imaginary parts of C = ∂A/∂z (spectral)
 - `G::Grid`: Grid structure
-- `par`: QGParams (for Bu)
+- `par`: QGParams (for f0, N2)
 - `Lmask`: Optional dealiasing mask
 
 # Returns
