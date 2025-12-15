@@ -119,7 +119,7 @@ function setup_simulation(config::ModelConfig{T}; use_mpi::Bool=false) where T
         linear_vert_structure = 0,
         stratification = config.stratification.type,
         W2F = T(1e-6),  # Default wave-to-flow energy ratio
-        Bu = T(1.0),    # Default Burger number
+        N2 = T(1.0),    # Default buoyancy frequency squared
         gamma = T(1e-3),  # Robert-Asselin filter
         nuh1 = T(0.01), nuh2 = T(10.0), ilap1 = 2, ilap2 = 6,
         nuh1w = T(0.0), nuh2w = T(10.0), ilap1w = 2, ilap2w = 6,

@@ -123,7 +123,7 @@ step, providing the needed second time level.
 - `G::Grid`: Grid struct
 - `par::QGParams`: Model parameters
 - `plans`: FFT plans
-- `a`: Elliptic coefficient array a_ell(z) = Bu/N²
+- `a`: Elliptic coefficient array a_ell(z) = f²/N²
 - `dealias_mask`: Optional 2/3 dealiasing mask (nx × ny)
 - `workspace`: Optional pre-allocated workspace for 2D decomposition
 
