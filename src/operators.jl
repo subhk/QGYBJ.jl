@@ -160,10 +160,10 @@ function compute_velocities!(S::State, G::Grid; plans=nothing, params=nothing, c
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
         i_global = local_to_global(i_local, 1, G)
         j_global = local_to_global(j_local, 2, G)
-        ikx = im * G.kx[i_global]
-        iky = im * G.ky[j_global]
-        uk_arr[i_local, j_local, k] = -iky * ψk_arr[i_local, j_local, k]
-        vk_arr[i_local, j_local, k] =  ikx * ψk_arr[i_local, j_local, k]
+        ikₓ = im * G.kx[i_global]
+        ikᵧ = im * G.ky[j_global]
+        uk_arr[i_local, j_local, k] = -ikᵧ * ψk_arr[i_local, j_local, k]
+        vk_arr[i_local, j_local, k] =  ikₓ * ψk_arr[i_local, j_local, k]
     end
 
     # Inverse FFT to real space
@@ -320,76 +320,76 @@ function _compute_vertical_velocity_direct!(S::State, G::Grid, plans, params, N2
     wk_arr = parent(wk)
     fill!(wk_arr, 0.0)
 
-    dz = nz > 1 ? (G.z[2] - G.z[1]) : 1.0
-    f2 = f^2
+    Δz = nz > 1 ? (G.z[2] - G.z[1]) : 1.0
+    f² = f^2
 
-    # For each LOCAL horizontal wavenumber (kx, ky), solve tridiagonal system
+    # For each LOCAL horizontal wavenumber (kₓ, kᵧ), solve tridiagonal system
     @inbounds for j_local in 1:ny_local, i_local in 1:nx_local
         i_global = local_to_global(i_local, 1, G)
         j_global = local_to_global(j_local, 2, G)
-        kx_val = G.kx[i_global]
-        ky_val = G.ky[j_global]
-        kh2 = kx_val^2 + ky_val^2
+        kₓ = G.kx[i_global]
+        kᵧ = G.ky[j_global]
+        kₕ² = kₓ^2 + kᵧ^2
 
-        if kh2 > 0 && nz > 2  # Need at least 3 levels for tridiagonal
+        if kₕ² > 0 && nz > 2  # Need at least 3 levels for tridiagonal
             n_interior = nz - 2  # Interior points
 
             if n_interior > 0
                 # Tridiagonal matrix coefficients (real-valued)
                 d = zeros(Float64, n_interior)      # diagonal
-                dl = zeros(Float64, n_interior-1)   # lower diagonal
-                du = zeros(Float64, n_interior-1)   # upper diagonal
+                dₗ = zeros(Float64, n_interior-1)   # lower diagonal
+                dᵤ = zeros(Float64, n_interior-1)   # upper diagonal
                 rhs = zeros(eltype(S.psi), n_interior)  # RHS vector
 
                 # Fill tridiagonal system
                 for iz in 1:n_interior
                     k = iz + 1  # Actual z-level (2 to nz-1)
-                    d[iz] = -(N2_profile[k]/f2)/(dz*dz) - kh2
+                    d[iz] = -(N2_profile[k]/f²)/(Δz*Δz) - kₕ²
                     if iz > 1
-                        dl[iz-1] = (N2_profile[k]/f2)/(dz*dz)
+                        dₗ[iz-1] = (N2_profile[k]/f²)/(Δz*Δz)
                     end
                     if iz < n_interior
-                        du[iz] = (N2_profile[k]/f2)/(dz*dz)
+                        dᵤ[iz] = (N2_profile[k]/f²)/(Δz*Δz)
                     end
                     rhs[iz] = rhsk_arr[i_local, j_local, k]
                 end
 
                 # Solve tridiagonal system - real and imaginary parts separately
-                dl_work = copy(dl)
+                dₗ_work = copy(dₗ)
                 d_work = copy(d)
-                du_work = copy(du)
-                rhs_real = real.(rhs)
-                rhs_imag = imag.(rhs)
+                dᵤ_work = copy(dᵤ)
+                rhsᵣ = real.(rhs)
+                rhsᵢ = imag.(rhs)
 
-                sol_real = zeros(Float64, n_interior)
+                solᵣ = zeros(Float64, n_interior)
                 try
-                    LinearAlgebra.LAPACK.gtsv!(dl_work, d_work, du_work, rhs_real)
-                    sol_real .= rhs_real
+                    LinearAlgebra.LAPACK.gtsv!(dₗ_work, d_work, dᵤ_work, rhsᵣ)
+                    solᵣ .= rhsᵣ
                 catch e
                     @warn "LAPACK gtsv failed for real part: $e"
                 end
 
-                dl_work = copy(dl)
+                dₗ_work = copy(dₗ)
                 d_work = copy(d)
-                du_work = copy(du)
-                sol_imag = zeros(Float64, n_interior)
+                dᵤ_work = copy(dᵤ)
+                solᵢ = zeros(Float64, n_interior)
                 try
-                    LinearAlgebra.LAPACK.gtsv!(dl_work, d_work, du_work, rhs_imag)
-                    sol_imag .= rhs_imag
+                    LinearAlgebra.LAPACK.gtsv!(dₗ_work, d_work, dᵤ_work, rhsᵢ)
+                    solᵢ .= rhsᵢ
                 catch e
                     @warn "LAPACK gtsv failed for imag part: $e"
                 end
 
-                solution = sol_real .+ im .* sol_imag
+                solution = solᵣ .+ im .* solᵢ
                 for iz in 1:n_interior
                     k = iz + 1
                     wk_arr[i_local, j_local, k] = solution[iz]
                 end
             end
 
-        elseif kh2 > 0 && nz <= 2
+        elseif kₕ² > 0 && nz <= 2
             for k in 1:nz
-                wk_arr[i_local, j_local, k] = -rhsk_arr[i_local, j_local, k] / kh2
+                wk_arr[i_local, j_local, k] = -rhsk_arr[i_local, j_local, k] / kₕ²
             end
         end
     end
