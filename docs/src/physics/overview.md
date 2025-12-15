@@ -61,14 +61,18 @@ where:
 The near-inertial wave envelope evolves according to:
 
 ```math
-\frac{\partial B}{\partial t} + J(\psi, B) + B\frac{\partial\zeta}{\partial t} = \text{dispersion} + \text{dissipation}
+\frac{\partial B}{\partial t} + J(\psi, B) = -i\frac{k_h^2}{2 \cdot Bu \cdot Ro} A + \frac{1}{2}B \times \zeta + \text{dissipation}
 ```
 
 where:
 - ``B = L^+ A`` is the evolved wave envelope
-- ``A`` is the actual wave amplitude
+- ``A`` is the actual wave amplitude (recovered via elliptic inversion)
 - ``\zeta = \nabla^2\psi`` is the relative vorticity
 - ``L^+`` is an elliptic operator relating B and A
+- ``Bu = (N_0 H / f_0 L)^2`` is the Burger number
+- ``Ro = U / (f_0 L)`` is the Rossby number
+
+The dispersion coefficient ``1/(2 \cdot Bu \cdot Ro)`` represents nondimensionalized ``N^2/(2f_0)``.
 
 ### Key Physical Processes
 
@@ -87,7 +91,7 @@ where:
        │    │                │
        ▼    ▼                ▼
     Advection           Refraction
-    J(ψ, q)             B × ∂ζ/∂t
+    J(ψ, q)             (1/2) B × ζ
        │                     │
        │    Wave Feedback    │
        └────────qʷ───────────┘
