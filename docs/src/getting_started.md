@@ -97,15 +97,18 @@ mpiexec -n 16 julia --project run_parallel.jl
 All model parameters in one struct:
 
 ```julia
-params = QGParams(
+params = default_params(
     nx=64, ny=64, nz=32,      # Grid dimensions
     Lx=2π, Ly=2π,              # Domain size
-    f0=1.0,                    # Coriolis parameter
+    f₀=1.0,                    # Coriolis parameter
+    N²=1.0,                    # Buoyancy frequency squared
     dt=0.001,                  # Time step
-    nu_h2=1e-10,               # Hyperdiffusion
+    νₕ₂=10.0,                  # Hyperdiffusion
     ybj_plus=true              # Use YBJ+ formulation
 )
 ```
+
+Note: Parameter names use Unicode subscripts (e.g., `f₀` instead of `f0`). Type `f\_0<tab>` in Julia REPL to get `f₀`.
 
 ### Grid
 
