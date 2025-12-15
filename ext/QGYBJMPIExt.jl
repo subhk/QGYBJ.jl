@@ -48,7 +48,7 @@ using PencilFFTs
 
 # Explicit imports from PencilArrays for clarity and forward compatibility
 import PencilArrays: Pencil, PencilArray, MPITopology, Transpose
-import PencilArrays: range_local, transpose!, gather
+import PencilArrays: range_local, range_remote, transpose!, gather
 import PencilFFTs: PencilFFTPlan, first_pencil, last_pencil
 
 # Import types we need to extend
@@ -823,8 +823,10 @@ function QGYBJ.scatter_from_root(arr, grid::Grid, mpi_config::MPIConfig)
             coord_y = rank ÷ topo[1]
             linear_idx = coord_x + coord_y * topo[1] + 1  # 1-indexed
 
-            # Get the range for this process using linear index
-            rank_range = PencilArrays.range_local(pencil_xy, linear_idx)
+            # Get the range for this process using range_remote (not range_local!)
+            # range_local only returns the current process's range
+            # range_remote(pencil, n) returns the range for process n
+            rank_range = range_remote(pencil_xy, linear_idx)
 
             # Extract the portion for this rank
             portion = arr[rank_range[1], rank_range[2], rank_range[3]]
