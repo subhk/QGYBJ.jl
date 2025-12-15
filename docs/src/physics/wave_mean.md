@@ -27,25 +27,57 @@ Near-inertial waves carry momentum and energy. When they:
 
 ### Definition
 
-The wave-induced potential vorticity is:
+Following Xie & Vanneste (2015), the wave-induced potential vorticity is:
 
 ```math
-q^w = \frac{1}{2}\nabla_h^2|A|^2 - \frac{1}{2}\frac{\partial^2|A|^2}{\partial z^2}
+q^w = Ro \cdot W2F \cdot \left[ \frac{i}{2} J(B^*, B) - \frac{1}{4} \nabla_h^2 |B|^2 \right]
 ```
 
-This enters the QG equation as:
+where ``W2F = (U_w/U)^2`` is the wave-to-flow velocity ratio squared.
+
+### Decomposition in Real/Imaginary Parts
+
+Writing ``B = B_R + i B_I``, the Jacobian term becomes:
 
 ```math
-\frac{\partial q}{\partial t} + J(\psi, q) + J(\psi, q^w) = \mathcal{D}_q
+\frac{i}{2} J(B^*, B) = \frac{\partial B_R}{\partial y} \frac{\partial B_I}{\partial x} - \frac{\partial B_R}{\partial x} \frac{\partial B_I}{\partial y}
+```
+
+And the wave intensity:
+
+```math
+|B|^2 = B_R^2 + B_I^2
+```
+
+So the complete formula is:
+
+```math
+q^w = Ro \cdot W2F \cdot \left[ \left( \frac{\partial B_R}{\partial y} \frac{\partial B_I}{\partial x} - \frac{\partial B_R}{\partial x} \frac{\partial B_I}{\partial y} \right) + \frac{k_h^2}{4} (B_R^2 + B_I^2) \right]
+```
+
+Note: In spectral space, ``\nabla_h^2 \to -k_h^2``, so ``-\frac{1}{4}\nabla_h^2|B|^2 \to +\frac{k_h^2}{4}|B|^2``.
+
+### How It Enters the QG Equation
+
+The wave feedback modifies the effective PV used for streamfunction inversion:
+
+```math
+q^* = q - q^w
+```
+
+Then ``\psi`` is computed from ``q^*`` via the elliptic inversion:
+
+```math
+\nabla^2\psi + \frac{\partial}{\partial z}\left(\frac{f_0^2}{N^2}\frac{\partial\psi}{\partial z}\right) = q^*
 ```
 
 ### Physical Interpretation
 
 | Term | Meaning |
 |:-----|:--------|
-| ``\nabla_h^2\|A\|^2`` | Horizontal wave intensity curvature |
-| ``\partial_z^2\|A\|^2`` | Vertical wave intensity curvature |
-| ``J(\psi, q^w)`` | Advection of wave-induced PV |
+| ``J(B^*, B)`` | Jacobian of complex wave field (wave momentum flux) |
+| ``\nabla_h^2\|B\|^2`` | Horizontal curvature of wave energy density |
+| ``Ro \cdot W2F`` | Scaling by Rossby number and wave amplitude |
 
 The wave feedback represents:
 - **Radiation stress** from wave momentum flux
