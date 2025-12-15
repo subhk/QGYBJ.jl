@@ -166,21 +166,21 @@ function _invert_q_to_psi_direct!(S::State, G::Grid, a::AbstractVector, par)
     @assert nz_local == nz "Vertical dimension must be fully local (nz_local=$nz_local, nz=$nz)"
 
     # Tridiagonal matrix diagonals (reused for each wavenumber)
-    dl = zeros(eltype(a), nz)   # Lower diagonal
+    dₗ = zeros(eltype(a), nz)   # Lower diagonal
     d  = zeros(eltype(a), nz)   # Main diagonal
-    du = zeros(eltype(a), nz)   # Upper diagonal
+    dᵤ = zeros(eltype(a), nz)   # Upper diagonal
 
     # Vertical grid spacing
-    Δ = nz > 1 ? (G.z[2]-G.z[1]) : 1.0
-    Δ2 = Δ^2
+    Δz = nz > 1 ? (G.z[2]-G.z[1]) : 1.0
+    Δz² = Δz^2
 
     # Density weights for variable-density formulation
-    r_ut = if par === nothing
+    ρᵤₜ = if par === nothing
         ones(eltype(a), nz)
     else
         isdefined(PARENT, :rho_ut) ? PARENT.rho_ut(par, G) : ones(eltype(a), nz)
     end
-    r_st = if par === nothing
+    ρₛₜ = if par === nothing
         ones(eltype(a), nz)
     else
         isdefined(PARENT, :rho_st) ? PARENT.rho_st(par, G) : ones(eltype(a), nz)
@@ -192,54 +192,54 @@ function _invert_q_to_psi_direct!(S::State, G::Grid, a::AbstractVector, par)
         i_global = local_to_global(i_local, 1, G)
         j_global = local_to_global(j_local, 2, G)
 
-        kx_val = G.kx[i_global]
-        ky_val = G.ky[j_global]
-        kh2 = kx_val^2 + ky_val^2   # Horizontal wavenumber squared
+        kₓ = G.kx[i_global]
+        kᵧ = G.ky[j_global]
+        kₕ² = kₓ^2 + kᵧ^2   # Horizontal wavenumber squared
 
-        # Special case: kh² = 0 (horizontal mean mode)
-        if kh2 == 0
+        # Special case: kₕ² = 0 (horizontal mean mode)
+        if kₕ² == 0
             @inbounds for k in 1:nz
                 ψ_arr[i_local, j_local, k] = 0
             end
             continue
         end
 
-        # Build tridiagonal matrix for this (kx, ky)
-        fill!(dl, 0); fill!(d, 0); fill!(du, 0)
+        # Build tridiagonal matrix for this (kₓ, kᵧ)
+        fill!(dₗ, 0); fill!(d, 0); fill!(dᵤ, 0)
 
         # Bottom boundary (k=1): Neumann condition ψ_z = 0
-        d[1]  = -( (r_ut[1]*a[1]) / r_st[1] + kh2*Δ2 )
-        du[1] =   (r_ut[1]*a[1]) / r_st[1]
+        d[1]  = -( (ρᵤₜ[1]*a[1]) / ρₛₜ[1] + kₕ²*Δz² )
+        dᵤ[1] =   (ρᵤₜ[1]*a[1]) / ρₛₜ[1]
 
         # Interior points (k = 2, ..., nz-1)
         @inbounds for k in 2:nz-1
-            dl[k] = (r_ut[k-1]*a[k-1]) / r_st[k]
-            d[k]  = -( ((r_ut[k]*a[k] + r_ut[k-1]*a[k-1]) / r_st[k]) + kh2*Δ2 )
-            du[k] = (r_ut[k]*a[k]) / r_st[k]
+            dₗ[k] = (ρᵤₜ[k-1]*a[k-1]) / ρₛₜ[k]
+            d[k]  = -( ((ρᵤₜ[k]*a[k] + ρᵤₜ[k-1]*a[k-1]) / ρₛₜ[k]) + kₕ²*Δz² )
+            dᵤ[k] = (ρᵤₜ[k]*a[k]) / ρₛₜ[k]
         end
 
         # Top boundary (k=nz): Neumann condition ψ_z = 0
-        dl[nz] = (r_ut[nz-1]*a[nz-1]) / r_st[nz]
-        d[nz]  = -( (r_ut[nz-1]*a[nz-1]) / r_st[nz] + kh2*Δ2 )
+        dₗ[nz] = (ρᵤₜ[nz-1]*a[nz-1]) / ρₛₜ[nz]
+        d[nz]  = -( (ρᵤₜ[nz-1]*a[nz-1]) / ρₛₜ[nz] + kₕ²*Δz² )
 
         # Solve for real and imaginary parts separately
         rhs = zeros(eltype(a), nz)
         @inbounds for k in 1:nz
-            rhs[k] = Δ2 * real(q_arr[i_local, j_local, k])
+            rhs[k] = Δz² * real(q_arr[i_local, j_local, k])
         end
-        solr = copy(rhs)
-        thomas_solve!(solr, dl, d, du, rhs)
+        solᵣ = copy(rhs)
+        thomas_solve!(solᵣ, dₗ, d, dᵤ, rhs)
 
-        rhs_i = zeros(eltype(a), nz)
+        rhsᵢ = zeros(eltype(a), nz)
         @inbounds for k in 1:nz
-            rhs_i[k] = Δ2 * imag(q_arr[i_local, j_local, k])
+            rhsᵢ[k] = Δz² * imag(q_arr[i_local, j_local, k])
         end
-        soli = copy(rhs_i)
-        thomas_solve!(soli, dl, d, du, rhs_i)
+        solᵢ = copy(rhsᵢ)
+        thomas_solve!(solᵢ, dₗ, d, dᵤ, rhsᵢ)
 
         # Combine into complex solution
         @inbounds for k in 1:nz
-            ψ_arr[i_local, j_local, k] = solr[k] + im*soli[k]
+            ψ_arr[i_local, j_local, k] = solᵣ[k] + im*solᵢ[k]
         end
     end
 end
@@ -252,31 +252,31 @@ function _invert_q_to_psi_2d!(S::State, G::Grid, a::AbstractVector, par, workspa
 
     # Allocate z-pencil workspace if not provided
     q_z = workspace !== nothing ? workspace.q_z : allocate_z_pencil(G, ComplexF64)
-    psi_z = workspace !== nothing ? workspace.psi_z : allocate_z_pencil(G, ComplexF64)
+    ψ_z = workspace !== nothing ? workspace.psi_z : allocate_z_pencil(G, ComplexF64)
 
     # Transpose q from xy-pencil to z-pencil
     transpose_to_z_pencil!(q_z, S.q, G)
 
     # Get underlying arrays in z-pencil format
     q_z_arr = parent(q_z)
-    psi_z_arr = parent(psi_z)
+    ψ_z_arr = parent(ψ_z)
 
     # Get local dimensions in z-pencil (z is now fully local)
     nx_local, ny_local, nz_local = size(q_z_arr)
     @assert nz_local == nz "After transpose, z must be fully local"
 
     # Tridiagonal matrix diagonals
-    dl = zeros(eltype(a), nz)
+    dₗ = zeros(eltype(a), nz)
     d  = zeros(eltype(a), nz)
-    du = zeros(eltype(a), nz)
+    dᵤ = zeros(eltype(a), nz)
 
-    Δ = nz > 1 ? (G.z[2]-G.z[1]) : 1.0
-    Δ2 = Δ^2
+    Δz = nz > 1 ? (G.z[2]-G.z[1]) : 1.0
+    Δz² = Δz^2
 
     # Density weights
-    r_ut = par === nothing ? ones(eltype(a), nz) :
+    ρᵤₜ = par === nothing ? ones(eltype(a), nz) :
            (isdefined(PARENT, :rho_ut) ? PARENT.rho_ut(par, G) : ones(eltype(a), nz))
-    r_st = par === nothing ? ones(eltype(a), nz) :
+    ρₛₜ = par === nothing ? ones(eltype(a), nz) :
            (isdefined(PARENT, :rho_st) ? PARENT.rho_st(par, G) : ones(eltype(a), nz))
 
     # Loop over LOCAL wavenumbers in z-pencil configuration
@@ -285,52 +285,52 @@ function _invert_q_to_psi_2d!(S::State, G::Grid, a::AbstractVector, par, workspa
         i_global = local_to_global_z(i_local, 1, G)
         j_global = local_to_global_z(j_local, 2, G)
 
-        kx_val = G.kx[i_global]
-        ky_val = G.ky[j_global]
-        kh2 = kx_val^2 + ky_val^2
+        kₓ = G.kx[i_global]
+        kᵧ = G.ky[j_global]
+        kₕ² = kₓ^2 + kᵧ^2
 
-        if kh2 == 0
+        if kₕ² == 0
             @inbounds for k in 1:nz
-                psi_z_arr[i_local, j_local, k] = 0
+                ψ_z_arr[i_local, j_local, k] = 0
             end
             continue
         end
 
-        fill!(dl, 0); fill!(d, 0); fill!(du, 0)
+        fill!(dₗ, 0); fill!(d, 0); fill!(dᵤ, 0)
 
-        d[1]  = -( (r_ut[1]*a[1]) / r_st[1] + kh2*Δ2 )
-        du[1] =   (r_ut[1]*a[1]) / r_st[1]
+        d[1]  = -( (ρᵤₜ[1]*a[1]) / ρₛₜ[1] + kₕ²*Δz² )
+        dᵤ[1] =   (ρᵤₜ[1]*a[1]) / ρₛₜ[1]
 
         @inbounds for k in 2:nz-1
-            dl[k] = (r_ut[k-1]*a[k-1]) / r_st[k]
-            d[k]  = -( ((r_ut[k]*a[k] + r_ut[k-1]*a[k-1]) / r_st[k]) + kh2*Δ2 )
-            du[k] = (r_ut[k]*a[k]) / r_st[k]
+            dₗ[k] = (ρᵤₜ[k-1]*a[k-1]) / ρₛₜ[k]
+            d[k]  = -( ((ρᵤₜ[k]*a[k] + ρᵤₜ[k-1]*a[k-1]) / ρₛₜ[k]) + kₕ²*Δz² )
+            dᵤ[k] = (ρᵤₜ[k]*a[k]) / ρₛₜ[k]
         end
 
-        dl[nz] = (r_ut[nz-1]*a[nz-1]) / r_st[nz]
-        d[nz]  = -( (r_ut[nz-1]*a[nz-1]) / r_st[nz] + kh2*Δ2 )
+        dₗ[nz] = (ρᵤₜ[nz-1]*a[nz-1]) / ρₛₜ[nz]
+        d[nz]  = -( (ρᵤₜ[nz-1]*a[nz-1]) / ρₛₜ[nz] + kₕ²*Δz² )
 
         rhs = zeros(eltype(a), nz)
         @inbounds for k in 1:nz
-            rhs[k] = Δ2 * real(q_z_arr[i_local, j_local, k])
+            rhs[k] = Δz² * real(q_z_arr[i_local, j_local, k])
         end
-        solr = copy(rhs)
-        thomas_solve!(solr, dl, d, du, rhs)
+        solᵣ = copy(rhs)
+        thomas_solve!(solᵣ, dₗ, d, dᵤ, rhs)
 
-        rhs_i = zeros(eltype(a), nz)
+        rhsᵢ = zeros(eltype(a), nz)
         @inbounds for k in 1:nz
-            rhs_i[k] = Δ2 * imag(q_z_arr[i_local, j_local, k])
+            rhsᵢ[k] = Δz² * imag(q_z_arr[i_local, j_local, k])
         end
-        soli = copy(rhs_i)
-        thomas_solve!(soli, dl, d, du, rhs_i)
+        solᵢ = copy(rhsᵢ)
+        thomas_solve!(solᵢ, dₗ, d, dᵤ, rhsᵢ)
 
         @inbounds for k in 1:nz
-            psi_z_arr[i_local, j_local, k] = solr[k] + im*soli[k]
+            ψ_z_arr[i_local, j_local, k] = solᵣ[k] + im*solᵢ[k]
         end
     end
 
-    # Transpose psi from z-pencil back to xy-pencil
-    transpose_to_xy_pencil!(S.psi, psi_z, G)
+    # Transpose ψ from z-pencil back to xy-pencil
+    transpose_to_xy_pencil!(S.psi, ψ_z, G)
 end
 
 #=
