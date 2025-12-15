@@ -484,3 +484,61 @@ function dealias_mask(G::Grid)
     end
     return keep
 end
+
+"""
+    is_dealiased(i_global::Int, j_global::Int, nx::Int, ny::Int) -> Bool
+
+Efficiently check if a mode at global indices (i_global, j_global) should be kept
+after 2/3-rule dealiasing. This is more memory-efficient than storing a full mask
+for distributed computing.
+
+# Arguments
+- `i_global`: Global x-index (1-based)
+- `j_global`: Global y-index (1-based)
+- `nx, ny`: Grid dimensions
+
+# Returns
+- `true` if the mode should be kept (inside dealiasing circle)
+- `false` if the mode should be set to zero (outside dealiasing circle)
+
+# Example
+```julia
+# In a distributed loop:
+for j_local in 1:ny_local, i_local in 1:nx_local
+    i_global = local_to_global(i_local, 1, G)
+    j_global = local_to_global(j_local, 2, G)
+    if is_dealiased(i_global, j_global, G.nx, G.ny)
+        # Process this mode
+    else
+        # Set to zero
+    end
+end
+```
+
+# Note
+This function is `@inline` for performance in tight loops.
+"""
+@inline function is_dealiased(i_global::Int, j_global::Int, nx::Int, ny::Int)
+    # Compute 2/3 cutoff radius
+    kmax = floor(Int, min(nx, ny) / 3)
+
+    # Convert global array index to wavenumber index (FFTW convention)
+    ix = i_global - 1
+    ix = ix <= nx ÷ 2 ? ix : ix - nx
+
+    jy = j_global - 1
+    jy = jy <= ny ÷ 2 ? jy : jy - ny
+
+    # Radial distance in wavenumber space
+    r2 = ix^2 + jy^2
+
+    # Keep mode if within dealiasing radius (squared comparison for efficiency)
+    return r2 <= kmax^2
+end
+
+"""
+    is_dealiased(i_global::Int, j_global::Int, G::Grid) -> Bool
+
+Overload for Grid argument - extracts nx, ny from Grid.
+"""
+@inline is_dealiased(i_global::Int, j_global::Int, G::Grid) = is_dealiased(i_global, j_global, G.nx, G.ny)
