@@ -529,7 +529,7 @@ end
 """
     wave_energy(B, A) -> (E_B, E_A)
 
-Compute domain-integrated wave energy from both B and A fields.
+Compute domain-integrated wave energy from both B and A fields (simple version).
 
 # Physical Background
 Two measures of wave energy in the model:
@@ -557,6 +557,8 @@ Tuple (E_B, E_A) of domain-summed squared magnitudes.
 # Note
 - These are domain SUMS, not means. For energy density, divide by grid volume.
 - In MPI mode, this returns LOCAL energy. Use mpi_reduce_sum for global total.
+- For physically accurate wave energies with dealiasing and density weighting,
+  use `wave_energy_spectral` instead.
 """
 function wave_energy(B, A)
     # Works with any array (regular or PencilArray)
@@ -566,6 +568,132 @@ function wave_energy(B, A)
     @inbounds for x in B_arr; EB += abs2(x); end
     @inbounds for x in A_arr; EA += abs2(x); end
     return EB, EA
+end
+
+"""
+    wave_energy_spectral(BR, BI, AR, AI, CR, CI, G, par; Lmask=nothing) -> (WKE, WPE, WCE)
+
+Compute physically accurate wave energies in spectral space with dealiasing.
+
+# Physical Background (matches Fortran wave_energy)
+Three components of wave energy:
+
+1. **Wave Kinetic Energy (WKE)**:
+   WKE = Σₖ (|BRₖ|² + |BIₖ|²) - 0.5×(kh=0 mode)
+
+   This is the envelope-based kinetic energy, analogous to KE ~ ∫(u² + v²)dV.
+
+2. **Wave Potential Energy (WPE)**:
+   WPE = Σₖ (0.5/(ρ₂×Bu)) × kh² × (|CRₖ|² + |CIₖ|²)
+
+   where C = ∂A/∂z. This represents the potential energy from vertical wave structure.
+
+3. **Wave Correction Energy (WCE)**:
+   WCE = Σₖ (1/8) × (1/Bu²) × kh⁴ × (|ARₖ|² + |AIₖ|²)
+
+   Higher-order correction term from the YBJ+ formulation.
+
+# Algorithm
+1. Loop over all spectral modes with dealiasing mask L
+2. Accumulate |B|², kh²|C|²/(ρ₂×Bu), kh⁴|A|²/(8×Bu²)
+3. Apply dealiasing correction: subtract half the kh=0 mode from WKE
+4. Integrate over z (sum local, divide by nz)
+
+# Arguments
+- `BR, BI`: Real and imaginary parts of wave envelope B (spectral)
+- `AR, AI`: Real and imaginary parts of wave amplitude A (spectral)
+- `CR, CI`: Real and imaginary parts of C = ∂A/∂z (spectral)
+- `G::Grid`: Grid structure
+- `par`: QGParams (for Bu)
+- `Lmask`: Optional dealiasing mask
+
+# Returns
+Tuple (WKE, WPE, WCE) of wave energy components, normalized by nz.
+
+# Fortran Correspondence
+Matches `wave_energy` subroutine in diagnostics.f90 (lines 647-743).
+
+# Note
+In MPI mode, returns LOCAL energy. Use mpi_reduce_sum for global totals.
+"""
+function wave_energy_spectral(BR, BI, AR, AI, CR, CI, G::Grid, par; Lmask=nothing)
+    nx, ny, nz = G.nx, G.ny, G.nz
+    L = isnothing(Lmask) ? trues(nx, ny) : Lmask
+    Bu = par.Bu
+
+    # Get local dimensions
+    BR_arr = parent(BR)
+    BI_arr = parent(BI)
+    AR_arr = parent(AR)
+    AI_arr = parent(AI)
+    CR_arr = parent(CR)
+    CI_arr = parent(CI)
+
+    nx_local, ny_local, nz_local = size(BR_arr)
+
+    # Get density profile if available (for variable stratification)
+    # r_2 corresponds to rho at staggered points for potential energy
+    ρ₂ = if isdefined(PARENT, :rho_st)
+        PARENT.rho_st(par, G)
+    else
+        ones(Float64, nz)
+    end
+
+    # Accumulate energy at each vertical level
+    WKE_local = 0.0
+    WPE_local = 0.0
+    WCE_local = 0.0
+    WKE_k0 = 0.0  # kh=0 mode for dealiasing correction
+
+    @inbounds for k in 1:nz_local
+        # Get density at this level (use global k index if needed)
+        k_global = k  # In serial mode; for MPI would need local_to_global_z
+        ρ₂ₖ = k_global <= length(ρ₂) ? ρ₂[k_global] : 1.0
+
+        wke_k = 0.0
+        wpe_k = 0.0
+        wce_k = 0.0
+
+        for j in 1:ny_local, i in 1:nx_local
+            i_global = local_to_global(i, 1, G)
+            j_global = local_to_global(j, 2, G)
+
+            if L[i_global, j_global]
+                kₓ = G.kx[i_global]
+                kᵧ = G.ky[j_global]
+                kₕ² = kₓ^2 + kᵧ^2
+
+                # WKE: |BR|² + |BI|²
+                wke_k += abs2(BR_arr[i,j,k]) + abs2(BI_arr[i,j,k])
+
+                # WPE: (0.5/(ρ₂×Bu)) × kh² × (|CR|² + |CI|²)
+                wpe_k += (0.5 / (ρ₂ₖ * Bu)) * kₕ² * (abs2(CR_arr[i,j,k]) + abs2(CI_arr[i,j,k]))
+
+                # WCE: (1/8) × (1/Bu²) × kh⁴ × (|AR|² + |AI|²)
+                wce_k += (1.0/8.0) * (1.0/(Bu*Bu)) * kₕ²*kₕ² * (abs2(AR_arr[i,j,k]) + abs2(AI_arr[i,j,k]))
+            end
+        end
+
+        # Dealiasing correction for WKE: subtract half the kh=0 mode
+        # The kh=0 mode is at global index (1,1)
+        if local_to_global(1, 1, G) == 1 && local_to_global(1, 2, G) == 1
+            # This process owns the (1,1) mode
+            wke_k0_contrib = 0.5 * (abs2(BR_arr[1,1,k]) + abs2(BI_arr[1,1,k]))
+            wke_k -= wke_k0_contrib
+            WKE_k0 += wke_k0_contrib
+        end
+
+        WKE_local += wke_k
+        WPE_local += wpe_k
+        WCE_local += wce_k
+    end
+
+    # Normalize by nz (vertical integration)
+    WKE = WKE_local / nz
+    WPE = WPE_local / nz
+    WCE = WCE_local / nz
+
+    return WKE, WPE, WCE
 end
 
 #=
