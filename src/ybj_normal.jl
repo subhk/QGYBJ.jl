@@ -127,10 +127,10 @@ function _sumB_direct!(B::AbstractArray{<:Complex,3}, G::Grid, Lmask)
     @inbounds for j in 1:ny_local, i in 1:nx_local
         i_global = local_to_global(i, 1, G)
         j_global = local_to_global(j, 2, G)
-        # Compute kh2 from global kx, ky arrays (works in both serial and parallel)
-        kh2 = G.kx[i_global]^2 + G.ky[j_global]^2
+        # Compute kₕ² from global kx, ky arrays (works in both serial and parallel)
+        kₕ² = G.kx[i_global]^2 + G.ky[j_global]^2
 
-        if L[i_global, j_global] && kh2 > 0
+        if L[i_global, j_global] && kₕ² > 0
             s = 0.0 + 0.0im
             for k in 1:nz
                 s += B_arr[i,j,k]
@@ -164,10 +164,10 @@ function _sumB_2d!(B::AbstractArray{<:Complex,3}, G::Grid, Lmask, workspace)
     @inbounds for j in 1:ny_local_z, i in 1:nx_local_z
         i_global = local_to_global_z(i, 1, G)
         j_global = local_to_global_z(j, 2, G)
-        # Compute kh2 from global kx, ky arrays (works in both serial and parallel)
-        kh2 = G.kx[i_global]^2 + G.ky[j_global]^2
+        # Compute kₕ² from global kx, ky arrays (works in both serial and parallel)
+        kₕ² = G.kx[i_global]^2 + G.ky[j_global]^2
 
-        if L[i_global, j_global] && kh2 > 0
+        if L[i_global, j_global] && kₕ² > 0
             s = 0.0 + 0.0im
             for k in 1:nz
                 s += B_z_arr[i,j,k]
@@ -257,7 +257,7 @@ function _compute_sigma_direct(par::QGParams, G::Grid, nBRk, nBIk, rBRk, rBIk, L
 
     @assert nz_local == nz "Vertical dimension must be fully local"
 
-    sigma = zeros(ComplexF64, nx_local, ny_local)
+    σ = zeros(ComplexF64, nx_local, ny_local)
 
     nBIk_arr = parent(nBIk)
     rBRk_arr = parent(rBRk)
@@ -266,24 +266,24 @@ function _compute_sigma_direct(par::QGParams, G::Grid, nBRk, nBIk, rBRk, rBIk, L
     @inbounds for j in 1:ny_local, i in 1:nx_local
         i_global = local_to_global(i, 1, G)
         j_global = local_to_global(j, 2, G)
-        # Compute kh2 from global kx, ky arrays (works in both serial and parallel)
-        kh2 = G.kx[i_global]^2 + G.ky[j_global]^2
+        # Compute kₕ² from global kx, ky arrays (works in both serial and parallel)
+        kₕ² = G.kx[i_global]^2 + G.ky[j_global]^2
 
-        if L[i_global, j_global] && kh2 > 0
+        if L[i_global, j_global] && kₕ² > 0
             s = 0.0 + 0.0im
             for k in 1:nz
-                s += ( rBRk_arr[i,j,k] + 2*nBIk_arr[i,j,k] + im*( rBIk_arr[i,j,k] - 2*nBRk_arr[i,j,k] ) )/kh2
+                s += ( rBRk_arr[i,j,k] + 2*nBIk_arr[i,j,k] + im*( rBIk_arr[i,j,k] - 2*nBRk_arr[i,j,k] ) )/kₕ²
             end
-            sigma[i,j] = s
+            σ[i,j] = s
         else
-            sigma[i,j] = 0
+            σ[i,j] = 0
         end
     end
 
     # Scale by Bu*Ro to match Fortran (derivatives.f90 line 1067)
-    sigma .*= (par.Bu * par.Ro)
+    σ .*= (par.Bu * par.Ro)
 
-    return sigma
+    return σ
 end
 
 # 2D decomposition version with transposes
@@ -330,9 +330,9 @@ function _compute_sigma_2d(par::QGParams, G::Grid, nBRk, nBIk, rBRk, rBIk, Lmask
     end
 
     # Scale by Bu*Ro to match Fortran (derivatives.f90 line 1067)
-    sigma .*= (par.Bu * par.Ro)
+    σ .*= (par.Bu * par.Ro)
 
-    return sigma
+    return σ
 end
 
 #=
