@@ -439,7 +439,7 @@ function refraction_waqg!(rBRk, rBIk, BRk, BIk, psik, G::Grid, plans; Lmask=noth
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
         i_global = local_to_global(i_local, 1, G)
         j_global = local_to_global(j_local, 2, G)
-        if L[i_global, j_global]
+        if should_keep(i_global, j_global)
             rBRk_arr[i_local, j_local, k] /= norm
             rBIk_arr[i_local, j_local, k] /= norm
         else
