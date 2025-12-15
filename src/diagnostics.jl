@@ -802,7 +802,7 @@ In MPI mode, returns LOCAL energy. Use mpi_reduce_sum for global totals.
 function wave_energy_spectral(BR, BI, AR, AI, CR, CI, G::Grid, par; Lmask=nothing)
     nx, ny, nz = G.nx, G.ny, G.nz
     L = isnothing(Lmask) ? trues(nx, ny) : Lmask
-    Bu = par.Bu
+    a_ell_coeff = par.f0^2 / par.N2  # Elliptic coefficient f²/N²
 
     # Get local dimensions
     BR_arr = parent(BR)
