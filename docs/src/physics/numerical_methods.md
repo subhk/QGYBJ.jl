@@ -293,41 +293,54 @@ workspace = QGYBJ.init_mpi_workspace(grid, mpi_config)
 invert_q_to_psi!(state, grid; a=a_vec, workspace=workspace)
 ```
 
-## Jacobian Computation
+## Jacobian/Advection Computation
 
-### Pseudo-Spectral Method
+### Divergence Form (convol_waqg)
 
-The Jacobian `J(a, b) = da/dx * db/dy - da/dy * db/dx` is computed:
+For advection terms like ``J(\psi, q)``, QGYBJ.jl uses the **divergence form**:
 
-1. Compute derivatives in spectral space:
+```math
+J(\psi, q) = \frac{\partial(uq)}{\partial x} + \frac{\partial(vq)}{\partial y} = ik_x \widehat{uq} + ik_y \widehat{vq}
+```
+
+where ``u = -\partial\psi/\partial y`` and ``v = \partial\psi/\partial x`` are the geostrophic velocities.
+
+### Algorithm (convol_waqg)
+
+1. Precompute velocities in real space: ``u_r``, ``v_r``
+
+2. Transform field to real space:
    ```julia
-   ax_k = im * kx .* a_k
-   ay_k = im * ky .* a_k
-   bx_k = im * kx .* b_k
-   by_k = im * ky .* b_k
+   fft_backward!(qr, qk, plans)
    ```
 
-2. Transform to physical space:
+3. Compute products in real space:
    ```julia
-   fft_backward!(ax, ax_k, plans)
-   # ... etc
+   uterm = u_r .* qr
+   vterm = v_r .* qr
    ```
 
-3. Compute product in physical space:
+4. Transform back and compute divergence:
    ```julia
-   J = ax .* by - ay .* bx
+   fft_forward!(uterm_k, uterm, plans)
+   fft_forward!(vterm_k, vterm, plans)
+   J_k = im * kx .* uterm_k + im * ky .* vterm_k
    ```
 
-4. Transform back and dealias:
+5. Apply dealiasing:
    ```julia
-   fft_forward!(J_k, J, plans)
-   J_k .*= dealias_mask
+   J_k[.!dealias_mask] .= 0
+   ```
+
+6. Normalize (for unnormalized FFT):
+   ```julia
+   J_k ./= (nx * ny)
    ```
 
 ### Conservation Properties
 
-The pseudo-spectral Jacobian conserves:
-- **Circulation**: int J(a,b) dA = 0
+The pseudo-spectral advection conserves:
+- **Circulation**: ``\int J(\psi, q) \, dA = 0``
 - **Energy** (to machine precision in inviscid limit)
 - **Enstrophy** (to machine precision in inviscid limit)
 
