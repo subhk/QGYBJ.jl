@@ -244,7 +244,9 @@ function first_projection_step!(S::State, G::Grid, par::QGParams, plans; a, deal
         j_global = local_to_global(j, 2, G)
 
         if L[i_global, j_global]
-            kx = G.kx[i_global]; ky = G.ky[j_global]; kh2 = G.kh2[i_global, j_global]
+            kx = G.kx[i_global]; ky = G.ky[j_global]
+            # Compute kh2 from global kx, ky arrays (works in both serial and parallel)
+            kh2 = kx^2 + ky^2
 
             # Integrating factors for hyperdiffusion
             If = int_factor(kx, ky, par; waves=false)   # For mean flow

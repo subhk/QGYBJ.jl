@@ -267,9 +267,10 @@ function _omega_eqn_rhs_2d!(rhs, psi, G::Grid, plans, Lmask, workspace)
     @inbounds for k in 1:nz_local_xy, j in 1:ny_local, i in 1:nx_local
         i_global = local_to_global(i, 1, G)
         j_global = local_to_global(j, 2, G)
-        kh2 = G.kh2[i_global, j_global]
         kx = G.kx[i_global]
         ky = G.ky[j_global]
+        # Compute kh2 from global kx, ky arrays (works in both serial and parallel)
+        kh2 = kx^2 + ky^2
 
         bxk_arr[i,j,k] = im*kx*psizk_arr[i,j,k]
         byk_arr[i,j,k] = im*ky*psizk_arr[i,j,k]
