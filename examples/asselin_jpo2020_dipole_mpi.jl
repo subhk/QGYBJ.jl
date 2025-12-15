@@ -32,11 +32,11 @@ const ny = 128
 const nz = 64
 
 # Physical parameters from Asselin et al. (2020)
-const f0 = 1.24e-4           # Coriolis parameter [s⁻¹]
-const N2 = 1e-5              # Buoyancy frequency squared [s⁻²]
+const f₀ = 1.24e-4           # Coriolis parameter [s⁻¹]
+const N² = 1e-5              # Buoyancy frequency squared [s⁻²]
 
 const n_inertial_periods = 15
-const T_inertial = 2π / f0   # Inertial period = 2π/f [s]
+const T_inertial = 2π / f₀   # Inertial period = 2π/f [s]
 const dt = 100.0             # Time step [s]
 const nt = round(Int, n_inertial_periods * T_inertial / dt)
 
@@ -64,8 +64,8 @@ function main()
     par = QGYBJ.default_params(
         nx = nx, ny = ny, nz = nz,
         dt = dt, nt = nt,
-        f0 = f0,               # Coriolis parameter [s⁻¹]
-        N2 = N2,               # Buoyancy frequency squared [s⁻²]
+        f₀ = f₀,               # Coriolis parameter [s⁻¹]
+        N² = N²,               # Buoyancy frequency squared [s⁻²]
         W2F = u0_wave^2,
         ybj_plus = true,
         fixed_flow = true,
