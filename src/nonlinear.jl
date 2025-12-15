@@ -508,12 +508,12 @@ compute_qw!(qw, BR, BI, params, grid, plans; Lmask=L)
 # qw now contains wave feedback term
 ```
 """
-function compute_qw!(qwk, BRk, BIk, par, G::Grid, plans; Lmask=nothing)
+function compute_qw!(qʷₖ, BRk, BIk, par, G::Grid, plans; Lmask=nothing)
     nx, ny, nz = G.nx, G.ny, G.nz
 
     # Get underlying arrays
     BRk_arr = parent(BRk); BIk_arr = parent(BIk)
-    qwk_arr = parent(qwk)
+    qʷₖ_arr = parent(qʷₖ)
     nx_local, ny_local, nz_local = size(BRk_arr)
 
     # Dealiasing: use inline check for efficiency when Lmask not provided
@@ -521,85 +521,85 @@ function compute_qw!(qwk, BRk, BIk, par, G::Grid, plans; Lmask=nothing)
     @inline should_keep(i_g, j_g) = use_inline_dealias ? PARENT.is_dealiased(i_g, j_g, nx, ny) : Lmask[i_g, j_g]
 
     #= Compute derivatives of BR and BI =#
-    BRxk = similar(BRk); BRyk = similar(BRk)
-    BIxk = similar(BIk); BIyk = similar(BIk)
-    BRxk_arr = parent(BRxk); BRyk_arr = parent(BRyk)
-    BIxk_arr = parent(BIxk); BIyk_arr = parent(BIyk)
+    BRₓₖ = similar(BRk); BRᵧₖ = similar(BRk)
+    BIₓₖ = similar(BIk); BIᵧₖ = similar(BIk)
+    BRₓₖ_arr = parent(BRₓₖ); BRᵧₖ_arr = parent(BRᵧₖ)
+    BIₓₖ_arr = parent(BIₓₖ); BIᵧₖ_arr = parent(BIᵧₖ)
 
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
         i_global = local_to_global(i_local, 1, G)
         j_global = local_to_global(j_local, 2, G)
-        kx_val = G.kx[i_global]
-        ky_val = G.ky[j_global]
-        BRxk_arr[i_local, j_local, k] = im*kx_val*BRk_arr[i_local, j_local, k]  # ∂BR/∂x
-        BRyk_arr[i_local, j_local, k] = im*ky_val*BRk_arr[i_local, j_local, k]  # ∂BR/∂y
-        BIxk_arr[i_local, j_local, k] = im*kx_val*BIk_arr[i_local, j_local, k]  # ∂BI/∂x
-        BIyk_arr[i_local, j_local, k] = im*ky_val*BIk_arr[i_local, j_local, k]  # ∂BI/∂y
+        kₓ = G.kx[i_global]
+        kᵧ = G.ky[j_global]
+        BRₓₖ_arr[i_local, j_local, k] = im*kₓ*BRk_arr[i_local, j_local, k]  # ∂BR/∂x
+        BRᵧₖ_arr[i_local, j_local, k] = im*kᵧ*BRk_arr[i_local, j_local, k]  # ∂BR/∂y
+        BIₓₖ_arr[i_local, j_local, k] = im*kₓ*BIk_arr[i_local, j_local, k]  # ∂BI/∂x
+        BIᵧₖ_arr[i_local, j_local, k] = im*kᵧ*BIk_arr[i_local, j_local, k]  # ∂BI/∂y
     end
 
     #= Transform derivatives to real space =#
-    BRxr = similar(BRk); BRyr = similar(BRk)
-    BIxr = similar(BIk); BIyr = similar(BIk)
-    fft_backward!(BRxr, BRxk, plans)
-    fft_backward!(BRyr, BRyk, plans)
-    fft_backward!(BIxr, BIxk, plans)
-    fft_backward!(BIyr, BIyk, plans)
+    BRₓᵣ = similar(BRk); BRᵧᵣ = similar(BRk)
+    BIₓᵣ = similar(BIk); BIᵧᵣ = similar(BIk)
+    fft_backward!(BRₓᵣ, BRₓₖ, plans)
+    fft_backward!(BRᵧᵣ, BRᵧₖ, plans)
+    fft_backward!(BIₓᵣ, BIₓₖ, plans)
+    fft_backward!(BIᵧᵣ, BIᵧₖ, plans)
 
-    BRxr_arr = parent(BRxr); BRyr_arr = parent(BRyr)
-    BIxr_arr = parent(BIxr); BIyr_arr = parent(BIyr)
+    BRₓᵣ_arr = parent(BRₓᵣ); BRᵧᵣ_arr = parent(BRᵧᵣ)
+    BIₓᵣ_arr = parent(BIₓᵣ); BIᵧᵣ_arr = parent(BIᵧᵣ)
 
     #= Compute (i/2)J(B*, B) term
     J(B*, B) = 2(BRᵧBIₓ - BRₓBIᵧ)
     So (i/2)J(B*, B) contributes: BRᵧBIₓ - BRₓBIᵧ =#
-    qwr = similar(qwk)
-    qwr_arr = parent(qwr)
+    qʷᵣ = similar(qʷₖ)
+    qʷᵣ_arr = parent(qʷᵣ)
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
-        qwr_arr[i_local, j_local, k] = real(BRyr_arr[i_local, j_local, k])*real(BIxr_arr[i_local, j_local, k]) -
-                                        real(BRxr_arr[i_local, j_local, k])*real(BIyr_arr[i_local, j_local, k])
+        qʷᵣ_arr[i_local, j_local, k] = real(BRᵧᵣ_arr[i_local, j_local, k])*real(BIₓᵣ_arr[i_local, j_local, k]) -
+                                        real(BRₓᵣ_arr[i_local, j_local, k])*real(BIᵧᵣ_arr[i_local, j_local, k])
     end
 
     #= Compute |B|² = BR² + BI² for the ∇²|B|² term =#
-    BRr = similar(BRk); BIr = similar(BIk)
-    fft_backward!(BRr, BRk, plans)
-    fft_backward!(BIr, BIk, plans)
+    BRᵣ = similar(BRk); BIᵣ = similar(BIk)
+    fft_backward!(BRᵣ, BRk, plans)
+    fft_backward!(BIᵣ, BIk, plans)
 
-    BRr_arr = parent(BRr); BIr_arr = parent(BIr)
-    mag2 = similar(BRk)
-    mag2_arr = parent(mag2)
+    BRᵣ_arr = parent(BRᵣ); BIᵣ_arr = parent(BIᵣ)
+    mag² = similar(BRk)
+    mag²_arr = parent(mag²)
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
-        mag2_arr[i_local, j_local, k] = real(BRr_arr[i_local, j_local, k])^2 + real(BIr_arr[i_local, j_local, k])^2
+        mag²_arr[i_local, j_local, k] = real(BRᵣ_arr[i_local, j_local, k])^2 + real(BIᵣ_arr[i_local, j_local, k])^2
     end
 
     #= Transform |B|² to spectral for ∇² operation =#
-    tempk = similar(BRk)
-    fft_forward!(tempk, mag2, plans)
-    tempk_arr = parent(tempk)
+    tempₖ = similar(BRk)
+    fft_forward!(tempₖ, mag², plans)
+    tempₖ_arr = parent(tempₖ)
 
     #= Assemble qʷ in spectral space
     qʷ = J_term - (1/4)∇²|B|²
     where ∇² → -kₕ² in spectral space =#
-    fft_forward!(qwk, qwr, plans)
-    qwk_arr = parent(qwk)
+    fft_forward!(qʷₖ, qʷᵣ, plans)
+    qʷₖ_arr = parent(qʷₖ)
 
     norm = nx*ny
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
         i_global = local_to_global(i_local, 1, G)
         j_global = local_to_global(j_local, 2, G)
-        kx_val = G.kx[i_global]
-        ky_val = G.ky[j_global]
-        kh2 = kx_val^2 + ky_val^2
+        kₓ = G.kx[i_global]
+        kᵧ = G.ky[j_global]
+        kₕ² = kₓ^2 + kᵧ^2
         if should_keep(i_global, j_global)
-            qwk_arr[i_local, j_local, k] = (qwk_arr[i_local, j_local, k] - 0.25*kh2*tempk_arr[i_local, j_local, k]) / norm
+            qʷₖ_arr[i_local, j_local, k] = (qʷₖ_arr[i_local, j_local, k] - 0.25*kₕ²*tempₖ_arr[i_local, j_local, k]) / norm
         else
-            qwk_arr[i_local, j_local, k] = 0
+            qʷₖ_arr[i_local, j_local, k] = 0
         end
         # Scale by Ro * W2F to match Fortran (derivatives.f90 line 1027)
         # W2F = (Uw/U)² (wave-to-flow velocity ratio)
         # Ro = U/(f*L) (Rossby number)
-        qwk_arr[i_local, j_local, k] *= (par.Ro * par.W2F)
+        qʷₖ_arr[i_local, j_local, k] *= (par.Ro * par.W2F)
     end
 
-    return qwk
+    return qʷₖ
 end
 
 #=
