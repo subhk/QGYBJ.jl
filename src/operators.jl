@@ -919,8 +919,8 @@ function compute_wave_velocities!(S::State, G::Grid; plans=nothing, params=nothi
     # Get underlying arrays
     u_arr = parent(S.u)
     v_arr = parent(S.v)
-    Ak_arr = parent(S.A)
-    nx_local, ny_local, nz_local = size(Ak_arr)
+    Aₖ_arr = parent(S.A)
+    nx_local, ny_local, nz_local = size(Aₖ_arr)
 
     # Set up plans if needed
     if plans === nothing
@@ -928,58 +928,58 @@ function compute_wave_velocities!(S::State, G::Grid; plans=nothing, params=nothi
     end
 
     # Compute horizontal derivatives of A: ∂A/∂x, ∂A/∂y
-    dA_dx_k = similar(S.A)
-    dA_dy_k = similar(S.A)
-    dA_dx_k_arr = parent(dA_dx_k)
-    dA_dy_k_arr = parent(dA_dy_k)
+    dA_dxₖ = similar(S.A)
+    dA_dyₖ = similar(S.A)
+    dA_dxₖ_arr = parent(dA_dxₖ)
+    dA_dyₖ_arr = parent(dA_dyₖ)
 
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
         i_global = local_to_global(i_local, 1, G)
         j_global = local_to_global(j_local, 2, G)
-        ikx = im * G.kx[i_global]
-        iky = im * G.ky[j_global]
-        dA_dx_k_arr[i_local, j_local, k] = ikx * Ak_arr[i_local, j_local, k]
-        dA_dy_k_arr[i_local, j_local, k] = iky * Ak_arr[i_local, j_local, k]
+        ikₓ = im * G.kx[i_global]
+        ikᵧ = im * G.ky[j_global]
+        dA_dxₖ_arr[i_local, j_local, k] = ikₓ * Aₖ_arr[i_local, j_local, k]
+        dA_dyₖ_arr[i_local, j_local, k] = ikᵧ * Aₖ_arr[i_local, j_local, k]
     end
 
     # Compute wave velocity contributions in spectral space
-    u_wave_k = similar(S.A)
-    v_wave_k = similar(S.A)
-    u_wave_k_arr = parent(u_wave_k)
-    v_wave_k_arr = parent(v_wave_k)
+    uʷₖ = similar(S.A)
+    vʷₖ = similar(S.A)
+    uʷₖ_arr = parent(uʷₖ)
+    vʷₖ_arr = parent(vʷₖ)
 
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
         i_global = local_to_global(i_local, 1, G)
         j_global = local_to_global(j_local, 2, G)
-        kx_val = G.kx[i_global]
-        ky_val = G.ky[j_global]
-        kh2 = kx_val^2 + ky_val^2
-        if kh2 > 0  # Dealias
-            u_wave_k_arr[i_local, j_local, k] = 2.0 * real(conj(Ak_arr[i_local, j_local, k]) * dA_dx_k_arr[i_local, j_local, k])
-            v_wave_k_arr[i_local, j_local, k] = 2.0 * real(conj(Ak_arr[i_local, j_local, k]) * dA_dy_k_arr[i_local, j_local, k])
+        kₓ = G.kx[i_global]
+        kᵧ = G.ky[j_global]
+        kₕ² = kₓ^2 + kᵧ^2
+        if kₕ² > 0  # Dealias
+            uʷₖ_arr[i_local, j_local, k] = 2.0 * real(conj(Aₖ_arr[i_local, j_local, k]) * dA_dxₖ_arr[i_local, j_local, k])
+            vʷₖ_arr[i_local, j_local, k] = 2.0 * real(conj(Aₖ_arr[i_local, j_local, k]) * dA_dyₖ_arr[i_local, j_local, k])
         else
-            u_wave_k_arr[i_local, j_local, k] = 0.0
-            v_wave_k_arr[i_local, j_local, k] = 0.0
+            uʷₖ_arr[i_local, j_local, k] = 0.0
+            vʷₖ_arr[i_local, j_local, k] = 0.0
         end
     end
 
     # Transform to real space
-    u_wave_real = similar(S.u)
-    v_wave_real = similar(S.v)
+    uʷᵣ = similar(S.u)
+    vʷᵣ = similar(S.v)
 
-    fft_backward!(u_wave_real, u_wave_k, plans)
-    fft_backward!(v_wave_real, v_wave_k, plans)
+    fft_backward!(uʷᵣ, uʷₖ, plans)
+    fft_backward!(vʷᵣ, vʷₖ, plans)
 
-    u_wave_real_arr = parent(u_wave_real)
-    v_wave_real_arr = parent(v_wave_real)
+    uʷᵣ_arr = parent(uʷᵣ)
+    vʷᵣ_arr = parent(vʷᵣ)
 
     # Note: fft_backward! is normalized (FFTW.ifft / PencilFFTs ldiv!)
     # No additional normalization needed here
 
     # Add wave velocities to existing QG velocities
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
-        u_arr[i_local, j_local, k] += real(u_wave_real_arr[i_local, j_local, k])
-        v_arr[i_local, j_local, k] += real(v_wave_real_arr[i_local, j_local, k])
+        u_arr[i_local, j_local, k] += real(uʷᵣ_arr[i_local, j_local, k])
+        v_arr[i_local, j_local, k] += real(vʷᵣ_arr[i_local, j_local, k])
     end
 
     return S
