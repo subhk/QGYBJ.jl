@@ -13,33 +13,33 @@ apply optional vertical structure: 0=QG-consistent kz~kh, 1=linear in z,
 function init_random_psi!(S::State, G::Grid; initial_k=5, amp_width=2.0, linear_vert_structure=0, par::QGParams=default_params())
     nx, ny, nz = G.nx, G.ny, G.nz
     # Build ψ in real space then FFT to spectral
-    ψr = zeros(Float64, nx, ny, nz)
+    ψᵣ = zeros(Float64, nx, ny, nz)
     # Deterministic pseudo-random phases based on integer hash (no Random dependency)
-    phase_for(ikx::Int, iky::Int) = 2π * ((hash((ikx, iky)) % 1_000_000) / 1_000_000)
-    for ikx in -2*initial_k:2*initial_k, iky in -2*initial_k:2*initial_k
-        kh2 = ikx^2 + iky^2
-        kh = sqrt(kh2)
-        kh2 == 0 && continue
-        kk = sqrt(kh2)
-        amp = exp( - (kk - initial_k)^2 / (2*amp_width) )
+    phase_for(ikₓ::Int, ikᵧ::Int) = 2π * ((hash((ikₓ, ikᵧ)) % 1_000_000) / 1_000_000)
+    for ikₓ in -2*initial_k:2*initial_k, ikᵧ in -2*initial_k:2*initial_k
+        kₕ² = ikₓ^2 + ikᵧ^2
+        kₕ = sqrt(kₕ²)
+        kₕ² == 0 && continue
+        κ = sqrt(kₕ²)
+        amp = exp( - (κ - initial_k)^2 / (2*amp_width) )
         for k in 1:nz, i in 1:nx, j in 1:ny
             z = G.z[k]
-            phase = phase_for(ikx, iky)
+            phase = phase_for(ikₓ, ikᵧ)
             if linear_vert_structure == 1
-                # linear in z around z0 = π (center of domain)
-                z0 = π
-                ψr[i,j,k] += (z - z0) * amp * cos(ikx*(i-1)*2π/nx + iky*(j-1)*2π/ny + phase)
+                # linear in z around z₀ = π (center of domain)
+                z₀ = π
+                ψᵣ[i,j,k] += (z - z₀) * amp * cos(ikₓ*(i-1)*2π/nx + ikᵧ*(j-1)*2π/ny + phase)
             elseif linear_vert_structure == 2
                 kz = 1.0
-                ψr[i,j,k] += amp * cos(ikx*(i-1)*2π/nx + iky*(j-1)*2π/ny + kz*z + phase)
+                ψᵣ[i,j,k] += amp * cos(ikₓ*(i-1)*2π/nx + ikᵧ*(j-1)*2π/ny + kz*z + phase)
             else
-                kz = kh  # Normalized (Bu = 1.0)
-                ψr[i,j,k] += amp * cos(ikx*(i-1)*2π/nx + iky*(j-1)*2π/ny + kz*z + phase)
+                kz = kₕ  # Normalized (Bu = 1.0)
+                ψᵣ[i,j,k] += amp * cos(ikₓ*(i-1)*2π/nx + ikᵧ*(j-1)*2π/ny + kz*z + phase)
             end
         end
     end
     # Forward FFT to spectral ψ
     plans = plan_transforms!(G)
-    fft_forward!(S.psi, ψr, plans)
+    fft_forward!(S.psi, ψᵣ, plans)
     return S
 end
