@@ -958,10 +958,96 @@ function wave_energy_global(B, A, mpi_config=nothing)
     end
 end
 
+"""
+    flow_kinetic_energy_spectral_global(uk, vk, G, par; Lmask=nothing, mpi_config=nothing) -> KE
+
+Compute GLOBAL kinetic energy in spectral space across all MPI processes.
+
+# Arguments
+- `uk, vk`: Spectral velocity fields (local portion in MPI mode)
+- `G::Grid`: Grid structure
+- `par`: QGParams
+- `Lmask`: Optional dealiasing mask
+- `mpi_config`: MPI configuration (nothing for serial mode)
+
+# Returns
+Global kinetic energy with dealiasing and density weighting.
+"""
+function flow_kinetic_energy_spectral_global(uk, vk, G::Grid, par; Lmask=nothing, mpi_config=nothing)
+    KE_local = flow_kinetic_energy_spectral(uk, vk, G, par; Lmask=Lmask)
+
+    if mpi_config === nothing
+        return KE_local
+    else
+        return PARENT.mpi_reduce_sum(KE_local, mpi_config)
+    end
+end
+
+"""
+    flow_potential_energy_spectral_global(bk, G, par; Lmask=nothing, mpi_config=nothing) -> PE
+
+Compute GLOBAL potential energy in spectral space across all MPI processes.
+
+# Arguments
+- `bk`: Spectral buoyancy field (local portion in MPI mode)
+- `G::Grid`: Grid structure
+- `par`: QGParams
+- `Lmask`: Optional dealiasing mask
+- `mpi_config`: MPI configuration (nothing for serial mode)
+
+# Returns
+Global potential energy with dealiasing and density weighting.
+"""
+function flow_potential_energy_spectral_global(bk, G::Grid, par; Lmask=nothing, mpi_config=nothing)
+    PE_local = flow_potential_energy_spectral(bk, G, par; Lmask=Lmask)
+
+    if mpi_config === nothing
+        return PE_local
+    else
+        return PARENT.mpi_reduce_sum(PE_local, mpi_config)
+    end
+end
+
+"""
+    wave_energy_spectral_global(BR, BI, AR, AI, CR, CI, G, par; Lmask=nothing, mpi_config=nothing) -> (WKE, WPE, WCE)
+
+Compute GLOBAL wave energies in spectral space across all MPI processes.
+
+# Arguments
+- `BR, BI, AR, AI, CR, CI`: Spectral wave fields (local portions in MPI mode)
+- `G::Grid`: Grid structure
+- `par`: QGParams
+- `Lmask`: Optional dealiasing mask
+- `mpi_config`: MPI configuration (nothing for serial mode)
+
+# Returns
+Tuple (WKE, WPE, WCE) of global wave energy components.
+"""
+function wave_energy_spectral_global(BR, BI, AR, AI, CR, CI, G::Grid, par; Lmask=nothing, mpi_config=nothing)
+    WKE_local, WPE_local, WCE_local = wave_energy_spectral(BR, BI, AR, AI, CR, CI, G, par; Lmask=Lmask)
+
+    if mpi_config === nothing
+        return WKE_local, WPE_local, WCE_local
+    else
+        WKE_global = PARENT.mpi_reduce_sum(WKE_local, mpi_config)
+        WPE_global = PARENT.mpi_reduce_sum(WPE_local, mpi_config)
+        WCE_global = PARENT.mpi_reduce_sum(WCE_local, mpi_config)
+        return WKE_global, WPE_global, WCE_global
+    end
+end
+
 # Reference to parent module for MPI functions
 const PARENT = Base.parentmodule(@__MODULE__)
 
 end # module
 
-using .Diagnostics: omega_eqn_rhs!, wave_energy, flow_kinetic_energy, wave_energy_vavg, slice_horizontal, slice_vertical_xz
+# Export basic diagnostics
+using .Diagnostics: omega_eqn_rhs!, wave_energy, flow_kinetic_energy, wave_energy_vavg
+using .Diagnostics: slice_horizontal, slice_vertical_xz
+
+# Export spectral energy diagnostics (Fortran-compatible)
+using .Diagnostics: flow_kinetic_energy_spectral, flow_potential_energy_spectral, wave_energy_spectral
+
+# Export MPI-aware global energy functions
 using .Diagnostics: flow_kinetic_energy_global, wave_energy_global
+using .Diagnostics: flow_kinetic_energy_spectral_global, flow_potential_energy_spectral_global, wave_energy_spectral_global
