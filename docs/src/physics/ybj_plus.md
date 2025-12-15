@@ -33,24 +33,36 @@ where ``A`` is the **slowly-varying complex wave amplitude**.
 The wave envelope ``B = L^+ A`` evolves according to:
 
 ```math
-\frac{\partial B}{\partial t} + J(\psi, B) + B\frac{\partial\zeta}{\partial t} = -i\frac{N^2}{2f_0}\nabla_h^2 A + \mathcal{D}_B
+\frac{\partial B}{\partial t} + J(\psi, B) = -i\frac{k_h^2}{2 \cdot Bu \cdot Ro} A + \frac{1}{2}B \times \zeta + \mathcal{D}_B
 ```
 
 where:
 - ``B = L^+ A``: Evolved wave envelope
 - ``\zeta = \nabla^2\psi``: Relative vorticity
 - ``J(\psi, B)``: Advection by geostrophic flow
-- ``B \partial\zeta/\partial t``: Refraction term
-- ``-i(N^2/2f_0)\nabla_h^2 A``: Dispersion
+- ``(1/2)B \times \zeta``: Refraction term (wave focusing by vorticity)
+- ``-i k_h^2/(2 \cdot Bu \cdot Ro) A``: Dispersion (nondimensional form of ``-i N^2 k_h^2/(2f_0) A``)
+
+### Real/Imaginary Decomposition
+
+Writing ``B = B_R + i B_I`` and ``A = A_R + i A_I``, the equations become:
+
+```math
+\frac{\partial B_R}{\partial t} = -J(\psi, B_R) - \frac{k_h^2}{2 \cdot Bu \cdot Ro} A_I + \frac{1}{2} B_I \times \zeta - \mathcal{D}_{BR}
+```
+
+```math
+\frac{\partial B_I}{\partial t} = -J(\psi, B_I) + \frac{k_h^2}{2 \cdot Bu \cdot Ro} A_R - \frac{1}{2} B_R \times \zeta - \mathcal{D}_{BI}
+```
 
 ### Physical Terms
 
 | Term | Physics | Effect |
 |:-----|:--------|:-------|
 | ``J(\psi, B)`` | Advection | Waves carried by eddies |
-| ``B\partial_t\zeta`` | Refraction | Focusing in anticyclones |
-| ``\nabla_h^2 A`` | Dispersion | Horizontal spreading |
-| ``\mathcal{D}_B`` | Dissipation | Energy loss |
+| ``(1/2)B \times \zeta`` | Refraction | Focusing in anticyclones |
+| ``k_h^2 A/(2 \cdot Bu \cdot Ro)`` | Dispersion | Horizontal spreading |
+| ``\mathcal{D}_B`` | Dissipation | Energy loss (hyperdiffusion) |
 
 ## The L⁺ Operator
 
