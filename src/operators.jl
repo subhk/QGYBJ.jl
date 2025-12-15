@@ -179,11 +179,13 @@ function compute_velocities!(S::State, G::Grid; plans=nothing, params=nothing, c
     tmpu_arr = parent(tmpu)
     tmpv_arr = parent(tmpv)
 
-    # Normalization: FFTW.ifft returns unnormalized; divide by (nx*ny)
-    norm = (nx * ny)
+    # Note: FFTW.ifft and PencilFFTs ldiv! are both normalized (divide by N internally).
+    # However, our spectral storage convention uses N * true_coefficients (unnormalized FFT output).
+    # To maintain consistency with convolution normalization in nonlinear.jl, we extract real parts directly.
+    # The spectral values are already properly scaled from the forward FFT.
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
-        u_arr[i_local, j_local, k] = real(tmpu_arr[i_local, j_local, k]) / norm
-        v_arr[i_local, j_local, k] = real(tmpv_arr[i_local, j_local, k]) / norm
+        u_arr[i_local, j_local, k] = real(tmpu_arr[i_local, j_local, k])
+        v_arr[i_local, j_local, k] = real(tmpv_arr[i_local, j_local, k])
     end
 
     # Compute vertical velocity if requested
@@ -392,9 +394,9 @@ function _compute_vertical_velocity_direct!(S::State, G::Grid, plans, params, N2
     fft_backward!(tmpw, wk, plans)
     tmpw_arr = parent(tmpw)
 
-    norm = nx * ny
+    # IFFT is normalized - extract real parts directly
     @inbounds for k in 1:nz, j_local in 1:ny_local, i_local in 1:nx_local
-        w_arr[i_local, j_local, k] = real(tmpw_arr[i_local, j_local, k]) / norm
+        w_arr[i_local, j_local, k] = real(tmpw_arr[i_local, j_local, k])
     end
 end
 

@@ -161,16 +161,20 @@ multiple pencil configurations for different operations.
 - `topology`: 2D process topology (px, py)
 - `transpose_xy_to_z`: Transpose plan from xy to z pencils
 - `transpose_z_to_xy`: Transpose plan from z to xy pencils
+
+# Type Parameters
+Using `Any` for pencil types to ensure compatibility across PencilArrays versions.
+The actual types are Pencil{3,2,...} for 3D data with 2D decomposition.
 """
-struct PencilDecomp
-    pencil_xy::Pencil{3,2,MPI.Comm}      # 3D data, 2D decomposition for FFTs
-    pencil_z::Pencil{3,2,MPI.Comm}       # 3D data, 2D decomposition with z local
+struct PencilDecomp{P1, P2, T1, T2}
+    pencil_xy::P1                         # 3D data, 2D decomposition for FFTs
+    pencil_z::P2                          # 3D data, 2D decomposition with z local
     local_range_xy::NTuple{3, UnitRange{Int}}
     local_range_z::NTuple{3, UnitRange{Int}}
     global_dims::NTuple{3, Int}
     topology::Tuple{Int,Int}
-    transpose_xy_to_z::Transpose
-    transpose_z_to_xy::Transpose
+    transpose_xy_to_z::T1
+    transpose_z_to_xy::T2
 end
 
 """
@@ -440,13 +444,17 @@ FFT plans for MPI-parallel execution using PencilFFTs.
 
 PencilFFTs automatically handles the transposes needed for 2D distributed FFTs:
 - Forward FFT: x-pencil → y-pencil → output (handles x-FFT, transpose, y-FFT)
-- Backward FFT: reverse operations
+- Backward FFT: Uses ldiv!(dst, forward_plan, src) for normalized inverse
+
+# Note on Inverse Transform
+We use `ldiv!(dst, plan, src)` with the forward plan for inverse FFT because:
+1. It gives normalized inverse (consistent with FFTW.ifft)
+2. It's more memory-efficient than storing a separate backward plan
 """
-struct MPIPlans
-    forward::PencilFFTs.PencilFFTPlan
-    backward::PencilFFTs.PencilFFTPlan
-    input_pencil::Pencil
-    output_pencil::Pencil
+struct MPIPlans{P, PI, PO}
+    forward::P
+    input_pencil::PI
+    output_pencil::PO
     work_arrays::NamedTuple
 end
 
@@ -492,12 +500,12 @@ function QGYBJ.plan_mpi_transforms(grid::Grid, mpi_config::MPIConfig)
     work_in = PencilArray{Complex{Float64}}(undef, input_pencil)
     work_out = PencilArray{Complex{Float64}}(undef, output_pencil)
 
-    # Create inverse plan
-    inv_plan = inv(plan)
+    # Note: We don't create a separate backward plan because:
+    # ldiv!(dst, plan, src) computes the normalized inverse FFT efficiently
+    # This is consistent with FFTW.ifft and saves memory
 
     return MPIPlans(
         plan,
-        inv_plan,
         input_pencil,
         output_pencil,
         (input=work_in, output=work_out)
