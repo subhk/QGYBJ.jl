@@ -12,6 +12,7 @@ using Random
 using LinearAlgebra
 using ..QGYBJ: Grid, State, QGParams
 using ..QGYBJ: plan_transforms!, fft_forward!, fft_backward!, compute_wavenumbers!
+using ..QGYBJ: local_to_global
 
 """
     initialize_from_config(config::ModelConfig, G::Grid, S::State, plans)
@@ -378,18 +379,184 @@ end
 """
     add_balanced_component!(S::State, G::Grid, params::QGParams, plans)
 
-Add balanced component to the flow (geostrophic adjustment).
+Add balanced component to the flow by computing geostrophically consistent fields.
+
+This function:
+1. Computes potential vorticity q from the streamfunction ψ
+2. Computes geostrophically balanced velocities u = -∂ψ/∂y, v = ∂ψ/∂x
+3. Computes buoyancy b = ∂ψ/∂z (from thermal wind balance)
+
+Based on init_psi_generic and init_q from the Fortran implementation.
 """
 function add_balanced_component!(S::State, G::Grid, params::QGParams, plans)
     @info "Adding balanced component to initial state"
-    
-    # This is a placeholder - would need full geostrophic adjustment
-    # For now, just ensure the stream function is consistent with any prescribed velocities
-    
-    # Could implement:
-    # 1. Solve elliptic equation ∇²ψ = q for consistency
-    # 2. Apply geostrophic balance u = -∂ψ/∂y, v = ∂ψ/∂x
-    # 3. Adjust wave field for consistency with slow manifold
+
+    nz = G.nz
+    dz = nz > 1 ? (G.z[2] - G.z[1]) : 1.0
+    dz2 = dz^2
+
+    # Get elliptic coefficient a_ell = Bu/N²
+    # For constant N², a_ell = Bu (Burger number)
+    # For variable N², would need N²(z) profile
+    a_ell = fill(params.Bu, nz)
+
+    # Density weights (unity for Boussinesq)
+    r_ut = ones(Float64, nz)  # rho at unstaggered (u) points
+    r_st = ones(Float64, nz)  # rho at staggered (s) points
+
+    # Get underlying arrays
+    psi_arr = parent(S.psi)
+    nx_local, ny_local, nz_local = size(psi_arr)
+
+    # Compute potential vorticity q from ψ
+    # q = -kh² ψ + (1/ρ) ∂/∂z (ρ a_ell ∂ψ/∂z)
+    if hasfield(typeof(S), :q)
+        compute_q_from_psi!(S.q, S.psi, G, params, a_ell, r_ut, r_st, dz)
+        @info "Computed potential vorticity q from streamfunction"
+    end
+
+    # Compute geostrophically balanced velocities
+    # u = -∂ψ/∂y = -i*ky*ψ
+    # v =  ∂ψ/∂x =  i*kx*ψ
+    if hasfield(typeof(S), :u) && hasfield(typeof(S), :v)
+        compute_geostrophic_velocities!(S.u, S.v, S.psi, G)
+        @info "Computed geostrophic velocities u, v from streamfunction"
+    end
+
+    # Compute buoyancy from thermal wind balance
+    # b = ∂ψ/∂z (in QG approximation with constant N²)
+    if hasfield(typeof(S), :b)
+        compute_buoyancy_from_psi!(S.b, S.psi, G, dz)
+        @info "Computed buoyancy b from thermal wind balance"
+    end
+end
+
+"""
+    compute_q_from_psi!(q, psi, G, params, a_ell, r_ut, r_st, dz)
+
+Compute QG potential vorticity from streamfunction.
+
+The PV-streamfunction relationship is:
+    q = ∇²ψ + (1/ρ) ∂/∂z (ρ a_ell ∂ψ/∂z)
+
+In spectral space with finite differences in z:
+    q = -kh² ψ + (1/dz²) [(ρ_u a_ell ρ_s⁻¹) (ψ[k+1] - 2ψ[k] + ψ[k-1])]
+
+with Neumann BC ∂ψ/∂z = 0 at boundaries.
+"""
+function compute_q_from_psi!(q, psi, G::Grid, params, a_ell, r_ut, r_st, dz)
+    nz = G.nz
+    dz2 = dz^2
+
+    q_arr = parent(q)
+    psi_arr = parent(psi)
+    nx_local, ny_local, nz_local = size(psi_arr)
+
+    @assert nz_local == nz "Vertical dimension must be fully local"
+
+    for j_local in 1:ny_local, i_local in 1:nx_local
+        # Get global wavenumber indices
+        i_global = hasfield(typeof(G), :decomp) && G.decomp !== nothing ?
+                   local_to_global(i_local, 1, G) : i_local
+        j_global = hasfield(typeof(G), :decomp) && G.decomp !== nothing ?
+                   local_to_global(j_local, 2, G) : j_local
+
+        kx_val = G.kx[min(i_global, length(G.kx))]
+        ky_val = G.ky[min(j_global, length(G.ky))]
+        kh2 = kx_val^2 + ky_val^2
+
+        # Interior points (k = 2, ..., nz-1)
+        for k in 2:nz-1
+            coeff_up = (r_ut[k] * a_ell[k]) / r_st[k]
+            coeff_down = (r_ut[k-1] * a_ell[k-1]) / r_st[k]
+
+            vert_term = coeff_up * psi_arr[i_local, j_local, k+1] -
+                       (coeff_up + coeff_down) * psi_arr[i_local, j_local, k] +
+                       coeff_down * psi_arr[i_local, j_local, k-1]
+
+            q_arr[i_local, j_local, k] = -kh2 * psi_arr[i_local, j_local, k] + vert_term / dz2
+        end
+
+        # Bottom boundary (k=1): Neumann BC ψ_z = 0 ⟹ ψ[0] = ψ[1]
+        if nz >= 1
+            coeff_up = (r_ut[1] * a_ell[1]) / r_st[1]
+            vert_term = coeff_up * (psi_arr[i_local, j_local, 2] - psi_arr[i_local, j_local, 1])
+            q_arr[i_local, j_local, 1] = -kh2 * psi_arr[i_local, j_local, 1] + vert_term / dz2
+        end
+
+        # Top boundary (k=nz): Neumann BC ψ_z = 0 ⟹ ψ[nz+1] = ψ[nz]
+        if nz >= 2
+            coeff_down = (r_ut[nz-1] * a_ell[nz-1]) / r_st[nz]
+            vert_term = coeff_down * (psi_arr[i_local, j_local, nz-1] - psi_arr[i_local, j_local, nz])
+            q_arr[i_local, j_local, nz] = -kh2 * psi_arr[i_local, j_local, nz] + vert_term / dz2
+        end
+    end
+end
+
+"""
+    compute_geostrophic_velocities!(u, v, psi, G)
+
+Compute geostrophically balanced velocities from streamfunction.
+
+Geostrophic balance:
+    u = -∂ψ/∂y = -i*ky*ψ  (in spectral space)
+    v =  ∂ψ/∂x =  i*kx*ψ  (in spectral space)
+"""
+function compute_geostrophic_velocities!(u, v, psi, G::Grid)
+    u_arr = parent(u)
+    v_arr = parent(v)
+    psi_arr = parent(psi)
+
+    nx_local, ny_local, nz_local = size(psi_arr)
+
+    for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
+        # Get global wavenumber indices
+        i_global = hasfield(typeof(G), :decomp) && G.decomp !== nothing ?
+                   local_to_global(i_local, 1, G) : i_local
+        j_global = hasfield(typeof(G), :decomp) && G.decomp !== nothing ?
+                   local_to_global(j_local, 2, G) : j_local
+
+        kx_val = G.kx[min(i_global, length(G.kx))]
+        ky_val = G.ky[min(j_global, length(G.ky))]
+
+        # Geostrophic velocities in spectral space
+        u_arr[i_local, j_local, k] = -im * ky_val * psi_arr[i_local, j_local, k]
+        v_arr[i_local, j_local, k] =  im * kx_val * psi_arr[i_local, j_local, k]
+    end
+end
+
+"""
+    compute_buoyancy_from_psi!(b, psi, G, dz)
+
+Compute buoyancy from streamfunction using thermal wind balance.
+
+In QG with thermal wind balance:
+    b = f₀ ∂ψ/∂z / N²
+
+For simplicity (and matching Fortran convention), we compute:
+    b[k] = (ψ[k] - ψ[k-1]) / dz
+
+at staggered (cell-face) points.
+"""
+function compute_buoyancy_from_psi!(b, psi, G::Grid, dz)
+    b_arr = parent(b)
+    psi_arr = parent(psi)
+
+    nx_local, ny_local, nz_local = size(psi_arr)
+
+    for j_local in 1:ny_local, i_local in 1:nx_local
+        # Bottom boundary: b[1] from ψ[2] - ψ[1] (or extrapolation)
+        if nz_local >= 2
+            b_arr[i_local, j_local, 1] = (psi_arr[i_local, j_local, 2] - psi_arr[i_local, j_local, 1]) / dz
+        else
+            b_arr[i_local, j_local, 1] = 0
+        end
+
+        # Interior and top points
+        for k in 2:nz_local
+            b_arr[i_local, j_local, k] = (psi_arr[i_local, j_local, k] - psi_arr[i_local, j_local, k-1]) / dz
+        end
+    end
 end
 
 """
