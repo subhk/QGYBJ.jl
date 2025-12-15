@@ -255,6 +255,53 @@ else
                 end
 
                 QGYBJ.mpi_barrier(mpi_config)
+
+                # Test scatter_from_root
+                # Create a global array on root with known values
+                if mpi_config.is_root
+                    global_arr = zeros(ComplexF64, 64, 64, 32)
+                    for k in 1:32, j in 1:64, i in 1:64
+                        global_arr[i, j, k] = Complex(i + j*100 + k*10000, 0.0)
+                    end
+                else
+                    global_arr = nothing
+                end
+
+                # Scatter to all processes
+                scattered = QGYBJ.scatter_from_root(global_arr, grid, mpi_config)
+
+                # Verify each process received correct data
+                local_range = QGYBJ.get_local_range_xy(grid)
+                parent_arr = parent(scattered)
+
+                all_correct = true
+                for k_local in axes(parent_arr, 3)
+                    k_global = local_range[3][k_local]
+                    for j_local in axes(parent_arr, 2)
+                        j_global = local_range[2][j_local]
+                        for i_local in axes(parent_arr, 1)
+                            i_global = local_range[1][i_local]
+                            expected = Complex(i_global + j_global*100 + k_global*10000, 0.0)
+                            if parent_arr[i_local, j_local, k_local] != expected
+                                all_correct = false
+                                break
+                            end
+                        end
+                    end
+                end
+
+                @test all_correct
+
+                # Verify using global reduction
+                local_correct = all_correct ? 1 : 0
+                global_correct = MPI.Allreduce(local_correct, MPI.MIN, comm)
+                @test global_correct == 1
+
+                if rank == 0
+                    println("  ✓ Scatter from root successful")
+                end
+
+                QGYBJ.mpi_barrier(mpi_config)
             end
         end
 
