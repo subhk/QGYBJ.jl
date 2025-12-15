@@ -8,7 +8,8 @@ interpolation, including tricubic and adaptive schemes for improved accuracy.
 module InterpolationSchemes
 
 export InterpolationMethod, interpolate_velocity_advanced,
-       CubicSpline1D, tricubic_weights, bicubic_interpolation
+       CubicSpline1D, tricubic_weights, bicubic_interpolation,
+       quintic_basis_functions, quintic_interpolation
 
 """
 Available interpolation methods.
