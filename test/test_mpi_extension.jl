@@ -171,9 +171,10 @@ else
 
                 plans = QGYBJ.plan_mpi_transforms(grid, mpi_config)
 
-                @test plans isa QGYBJ.QGYBJMPIExt.MPIPlans
+                # Note: MPIPlans uses ldiv!(dst, forward, src) for inverse FFT
+                # so there's no separate 'backward' field
                 @test plans.forward !== nothing
-                @test plans.backward !== nothing
+                @test plans.pencils_match  # Should be true for C2C with NoTransform on z
 
                 if rank == 0
                     println("  ✓ PencilFFT plans created")
