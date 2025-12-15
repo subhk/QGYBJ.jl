@@ -324,7 +324,7 @@ Energy measures for monitoring simulation health and physics.
 """
     flow_kinetic_energy(u, v) -> KE
 
-Compute domain-integrated kinetic energy of the geostrophic flow.
+Compute domain-integrated kinetic energy of the geostrophic flow (simple version).
 
 # Physical Background
 The kinetic energy of the balanced flow:
@@ -342,6 +342,8 @@ Total kinetic energy (domain sum, not mean) in nondimensional units.
 # Note
 - This is NOT normalized by volume. For energy density, divide by nx×ny×nz.
 - In MPI mode, this returns LOCAL energy. Use mpi_reduce_sum for global total.
+- For physically accurate energy with dealiasing and density weighting,
+  use `flow_kinetic_energy_spectral` instead.
 """
 function flow_kinetic_energy(u, v)
     # Works with any array (regular or PencilArray)
@@ -352,6 +354,187 @@ function flow_kinetic_energy(u, v)
         KE += 0.5 * (u_arr[i]^2 + v_arr[i]^2)
     end
     return KE
+end
+
+"""
+    flow_kinetic_energy_spectral(uk, vk, G, par; Lmask=nothing) -> KE
+
+Compute kinetic energy in spectral space with dealiasing and density weighting.
+
+# Physical Background (matches Fortran diag_zentrum/energy_linear)
+The kinetic energy is computed as:
+
+    KE(z) = Σₖ L(kₓ,kᵧ) × (|uₖ|² + |vₖ|²) - 0.5 × (|u₀₀|² + |v₀₀|²)
+
+The dealiasing correction subtracts half the kh=0 mode because:
+- With 2/3 dealiasing: Σₖ (1/2)|u|² = Σₖ L|u|² - 0.5|u(0,0)|²
+
+The total KE integrates over z with density weighting:
+
+    KE_total = (1/nz) Σᵢ ρₛ(zᵢ) × KE(zᵢ)
+
+# Algorithm
+1. Loop over all spectral modes (kₓ, kᵧ, z) with dealiasing mask L
+2. Accumulate |u|² + |v|² at each level
+3. Apply dealiasing correction: subtract half the kh=0 mode
+4. Weight by density ρₛ(z) and integrate (divide by nz)
+
+# Arguments
+- `uk, vk`: Spectral velocity fields (complex)
+- `G::Grid`: Grid structure
+- `par`: QGParams (for density profiles)
+- `Lmask`: Optional dealiasing mask (default: all modes included)
+
+# Returns
+Total kinetic energy, normalized by nz, with density weighting.
+
+# Fortran Correspondence
+Matches the kinetic energy computation in `diag_zentrum` (diagnostics.f90:127-161)
+and `energy_linear` (diagnostics.f90:3024-3107).
+
+# Note
+In MPI mode, returns LOCAL energy. Use mpi_reduce_sum for global total.
+"""
+function flow_kinetic_energy_spectral(uk, vk, G::Grid, par; Lmask=nothing)
+    nx, ny, nz = G.nx, G.ny, G.nz
+    L = isnothing(Lmask) ? trues(nx, ny) : Lmask
+
+    # Get local dimensions
+    uk_arr = parent(uk)
+    vk_arr = parent(vk)
+    nx_local, ny_local, nz_local = size(uk_arr)
+
+    # Get density profile for weighting (ρₛ at staggered points)
+    ρₛ = if isdefined(PARENT, :rho_s) && par !== nothing
+        PARENT.rho_s(par, G)
+    elseif isdefined(PARENT, :rho_st) && par !== nothing
+        PARENT.rho_st(par, G)
+    else
+        ones(Float64, nz)
+    end
+
+    KE_total = 0.0
+
+    @inbounds for k in 1:nz_local
+        # Get density at this level
+        k_global = k  # In serial mode; for MPI would need local_to_global_z
+        ρₛₖ = k_global <= length(ρₛ) ? ρₛ[k_global] : 1.0
+
+        ke_k = 0.0
+
+        # Sum over horizontal wavenumbers with dealiasing
+        for j in 1:ny_local, i in 1:nx_local
+            i_global = local_to_global(i, 1, G)
+            j_global = local_to_global(j, 2, G)
+
+            if L[i_global, j_global]
+                # KE contribution: |u|² + |v|²
+                ke_k += abs2(uk_arr[i,j,k]) + abs2(vk_arr[i,j,k])
+            end
+        end
+
+        # Dealiasing correction: subtract half the kh=0 mode
+        # The kh=0 mode is at global index (1,1)
+        if local_to_global(1, 1, G) == 1 && local_to_global(1, 2, G) == 1
+            # This process owns the (1,1) mode
+            ke_k -= 0.5 * (abs2(uk_arr[1,1,k]) + abs2(vk_arr[1,1,k]))
+        end
+
+        # Weight by density and accumulate
+        KE_total += ρₛₖ * ke_k
+    end
+
+    # Normalize by nz (vertical integration)
+    KE = KE_total / nz
+
+    return KE
+end
+
+"""
+    flow_potential_energy_spectral(bk, G, par; Lmask=nothing) -> PE
+
+Compute potential energy in spectral space with dealiasing and density weighting.
+
+# Physical Background
+The potential energy from buoyancy variance:
+
+    PE(z) = Σₖ L(kₓ,kᵧ) × (Bu × ρ₁/ρ₂) × |bₖ|² - 0.5 × correction
+
+For QG: b = ψ_z, so PE represents available potential energy from isopycnal tilting.
+
+# Arguments
+- `bk`: Spectral buoyancy field (complex)
+- `G::Grid`: Grid structure
+- `par`: QGParams (for Bu and density profiles)
+- `Lmask`: Optional dealiasing mask
+
+# Returns
+Total potential energy, normalized by nz, with density weighting.
+
+# Fortran Correspondence
+Matches the potential energy computation in `diag_zentrum` (ps term).
+"""
+function flow_potential_energy_spectral(bk, G::Grid, par; Lmask=nothing)
+    nx, ny, nz = G.nx, G.ny, G.nz
+    L = isnothing(Lmask) ? trues(nx, ny) : Lmask
+    Bu = par.Bu
+
+    # Get local dimensions
+    bk_arr = parent(bk)
+    nx_local, ny_local, nz_local = size(bk_arr)
+
+    # Get density profiles
+    ρ₁ = if isdefined(PARENT, :rho_ut) && par !== nothing
+        PARENT.rho_ut(par, G)
+    else
+        ones(Float64, nz)
+    end
+
+    ρ₂ = if isdefined(PARENT, :rho_st) && par !== nothing
+        PARENT.rho_st(par, G)
+    else
+        ones(Float64, nz)
+    end
+
+    ρₛ = if isdefined(PARENT, :rho_s) && par !== nothing
+        PARENT.rho_s(par, G)
+    else
+        ones(Float64, nz)
+    end
+
+    PE_total = 0.0
+
+    @inbounds for k in 1:nz_local
+        k_global = k
+        ρ₁ₖ = k_global <= length(ρ₁) ? ρ₁[k_global] : 1.0
+        ρ₂ₖ = k_global <= length(ρ₂) ? ρ₂[k_global] : 1.0
+        ρₛₖ = k_global <= length(ρₛ) ? ρₛ[k_global] : 1.0
+
+        pe_k = 0.0
+
+        for j in 1:ny_local, i in 1:nx_local
+            i_global = local_to_global(i, 1, G)
+            j_global = local_to_global(j, 2, G)
+
+            if L[i_global, j_global]
+                # PE contribution: (Bu × ρ₁/ρ₂) × |b|²
+                pe_k += (Bu * ρ₁ₖ / ρ₂ₖ) * abs2(bk_arr[i,j,k])
+            end
+        end
+
+        # Dealiasing correction
+        if local_to_global(1, 1, G) == 1 && local_to_global(1, 2, G) == 1
+            pe_k -= 0.5 * (Bu * ρ₁ₖ / ρ₂ₖ) * abs2(bk_arr[1,1,k])
+        end
+
+        # Weight by density and accumulate
+        PE_total += ρₛₖ * pe_k
+    end
+
+    # Normalize by nz
+    PE = PE_total / nz
+
+    return PE
 end
 
 """
