@@ -112,53 +112,53 @@ Result is normalized by (nx × ny) to account for unnormalized inverse FFT.
 jacobian_spectral!(Jpsi_q, psi_k, q_k, grid, plans)
 ```
 """
-function jacobian_spectral!(dstk, phik, chik, G::Grid, plans)
+function jacobian_spectral!(dstk, φₖ, χₖ, G::Grid, plans)
     nx, ny, nz = G.nx, G.ny, G.nz
 
     # Get underlying arrays (works for both Array and PencilArray)
-    phi_arr = parent(phik)
-    chi_arr = parent(chik)
+    φ_arr = parent(φₖ)
+    χ_arr = parent(χₖ)
     dst_arr = parent(dstk)
-    nx_local, ny_local, nz_local = size(phi_arr)
+    nx_local, ny_local, nz_local = size(φ_arr)
 
     #= Step 1: Compute spectral derivatives
     In spectral space: ∂/∂x → ikₓ, ∂/∂y → ikᵧ =#
-    phixk = similar(phik); phiyk = similar(phik)
-    chixk = similar(chik); chiyk = similar(chik)
+    φₓₖ = similar(φₖ); φᵧₖ = similar(φₖ)
+    χₓₖ = similar(χₖ); χᵧₖ = similar(χₖ)
 
-    phix_arr = parent(phixk); phiy_arr = parent(phiyk)
-    chix_arr = parent(chixk); chiy_arr = parent(chiyk)
+    φₓ_arr = parent(φₓₖ); φᵧ_arr = parent(φᵧₖ)
+    χₓ_arr = parent(χₓₖ); χᵧ_arr = parent(χᵧₖ)
 
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
         i_global = local_to_global(i_local, 1, G)
         j_global = local_to_global(j_local, 2, G)
-        kx_val = G.kx[i_global]
-        ky_val = G.ky[j_global]
+        kₓ = G.kx[i_global]
+        kᵧ = G.ky[j_global]
 
-        phix_arr[i_local, j_local, k] = im*kx_val*phi_arr[i_local, j_local, k]   # φ̂ₓ = ikₓ φ̂
-        phiy_arr[i_local, j_local, k] = im*ky_val*phi_arr[i_local, j_local, k]   # φ̂ᵧ = ikᵧ φ̂
-        chix_arr[i_local, j_local, k] = im*kx_val*chi_arr[i_local, j_local, k]   # χ̂ₓ = ikₓ χ̂
-        chiy_arr[i_local, j_local, k] = im*ky_val*chi_arr[i_local, j_local, k]   # χ̂ᵧ = ikᵧ χ̂
+        φₓ_arr[i_local, j_local, k] = im*kₓ*φ_arr[i_local, j_local, k]   # φ̂ₓ = ikₓ φ̂
+        φᵧ_arr[i_local, j_local, k] = im*kᵧ*φ_arr[i_local, j_local, k]   # φ̂ᵧ = ikᵧ φ̂
+        χₓ_arr[i_local, j_local, k] = im*kₓ*χ_arr[i_local, j_local, k]   # χ̂ₓ = ikₓ χ̂
+        χᵧ_arr[i_local, j_local, k] = im*kᵧ*χ_arr[i_local, j_local, k]   # χ̂ᵧ = ikᵧ χ̂
     end
 
     #= Step 2: Transform derivatives to real space =#
-    phix = similar(phik); phiy = similar(phik)
-    chix = similar(chik); chiy = similar(chik)
-    fft_backward!(phix, phixk, plans)
-    fft_backward!(phiy, phiyk, plans)
-    fft_backward!(chix, chixk, plans)
-    fft_backward!(chiy, chiyk, plans)
+    φₓ = similar(φₖ); φᵧ = similar(φₖ)
+    χₓ = similar(χₖ); χᵧ = similar(χₖ)
+    fft_backward!(φₓ, φₓₖ, plans)
+    fft_backward!(φᵧ, φᵧₖ, plans)
+    fft_backward!(χₓ, χₓₖ, plans)
+    fft_backward!(χᵧ, χᵧₖ, plans)
 
-    phix_r = parent(phix); phiy_r = parent(phiy)
-    chix_r = parent(chix); chiy_r = parent(chiy)
+    φₓᵣ = parent(φₓ); φᵧᵣ = parent(φᵧ)
+    χₓᵣ = parent(χₓ); χᵧᵣ = parent(χᵧ)
 
     #= Step 3: Compute Jacobian in real space (pointwise multiplication)
     J = φₓχᵧ - φᵧχₓ =#
-    J = similar(phik)
+    J = similar(φₖ)
     J_arr = parent(J)
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
-        J_arr[i_local, j_local, k] = (real(phix_r[i_local, j_local, k])*real(chiy_r[i_local, j_local, k]) -
-                                      real(phiy_r[i_local, j_local, k])*real(chix_r[i_local, j_local, k]))
+        J_arr[i_local, j_local, k] = (real(φₓᵣ[i_local, j_local, k])*real(χᵧᵣ[i_local, j_local, k]) -
+                                      real(φᵧᵣ[i_local, j_local, k])*real(χₓᵣ[i_local, j_local, k]))
     end
 
     #= Step 4: Transform back to spectral space =#
