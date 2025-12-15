@@ -281,7 +281,7 @@ function _compute_sigma_direct(par::QGParams, G::Grid, nBRk, nBIk, rBRk, rBIk, L
     end
 
     # Scale by f/N² (inverse of dispersion coefficient factor)
-    σ .*= (par.f0 / par.N2)
+    σ .*= (par.f₀ / par.N²)
 
     return σ
 end
@@ -330,7 +330,7 @@ function _compute_sigma_2d(par::QGParams, G::Grid, nBRk, nBIk, rBRk, rBIk, Lmask
     end
 
     # Scale by f/N² (inverse of dispersion coefficient factor)
-    σ .*= (par.f0 / par.N2)
+    σ .*= (par.f₀ / par.N²)
 
     return σ
 end

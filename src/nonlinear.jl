@@ -596,7 +596,7 @@ function compute_qw!(qʷₖ, BRk, BIk, par, G::Grid, plans; Lmask=nothing)
         # Scale by W2F/f to account for wave-to-flow energy ratio
         # W2F = (Uw/U)² (wave-to-flow velocity ratio squared)
         # f0 = Coriolis parameter
-        qʷₖ_arr[i_local, j_local, k] *= (par.W2F / par.f0)
+        qʷₖ_arr[i_local, j_local, k] *= (par.W2F / par.f₀)
     end
 
     return qʷₖ
@@ -678,7 +678,7 @@ function _dissipation_q_nv_direct!(dqk, qok, par, G::Grid)
     # Vertical grid spacing
     Δz = nz > 1 ? (G.z[2]-G.z[1]) : 1.0
     Δz⁻² = 1/(Δz*Δz)
-    νz = par.nuz
+    νz = par.νz
 
     @inbounds for k in 1:nz, j_local in 1:ny_local, i_local in 1:nx_local
         if k == 1
@@ -717,7 +717,7 @@ function _dissipation_q_nv_2d!(dqk, qok, par, G::Grid, workspace)
     # Vertical grid spacing
     Δz = nz > 1 ? (G.z[2]-G.z[1]) : 1.0
     Δz⁻² = 1/(Δz*Δz)
-    νz = par.nuz
+    νz = par.νz
 
     @inbounds for k in 1:nz, j_local in 1:ny_local, i_local in 1:nx_local
         if k == 1
@@ -801,14 +801,14 @@ function int_factor(kₓ::Real, kᵧ::Real, par; waves::Bool=false)
     Δt = par.dt
     if waves
         # Wave field hyperdiffusion (often smaller or zero)
-        ν₁ʷ = par.nuh1w; n₁ʷ = par.ilap1w
-        ν₂ʷ = par.nuh2w; n₂ʷ = par.ilap2w
+        ν₁ʷ = par.νₕ₁ʷ; n₁ʷ = par.ilap1w
+        ν₂ʷ = par.νₕ₂ʷ; n₂ʷ = par.ilap2w
         return Δt * ( ν₁ʷ*(abs(kₓ)^(2n₁ʷ) + abs(kᵧ)^(2n₁ʷ)) +
                       ν₂ʷ*(abs(kₓ)^(2n₂ʷ) + abs(kᵧ)^(2n₂ʷ)) )
     else
         # Mean flow hyperdiffusion
-        ν₁ = par.nuh1; n₁ = par.ilap1
-        ν₂ = par.nuh2; n₂ = par.ilap2
+        ν₁ = par.νₕ₁; n₁ = par.ilap1
+        ν₂ = par.νₕ₂; n₂ = par.ilap2
         return Δt * ( ν₁*(abs(kₓ)^(2n₁) + abs(kᵧ)^(2n₁)) +
                       ν₂*(abs(kₓ)^(2n₂) + abs(kᵧ)^(2n₂)) )
     end
