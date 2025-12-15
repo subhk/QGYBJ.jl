@@ -676,19 +676,20 @@ function _dissipation_q_nv_direct!(dqk, qok, par, G::Grid)
     @assert nz_local == nz "Vertical dimension must be fully local"
 
     # Vertical grid spacing
-    dz = nz > 1 ? (G.z[2]-G.z[1]) : 1.0
-    invdz2 = 1/(dz*dz)
+    Δz = nz > 1 ? (G.z[2]-G.z[1]) : 1.0
+    Δz⁻² = 1/(Δz*Δz)
+    νz = par.nuz
 
     @inbounds for k in 1:nz, j_local in 1:ny_local, i_local in 1:nx_local
         if k == 1
             # Bottom boundary: Neumann (q_z = 0)
-            dqk_arr[i_local, j_local, k] = par.nuz * ( qok_arr[i_local, j_local, k+1] - qok_arr[i_local, j_local, k] ) * invdz2
+            dqk_arr[i_local, j_local, k] = νz * ( qok_arr[i_local, j_local, k+1] - qok_arr[i_local, j_local, k] ) * Δz⁻²
         elseif k == nz
             # Top boundary: Neumann (q_z = 0)
-            dqk_arr[i_local, j_local, k] = par.nuz * ( qok_arr[i_local, j_local, k-1] - qok_arr[i_local, j_local, k] ) * invdz2
+            dqk_arr[i_local, j_local, k] = νz * ( qok_arr[i_local, j_local, k-1] - qok_arr[i_local, j_local, k] ) * Δz⁻²
         else
             # Interior: standard central difference
-            dqk_arr[i_local, j_local, k] = par.nuz * ( qok_arr[i_local, j_local, k+1] - 2qok_arr[i_local, j_local, k] + qok_arr[i_local, j_local, k-1] ) * invdz2
+            dqk_arr[i_local, j_local, k] = νz * ( qok_arr[i_local, j_local, k+1] - 2qok_arr[i_local, j_local, k] + qok_arr[i_local, j_local, k-1] ) * Δz⁻²
         end
     end
 end
@@ -714,16 +715,17 @@ function _dissipation_q_nv_2d!(dqk, qok, par, G::Grid, workspace)
     @assert nz_local == nz "After transpose, z must be fully local"
 
     # Vertical grid spacing
-    dz = nz > 1 ? (G.z[2]-G.z[1]) : 1.0
-    invdz2 = 1/(dz*dz)
+    Δz = nz > 1 ? (G.z[2]-G.z[1]) : 1.0
+    Δz⁻² = 1/(Δz*Δz)
+    νz = par.nuz
 
     @inbounds for k in 1:nz, j_local in 1:ny_local, i_local in 1:nx_local
         if k == 1
-            dqk_z_arr[i_local, j_local, k] = par.nuz * ( qok_z_arr[i_local, j_local, k+1] - qok_z_arr[i_local, j_local, k] ) * invdz2
+            dqk_z_arr[i_local, j_local, k] = νz * ( qok_z_arr[i_local, j_local, k+1] - qok_z_arr[i_local, j_local, k] ) * Δz⁻²
         elseif k == nz
-            dqk_z_arr[i_local, j_local, k] = par.nuz * ( qok_z_arr[i_local, j_local, k-1] - qok_z_arr[i_local, j_local, k] ) * invdz2
+            dqk_z_arr[i_local, j_local, k] = νz * ( qok_z_arr[i_local, j_local, k-1] - qok_z_arr[i_local, j_local, k] ) * Δz⁻²
         else
-            dqk_z_arr[i_local, j_local, k] = par.nuz * ( qok_z_arr[i_local, j_local, k+1] - 2qok_z_arr[i_local, j_local, k] + qok_z_arr[i_local, j_local, k-1] ) * invdz2
+            dqk_z_arr[i_local, j_local, k] = νz * ( qok_z_arr[i_local, j_local, k+1] - 2qok_z_arr[i_local, j_local, k] + qok_z_arr[i_local, j_local, k-1] ) * Δz⁻²
         end
     end
 
@@ -795,15 +797,20 @@ lambda_dt = int_factor(3.0, 4.0, params)
 factor = exp(-lambda_dt)  # Multiply solution by this
 ```
 """
-function int_factor(kx::Real, ky::Real, par; waves::Bool=false)
+function int_factor(kₓ::Real, kᵧ::Real, par; waves::Bool=false)
+    Δt = par.dt
     if waves
         # Wave field hyperdiffusion (often smaller or zero)
-        return par.dt * ( par.nuh1w*(abs(kx)^(2par.ilap1w) + abs(ky)^(2par.ilap1w)) +
-                          par.nuh2w*(abs(kx)^(2par.ilap2w) + abs(ky)^(2par.ilap2w)) )
+        ν₁ʷ = par.nuh1w; n₁ʷ = par.ilap1w
+        ν₂ʷ = par.nuh2w; n₂ʷ = par.ilap2w
+        return Δt * ( ν₁ʷ*(abs(kₓ)^(2n₁ʷ) + abs(kᵧ)^(2n₁ʷ)) +
+                      ν₂ʷ*(abs(kₓ)^(2n₂ʷ) + abs(kᵧ)^(2n₂ʷ)) )
     else
         # Mean flow hyperdiffusion
-        return par.dt * ( par.nuh1 *(abs(kx)^(2par.ilap1 ) + abs(ky)^(2par.ilap1 )) +
-                          par.nuh2 *(abs(kx)^(2par.ilap2 ) + abs(ky)^(2par.ilap2 )) )
+        ν₁ = par.nuh1; n₁ = par.ilap1
+        ν₂ = par.nuh2; n₂ = par.ilap2
+        return Δt * ( ν₁*(abs(kₓ)^(2n₁) + abs(kᵧ)^(2n₁)) +
+                      ν₂*(abs(kₓ)^(2n₂) + abs(kᵧ)^(2n₂)) )
     end
 end
 
