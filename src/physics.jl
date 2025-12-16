@@ -167,11 +167,11 @@ For the Boussinesq approximation used in QG-YBJ+, ρ is constant and these
 weights reduce to unity.
 
 # Current Implementation
-- Returns user-provided profile if `par.rho_ut_profile` is set
+- Returns user-provided profile if `par.ρ_ut_profile` is set
 - Otherwise returns ones(nz) for Boussinesq dynamics
 
 # Arguments
-- `par::QGParams`: May contain custom rho_ut_profile
+- `par::QGParams`: May contain custom ρ_ut_profile
 - `G::Grid`: Grid with vertical levels
 
 # Returns
@@ -182,9 +182,9 @@ Matches `rho_ut(k)` in the Fortran implementation.
 """
 function rho_ut(par::QGParams, G::Grid)
     # Check for user-provided custom profile
-    if par.rho_ut_profile !== nothing
-        @assert length(par.rho_ut_profile) == G.nz
-        return copy(par.rho_ut_profile)
+    if par.ρ_ut_profile !== nothing
+        @assert length(par.ρ_ut_profile) == G.nz
+        return copy(par.ρ_ut_profile)
     end
     # Default: unity weights (Boussinesq approximation)
     w = similar(G.z)
@@ -207,11 +207,11 @@ The staggered density is typically interpolated from unstaggered values
 or defined at half-levels.
 
 # Current Implementation
-- Returns user-provided profile if `par.rho_st_profile` is set
+- Returns user-provided profile if `par.ρ_st_profile` is set
 - Otherwise returns ones(nz) for Boussinesq dynamics
 
 # Arguments
-- `par::QGParams`: May contain custom rho_st_profile
+- `par::QGParams`: May contain custom ρ_st_profile
 - `G::Grid`: Grid with vertical levels
 
 # Returns
@@ -222,9 +222,9 @@ Matches `rho_st(k)` in the Fortran implementation.
 """
 function rho_st(par::QGParams, G::Grid)
     # Check for user-provided custom profile
-    if par.rho_st_profile !== nothing
-        @assert length(par.rho_st_profile) == G.nz
-        return copy(par.rho_st_profile)
+    if par.ρ_st_profile !== nothing
+        @assert length(par.ρ_st_profile) == G.nz
+        return copy(par.ρ_st_profile)
     end
     # Default: unity weights (Boussinesq approximation)
     w = similar(G.z)

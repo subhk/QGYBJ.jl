@@ -177,9 +177,9 @@ function setup_simulation(config::ModelConfig{T}; use_mpi::Bool=false) where T
     # Derive density-like vertical profiles from N² and populate params
     rho_ut_prof, rho_st_prof = derive_density_profiles(params, grid; N2_profile=N2_profile)
     params = QGParams{T}(;
-        (name => getfield(params, name) for name in fieldnames(typeof(params)) if !(name in (:rho_ut_profile, :rho_st_profile, :b_ell_profile)))...,
-        rho_ut_profile = rho_ut_prof,
-        rho_st_profile = rho_st_prof,
+        (name => getfield(params, name) for name in fieldnames(typeof(params)) if !(name in (:ρ_ut_profile, :ρ_st_profile, :b_ell_profile)))...,
+        ρ_ut_profile = rho_ut_prof,
+        ρ_st_profile = rho_st_prof,
         b_ell_profile = nothing,
     )
 

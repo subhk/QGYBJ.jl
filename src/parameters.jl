@@ -250,9 +250,9 @@ function with_density_profiles(par::QGParams{T};
     bprof = b_ell
     # Rebuild parameter struct with all existing fields + new profiles
     return QGParams{T}(;
-        (name => getfield(par, name) for name in fieldnames(typeof(par)) if !(name in (:rho_ut_profile, :rho_st_profile, :b_ell_profile)))...,
-        rho_ut_profile = collect(rho_ut),
-        rho_st_profile = collect(rho_st),
+        (name => getfield(par, name) for name in fieldnames(typeof(par)) if !(name in (:ρ_ut_profile, :ρ_st_profile, :b_ell_profile)))...,
+        ρ_ut_profile = collect(rho_ut),
+        ρ_st_profile = collect(rho_st),
         b_ell_profile = bprof === nothing ? nothing : collect(bprof),
     )
 end
