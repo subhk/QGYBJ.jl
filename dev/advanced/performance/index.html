@@ -142,7 +142,7 @@ h5open(&quot;output.h5&quot;, &quot;w&quot;, mpi_comm) do fid
     write_mpi(fid, &quot;psi&quot;, local_psi, global_dims, local_range)
 end</code></pre><h2 id="Benchmarking-Guide"><a class="docs-heading-anchor" href="#Benchmarking-Guide">Benchmarking Guide</a><a id="Benchmarking-Guide-1"></a><a class="docs-heading-anchor-permalink" href="#Benchmarking-Guide" title="Permalink"></a></h2><h3 id="Full-Benchmark-Suite"><a class="docs-heading-anchor" href="#Full-Benchmark-Suite">Full Benchmark Suite</a><a id="Full-Benchmark-Suite-1"></a><a class="docs-heading-anchor-permalink" href="#Full-Benchmark-Suite" title="Permalink"></a></h3><pre><code class="language-julia hljs">function benchmark_simulation(nx, ny, nz; nsteps=100)
     grid = Grid(nx=nx, ny=ny, nz=nz)
-    params = QGParams()
+    params = default_params()
     state = create_state(grid)
     initialize_random!(state, grid)
 
