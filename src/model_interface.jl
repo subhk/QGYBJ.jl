@@ -342,37 +342,165 @@ end
     compute_and_output_diagnostics!(sim::QGYBJSimulation)
 
 Compute diagnostic quantities and write to file.
+
+Energy diagnostics are saved to separate files in the diagnostic/ folder:
+- wave_KE.nc: Wave kinetic energy
+- wave_PE.nc: Wave potential energy
+- wave_CE.nc: Wave correction energy (YBJ+)
+- mean_flow_KE.nc: Mean flow kinetic energy
+- mean_flow_PE.nc: Mean flow potential energy
+- total_energy.nc: Summary file with all energies
 """
 function compute_and_output_diagnostics!(sim::QGYBJSimulation{T}) where T
     diagnostics = Dict{String, Any}()
-    
-    # Energy diagnostics
-    diagnostics["kinetic_energy"] = compute_kinetic_energy(sim.state, sim.grid, sim.plans)
-    diagnostics["potential_energy"] = compute_potential_energy(sim.state, sim.grid, sim.plans, sim.N2_profile)
-    diagnostics["wave_energy"] = compute_wave_energy(sim.state, sim.grid, sim.plans)
-    
+
+    # Mean flow energy diagnostics
+    mean_flow_KE = compute_kinetic_energy(sim.state, sim.grid, sim.plans)
+    mean_flow_PE = compute_potential_energy(sim.state, sim.grid, sim.plans, sim.N2_profile)
+
+    # Wave energy diagnostics (detailed: WKE, WPE, WCE)
+    wave_KE, wave_PE, wave_CE = compute_detailed_wave_energy(sim.state, sim.grid, sim.params)
+
+    # Record to energy diagnostics manager (will be written to diagnostic/ folder)
+    record_energies!(
+        sim.energy_diagnostics_manager,
+        sim.current_time,
+        wave_KE,
+        wave_PE,
+        wave_CE,
+        mean_flow_KE,
+        mean_flow_PE
+    )
+
+    # Store in diagnostics dict for backward compatibility
+    diagnostics["mean_flow_kinetic_energy"] = mean_flow_KE
+    diagnostics["mean_flow_potential_energy"] = mean_flow_PE
+    diagnostics["wave_kinetic_energy"] = wave_KE
+    diagnostics["wave_potential_energy"] = wave_PE
+    diagnostics["wave_correction_energy"] = wave_CE
+    diagnostics["total_wave_energy"] = wave_KE + wave_PE + wave_CE
+    diagnostics["total_mean_flow_energy"] = mean_flow_KE + mean_flow_PE
+    diagnostics["total_energy"] = mean_flow_KE + mean_flow_PE + wave_KE + wave_PE + wave_CE
+
+    # Legacy names for backward compatibility
+    diagnostics["kinetic_energy"] = mean_flow_KE
+    diagnostics["potential_energy"] = mean_flow_PE
+    diagnostics["wave_energy"] = wave_KE + wave_PE + wave_CE
+
     # Domain-integrated quantities
     diagnostics["total_enstrophy"] = compute_enstrophy(sim.state, sim.grid, sim.plans)
-    
+
     # Extrema
     psir = similar(sim.state.psi, Float64)
     fft_backward!(psir, sim.state.psi, sim.plans)
     diagnostics["psi_min"] = minimum(psir)
     diagnostics["psi_max"] = maximum(psir)
     diagnostics["psi_rms"] = sqrt(sum(abs2, psir) / length(psir))
-    
+
     # Wave field extrema
     Br = similar(sim.state.B, Float64)
     fft_backward!(Br, real.(sim.state.B), sim.plans)
     diagnostics["wave_min"] = minimum(Br)
     diagnostics["wave_max"] = maximum(Br)
     diagnostics["wave_rms"] = sqrt(sum(abs2, Br) / length(Br))
-    
+
     # Store in simulation object
     sim.diagnostics["step_$(sim.time_step)"] = diagnostics
-    
-    # Write to file
+
+    # Write to legacy diagnostics file (for backward compatibility)
     write_diagnostics_file(sim.output_manager, diagnostics, sim.current_time)
+end
+
+"""
+    compute_detailed_wave_energy(state::State, grid::Grid, params::QGParams) -> (WKE, WPE, WCE)
+
+Compute detailed wave energy components following the Fortran wave_energy routine:
+- WKE: Wave kinetic energy from |B|²
+- WPE: Wave potential energy from |C|² where C = ∂A/∂z
+- WCE: Wave correction energy from |A|² (YBJ+ higher-order term)
+
+Matches the Fortran `wave_energy` subroutine in QG_YBJp/diagnostics.f90.
+"""
+function compute_detailed_wave_energy(state::State, grid::Grid, params::QGParams{T}) where T
+    nz = grid.nz
+    nx = grid.nx
+    ny = grid.ny
+    a_ell = params.f₀^2 / params.N²  # Elliptic coefficient
+
+    # Get arrays
+    B_arr = parent(state.B)
+    A_arr = parent(state.A)
+    C_arr = parent(state.C)
+
+    nx_local, ny_local, nz_local = size(B_arr)
+
+    WKE = T(0)
+    WPE = T(0)
+    WCE = T(0)
+
+    for k in 1:nz_local
+        WKE_level = T(0)
+        WPE_level = T(0)
+        WCE_level = T(0)
+        WKE_zero = T(0)
+
+        for j_local in 1:ny_local, i_local in 1:nx_local
+            # Get wavenumbers
+            i_global = hasfield(typeof(grid), :decomp) && grid.decomp !== nothing ?
+                       local_to_global(i_local, 1, grid) : i_local
+            j_global = hasfield(typeof(grid), :decomp) && grid.decomp !== nothing ?
+                       local_to_global(j_local, 2, grid) : j_local
+
+            kx_val = grid.kx[min(i_global, length(grid.kx))]
+            ky_val = grid.ky[min(j_global, length(grid.ky))]
+            kh2 = kx_val^2 + ky_val^2
+
+            B_k = B_arr[i_local, j_local, k]
+            A_k = A_arr[i_local, j_local, k]
+            C_k = C_arr[i_local, j_local, k]
+
+            # Split B into real/imag parts for proper energy calculation
+            BR = real(B_k)
+            BI = imag(B_k)
+
+            # WKE: |BR|² + |BI|² (wave kinetic energy)
+            wke_contrib = BR^2 + BI^2
+            WKE_level += wke_contrib
+
+            # WPE: (0.5/a_ell) × kh² × |C|² (wave potential energy)
+            # C = ∂A/∂z, represents vertical wave structure
+            CR = real(C_k)
+            CI = imag(C_k)
+            wpe_contrib = (T(0.5) / max(a_ell, eps(T))) * kh2 * (CR^2 + CI^2)
+            WPE_level += wpe_contrib
+
+            # WCE: (1/8) × (1/a_ell²) × kh⁴ × |A|² (wave correction energy, YBJ+)
+            AR = real(A_k)
+            AI = imag(A_k)
+            wce_contrib = (T(1)/T(8)) * (T(1)/(a_ell^2 + eps(T))) * kh2^2 * (AR^2 + AI^2)
+            WCE_level += wce_contrib
+
+            # Track zero mode for dealiasing correction
+            if kx_val == 0 && ky_val == 0
+                WKE_zero = wke_contrib
+            end
+        end
+
+        # Dealiasing correction for WKE
+        WKE_level -= T(0.5) * WKE_zero
+
+        WKE += WKE_level
+        WPE += WPE_level
+        WCE += WCE_level
+    end
+
+    # Normalize by grid size
+    norm_factor = T(0.5) / (nx * ny * nz)
+    WKE *= norm_factor
+    WPE *= norm_factor
+    WCE *= norm_factor
+
+    return WKE, WPE, WCE
 end
 
 """
