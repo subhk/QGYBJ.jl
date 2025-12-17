@@ -298,16 +298,15 @@ function _omega_eqn_rhs_2d!(rhs, psi, G::Grid, plans, Lmask, workspace)
     # Back to spectral
     fft_forward!(rhs, rhsᵣ, plans)
 
-    # Normalize and dealias
+    # Apply dealiasing mask only (no normalization needed)
+    # fft_backward! uses normalized IFFT, so pseudo-spectral products are correctly scaled.
+    # Previous code incorrectly divided by nx*ny, weakening omega forcing.
     rhs_arr = parent(rhs)
-    N = nx*ny
     @inbounds for k in 1:nz_local_xy, j in 1:ny_local, i in 1:nx_local
         i_global = local_to_global(i, 1, G)
         j_global = local_to_global(j, 2, G)
-        if L[i_global, j_global]
-            rhs_arr[i,j,k] /= N
-        else
-            rhs_arr[i,j,k] = 0
+        if !L[i_global, j_global]
+            rhs_arr[i,j,k] = 0  # Dealias
         end
     end
 end
