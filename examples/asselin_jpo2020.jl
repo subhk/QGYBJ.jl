@@ -76,12 +76,13 @@ function main()
     )
 
     # Parameters matching Asselin et al. (2020)
+    # Note: W2F is not needed since we solve dimensional equations
+    # where B has actual wave amplitude (u0_wave)
     par = QGYBJ.default_params(
         nx = nx, ny = ny, nz = nz,
         dt = dt, nt = nt,
         f₀ = f₀,               # Coriolis parameter [s⁻¹]
         N² = N²,               # Buoyancy frequency squared [s⁻²]
-        W2F = u0_wave^2,
         ybj_plus = true,
         fixed_flow = true,
         no_wave_feedback = true

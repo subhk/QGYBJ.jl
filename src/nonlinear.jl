@@ -459,9 +459,10 @@ Waves can modify the mean flow through the wave feedback term qʷ.
 This represents the averaged effect of nonlinear wave-wave interactions
 on the balanced flow (Xie & Vanneste 2015).
 
-qʷ = W2F × [(i/2)J(B*, B) - (1/4)∇²|B|²]
+For dimensional equations where B has actual velocity units:
+    qʷ = (i/2)J(B*, B) - (1/4)∇²|B|²
 
-where W2F = (Uw/U)² is the wave-to-flow velocity ratio squared.
+No additional scaling is needed since B already contains the wave amplitude.
 ================================================================================
 =#
 
@@ -476,13 +477,16 @@ quasi-geostrophic flow. This is a key component of wave-mean flow
 interaction in the QG-YBJ+ model.
 
 # Mathematical Form (Xie & Vanneste 2015)
-    qʷ = W2F × [(i/2)J(B*, B) - (1/4)∇²|B|²]
+For dimensional equations where B has velocity units [m/s]:
+
+    qʷ = (i/2)J(B*, B) - (1/4)∇²|B|²
 
 where:
 - B* is the complex conjugate of B
 - J(B*, B) = B*ₓBᵧ - B*ᵧBₓ is the Jacobian
 - |B|² = BR² + BI² is the wave energy density
-- W2F = (Uw/U)² scales by wave-to-flow velocity ratio
+
+No W2F scaling is applied since B already has its actual dimensional amplitude.
 
 # Decomposition
 Let B = BR + i×BI. Then:
@@ -494,13 +498,14 @@ The final qʷ is real-valued after combining terms.
 # Arguments
 - `qwk`: Output array for q̂ʷ (spectral)
 - `BRk, BIk`: Wave field components (spectral)
-- `par`: QGParams (for W2F scaling)
+- `par`: QGParams
 - `G::Grid`: Grid struct
 - `plans`: FFT plans
 - `Lmask`: Dealiasing mask
 
 # Fortran Correspondence
-This matches `compute_qw` in derivatives.f90.
+This is similar to `compute_qw` in derivatives.f90, but without the W2F scaling
+since we solve dimensional equations where B has actual amplitude.
 
 # Example
 ```julia
@@ -589,14 +594,12 @@ function compute_qw!(qʷₖ, BRk, BIk, par, G::Grid, plans; Lmask=nothing)
         kᵧ = G.ky[j_global]
         kₕ² = kₓ^2 + kᵧ^2
         if should_keep(i_global, j_global)
+            # qʷ = (i/2)J(B*, B) - (1/4)∇²|B|²
+            # For dimensional equations, B has actual amplitude - no W2F scaling needed
             qʷₖ_arr[i_local, j_local, k] = (qʷₖ_arr[i_local, j_local, k] - 0.25*kₕ²*tempₖ_arr[i_local, j_local, k]) / norm
         else
             qʷₖ_arr[i_local, j_local, k] = 0
         end
-        # Scale by W2F/f to account for wave-to-flow energy ratio
-        # W2F = (Uw/U)² (wave-to-flow velocity ratio squared)
-        # f0 = Coriolis parameter
-        qʷₖ_arr[i_local, j_local, k] *= (par.W2F / par.f₀)
     end
 
     return qʷₖ
