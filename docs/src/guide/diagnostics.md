@@ -53,6 +53,209 @@ E_B, E_A = wave_energy(state.B, state.A, grid)
     ``E_B`` and ``E_A`` differ because the ``L^+`` operator is not unitary.
     ``E_A`` is the physical wave energy.
 
+## Energy Diagnostics Output Files
+
+QGYBJ.jl automatically saves energy diagnostics to separate files in a dedicated `diagnostic/` folder, following the structure used in the Fortran QG_YBJp code.
+
+### Output Folder Structure
+
+```
+output_dir/
+├── state0001.nc              # Field snapshots
+├── state0002.nc
+├── diagnostics_0001.nc       # Legacy combined diagnostics
+└── diagnostic/               # Separate energy files
+    ├── wave_KE.nc            # Wave kinetic energy time series
+    ├── wave_PE.nc            # Wave potential energy time series
+    ├── wave_CE.nc            # Wave correction energy (YBJ+)
+    ├── mean_flow_KE.nc       # Mean flow kinetic energy
+    ├── mean_flow_PE.nc       # Mean flow potential energy
+    └── total_energy.nc       # Summary file with all energies
+```
+
+### Wave Kinetic Energy (WKE)
+
+The wave kinetic energy is computed from the wave envelope ``B = B_R + iB_I``:
+
+```math
+\text{WKE} = \frac{1}{2} \sum_{k_x, k_y, z} \left( |B_R|^2 + |B_I|^2 \right) - \frac{1}{2} |B(k_h=0)|^2
+```
+
+where the second term is the dealiasing correction (2/3 rule).
+
+**Physical interpretation**: WKE represents the kinetic energy contained in the near-inertial wave field, analogous to ``\frac{1}{2}(u_w^2 + v_w^2)`` for wave velocities.
+
+### Wave Potential Energy (WPE)
+
+The wave potential energy captures vertical wave structure through ``C = \partial A/\partial z``:
+
+```math
+\text{WPE} = \frac{1}{2} \sum_{k_x, k_y, z} \frac{k_h^2}{2 a_{ell}} \left( |C_R|^2 + |C_I|^2 \right)
+```
+
+where:
+- ``a_{ell} = f_0^2 / N^2`` is the elliptic coefficient
+- ``C = \partial A / \partial z`` is the vertical derivative of wave amplitude
+- ``k_h^2 = k_x^2 + k_y^2`` is the horizontal wavenumber squared
+
+**Physical interpretation**: WPE represents the potential energy from wave-induced isopycnal displacements. It scales with ``N^2 \eta^2`` where ``\eta`` is the vertical displacement.
+
+### Wave Correction Energy (WCE)
+
+The YBJ+ formulation includes a higher-order correction term:
+
+```math
+\text{WCE} = \frac{1}{2} \sum_{k_x, k_y, z} \frac{k_h^4}{8 a_{ell}^2} \left( |A_R|^2 + |A_I|^2 \right)
+```
+
+**Physical interpretation**: WCE is a higher-order correction from the YBJ+ equation that accounts for horizontal wave dispersion. It becomes important for short horizontal wavelengths.
+
+### Mean Flow Kinetic Energy
+
+The balanced flow kinetic energy is computed from the geostrophic velocities:
+
+```math
+\text{KE}_{flow} = \frac{1}{2} \sum_{k_x, k_y, z} \left( |u_k|^2 + |v_k|^2 \right) - \frac{1}{2} |u(k_h=0)|^2
+```
+
+where the velocities are derived from the streamfunction:
+```math
+u = -\frac{\partial \psi}{\partial y} = -ik_y \hat{\psi}, \quad v = \frac{\partial \psi}{\partial x} = ik_x \hat{\psi}
+```
+
+This gives:
+```math
+|u|^2 + |v|^2 = k_h^2 |\hat{\psi}|^2
+```
+
+**Physical interpretation**: ``\text{KE}_{flow}`` represents the kinetic energy of the large-scale quasi-geostrophic eddies and jets.
+
+### Mean Flow Potential Energy
+
+The available potential energy from buoyancy:
+
+```math
+\text{PE}_{flow} = \frac{1}{2} \sum_{k_x, k_y, z} \frac{f_0^2}{N^2} |b_k|^2
+```
+
+where buoyancy ``b`` is related to the streamfunction via thermal wind balance:
+```math
+b = \frac{\partial \psi}{\partial z}
+```
+
+**Physical interpretation**: ``\text{PE}_{flow}`` represents the energy stored in tilted isopycnals (density surfaces). It can be released through baroclinic instability.
+
+### Total Energy Conservation
+
+In the inviscid limit, the total energy is conserved:
+
+```math
+E_{total} = \underbrace{\text{KE}_{flow} + \text{PE}_{flow}}_{\text{Mean flow}} + \underbrace{\text{WKE} + \text{WPE} + \text{WCE}}_{\text{Waves}} = \text{const}
+```
+
+Energy exchange between waves and mean flow occurs via:
+- **Refraction**: Waves gain/lose energy from vorticity gradients
+- **Wave feedback** ``q^w``: Waves modify the effective PV
+
+### Using the EnergyDiagnosticsManager
+
+The energy diagnostics manager is automatically created during simulation setup:
+
+```julia
+# Energy diagnostics are computed and saved automatically during simulation
+sim = setup_simulation(config)
+run_simulation!(sim)
+
+# After simulation, files are in:
+# output_dir/diagnostic/wave_KE.nc
+# output_dir/diagnostic/wave_PE.nc
+# etc.
+```
+
+For manual control:
+
+```julia
+using QGYBJ
+
+# Create manager manually
+energy_manager = EnergyDiagnosticsManager(
+    "output_dir";
+    output_interval=1.0  # Time between outputs
+)
+
+# Record energies at each diagnostic time
+record_energies!(
+    energy_manager,
+    current_time,
+    wave_KE, wave_PE, wave_CE,
+    mean_flow_KE, mean_flow_PE
+)
+
+# Write all files at end
+write_all_energy_files!(energy_manager)
+```
+
+### Reading Energy Output Files
+
+```julia
+using NCDatasets
+
+# Read wave KE time series
+ds = NCDataset("output_dir/diagnostic/wave_KE.nc", "r")
+time = ds["time"][:]
+wave_KE = ds["wave_KE"][:]
+close(ds)
+
+# Read total energy summary
+ds = NCDataset("output_dir/diagnostic/total_energy.nc", "r")
+time = ds["time"][:]
+total_wave = ds["total_wave_energy"][:]
+total_flow = ds["total_flow_energy"][:]
+total = ds["total_energy"][:]
+close(ds)
+
+# Plot energy evolution
+using Plots
+plot(time, total, label="Total", linewidth=2)
+plot!(time, total_flow, label="Mean flow", linestyle=:dash)
+plot!(time, total_wave, label="Waves", linestyle=:dot)
+xlabel!("Time")
+ylabel!("Energy")
+```
+
+### Energy Budget Verification
+
+Check energy conservation:
+
+```julia
+# After simulation
+ds = NCDataset("output_dir/diagnostic/total_energy.nc", "r")
+E = ds["total_energy"][:]
+close(ds)
+
+# Relative change
+dE_rel = (E[end] - E[1]) / E[1]
+println("Relative energy change: $(dE_rel)")
+
+if abs(dE_rel) < 1e-6
+    println("✓ Energy well conserved")
+else
+    println("⚠ Check time step or dissipation settings")
+end
+```
+
+### Fortran Correspondence
+
+The energy diagnostic formulations match the Fortran QG_YBJp code:
+
+| Julia File | Fortran Routine | Reference |
+|:-----------|:----------------|:----------|
+| `wave_KE.nc` | `wave_energy` | `diagnostics.f90:647-680` |
+| `wave_PE.nc` | `wave_energy` | `diagnostics.f90:700-720` |
+| `wave_CE.nc` | `wave_energy` | `diagnostics.f90:710-730` |
+| `mean_flow_KE.nc` | `diag_zentrum` | `diagnostics.f90:127-161` |
+| `mean_flow_PE.nc` | `diag_zentrum` | `diagnostics.f90:150-180` |
+
 ## Enstrophy
 
 ### Relative Enstrophy
