@@ -126,6 +126,7 @@ step, providing the needed second time level.
 - `a`: Elliptic coefficient array a_ell(z) = f²/N²
 - `dealias_mask`: Optional 2/3 dealiasing mask (nx × ny)
 - `workspace`: Optional pre-allocated workspace for 2D decomposition
+- `N2_profile`: Optional N²(z) profile for vertical velocity computation
 
 # Returns
 Modified state S at time n+1.
@@ -143,7 +144,7 @@ L = dealias_mask(params, grid)
 first_projection_step!(state, grid, params, plans; a=a, dealias_mask=L)
 ```
 """
-function first_projection_step!(S::State, G::Grid, par::QGParams, plans; a, dealias_mask=nothing, workspace=nothing)
+function first_projection_step!(S::State, G::Grid, par::QGParams, plans; a, dealias_mask=nothing, workspace=nothing, N2_profile=nothing)
     #= Setup - get local dimensions for PencilArray compatibility =#
     q_arr = parent(S.q)
     B_arr = parent(S.B)
@@ -181,7 +182,7 @@ function first_projection_step!(S::State, G::Grid, par::QGParams, plans; a, deal
 
     #= Step 1: Compute diagnostic fields ψ, velocities, and A =#
     invert_q_to_psi!(S, G; a, par=par, workspace=workspace)           # q → ψ
-    compute_velocities!(S, G; plans, params=par) # ψ → u, v
+    compute_velocities!(S, G; plans, params=par, N2_profile=N2_profile, workspace=workspace) # ψ → u, v
 
     # Compute A from B for dispersion term (was missing - A was zero on first step!)
     invert_B_to_A!(S, G, par, a; workspace=workspace)  # B → A, C
