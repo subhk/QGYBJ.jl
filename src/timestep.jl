@@ -65,6 +65,8 @@ The vertical dimension (z) must be fully local for proper operation.
 ================================================================================
 =#
 
+using Printf
+
 #=
 ================================================================================
                     FORWARD EULER (Projection Step)
