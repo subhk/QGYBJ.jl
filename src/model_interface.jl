@@ -1001,16 +1001,33 @@ Create a simple configuration for quick testing.
 
 # Arguments
 - `Lx, Ly, Lz`: Domain size in meters (REQUIRED - no defaults)
-- `kwargs...`: Additional parameters passed to sub-configs
+- `nx, ny, nz`: Grid resolution (default: 64, 64, 32)
+- `dt`: Time step (default: 1e-3)
+- `total_time`: Total simulation time (default: 10.0)
+- `output_interval`: Time between outputs for all fields (default: 1.0)
+- `output_dir`: Output directory (default: "./output_simple")
+- `kwargs...`: Additional ModelConfig parameters (f0, inviscid, linear, etc.)
 
 # Example
 ```julia
-config = create_simple_config(Lx=500e3, Ly=500e3, Lz=4000.0)  # 500km × 500km × 4km
+config = create_simple_config(
+    Lx=500e3, Ly=500e3, Lz=4000.0,  # 500km × 500km × 4km
+    nx=64, ny=64, nz=32,
+    output_interval=0.5,
+    output_dir="./my_run"
+)
 ```
 """
-function create_simple_config(; Lx::Real, Ly::Real, Lz::Real, kwargs...)
-    # Default simple configuration
-    domain = create_domain_config(nx=64, ny=64, nz=32, Lx=Lx, Ly=Ly, Lz=Lz)
+function create_simple_config(;
+        Lx::Real, Ly::Real, Lz::Real,
+        nx::Int=64, ny::Int=64, nz::Int=32,
+        dt::Real=1e-3, total_time::Real=10.0,
+        output_interval::Real=1.0,
+        output_dir::String="./output_simple",
+        kwargs...
+    )
+    # Create sub-configurations with user-provided values
+    domain = create_domain_config(nx=nx, ny=ny, nz=nz, Lx=Lx, Ly=Ly, Lz=Lz)
     stratification = create_stratification_config(:constant_N, N0=1.0)
     initial_conditions = create_initial_condition_config(
         psi_type=:random,
@@ -1019,27 +1036,43 @@ function create_simple_config(; Lx::Real, Ly::Real, Lz::Real, kwargs...)
         wave_amplitude=0.01
     )
     output = create_output_config(
-        output_dir="./output_simple",
-        psi_interval=1.0,
-        wave_interval=1.0
+        output_dir=output_dir,
+        psi_interval=output_interval,
+        wave_interval=output_interval,
+        diagnostics_interval=output_interval
     )
-    
+
     config = create_model_config(domain, stratification, initial_conditions, output;
-                                dt=1e-3, total_time=10.0, kwargs...)
-    
+                                dt=dt, total_time=total_time, kwargs...)
+
     return config
 end
 
 """
+    run_simple_simulation(config::ModelConfig)
     run_simple_simulation(; kwargs...)
 
-Run a simple simulation with default parameters.
+Run a simulation with the given configuration or create one from kwargs.
+
+# Examples
+```julia
+# With pre-built config
+config = create_simple_config(Lx=500e3, Ly=500e3, Lz=4000.0)
+result = run_simple_simulation(config)
+
+# With kwargs (creates config internally)
+result = run_simple_simulation(Lx=500e3, Ly=500e3, Lz=4000.0, dt=0.001)
+```
 """
-function run_simple_simulation(; kwargs...)
-    config = create_simple_config(; kwargs...)
+function run_simple_simulation(config::ModelConfig)
     sim = setup_simulation(config)
     run_simulation!(sim)
     return sim
+end
+
+function run_simple_simulation(; kwargs...)
+    config = create_simple_config(; kwargs...)
+    return run_simple_simulation(config)
 end
 
 # Convenience function for backward compatibility with existing code
