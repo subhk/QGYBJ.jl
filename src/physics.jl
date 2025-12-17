@@ -117,8 +117,9 @@ function a_ell_ut(par::QGParams, G::Grid)
 
     if par.stratification === :constant_N
         #= Constant N²: a = f²/N² =#
+        T = eltype(a)
         @inbounds for k in 1:nz
-            a[k] = f₀_sq / par.N²
+            a[k] = f₀_sq / max(par.N², eps(T))
         end
 
     elseif par.stratification === :skewed_gaussian
@@ -129,11 +130,12 @@ function a_ell_ut(par::QGParams, G::Grid)
         - Enhanced stratification near z₀
         - Asymmetric shape controlled by α
         - Background N₀² in deep ocean =#
+        T = eltype(a)
         N02 = par.N₀²_sg; N12 = par.N₁²_sg; σ = par.σ_sg; z0 = par.z₀_sg; α = par.α_sg
         @inbounds for k in 1:nz
             z = G.z[k]
             N2_z = N12*exp(-((z - z0)^2)/(σ^2))*(1 + erf(α*(z - z0)/(σ*sqrt(2.0)))) + N02
-            a[k] = f₀_sq / N2_z  # a = f²/N²(z)
+            a[k] = f₀_sq / max(N2_z, eps(T))  # a = f²/N²(z), protected against N²≈0
         end
 
     else

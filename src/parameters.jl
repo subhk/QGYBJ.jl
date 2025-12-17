@@ -326,6 +326,52 @@ function default_params(; nx=64, ny=64, nz=64,
                            no_dispersion=false, passive_scalar=false,
                            ybj_plus=true, no_feedback=true,
                            fixed_flow=false, no_wave_feedback=true)
+
+    #= ============== PARAMETER VALIDATION ============== =#
+
+    # Grid dimensions must be positive
+    nx > 0 || throw(ArgumentError("nx must be positive (got nx=$nx)"))
+    ny > 0 || throw(ArgumentError("ny must be positive (got ny=$ny)"))
+    nz > 0 || throw(ArgumentError("nz must be positive (got nz=$nz)"))
+
+    # Domain sizes must be positive
+    Lx > 0 || throw(ArgumentError("Lx must be positive (got Lx=$Lx)"))
+    Ly > 0 || throw(ArgumentError("Ly must be positive (got Ly=$Ly)"))
+    Lz > 0 || throw(ArgumentError("Lz must be positive (got Lz=$Lz)"))
+
+    # Time stepping parameters
+    dt > 0 || throw(ArgumentError("dt must be positive (got dt=$dt)"))
+    nt >= 1 || throw(ArgumentError("nt must be at least 1 (got nt=$nt)"))
+
+    # Physical parameters
+    N² > 0 || throw(ArgumentError("N² (buoyancy frequency squared) must be positive (got N²=$N²)"))
+    f₀ != 0 || throw(ArgumentError("f₀ (Coriolis parameter) cannot be zero"))
+
+    # Robert-Asselin filter coefficient
+    0 <= γ <= 1 || throw(ArgumentError("γ (Robert-Asselin coefficient) must be in [0,1] (got γ=$γ)"))
+
+    # Hyperviscosity coefficients must be non-negative
+    νₕ₁ >= 0 || throw(ArgumentError("νₕ₁ must be non-negative (got νₕ₁=$νₕ₁)"))
+    νₕ₂ >= 0 || throw(ArgumentError("νₕ₂ must be non-negative (got νₕ₂=$νₕ₂)"))
+    νₕ₁ʷ >= 0 || throw(ArgumentError("νₕ₁ʷ must be non-negative (got νₕ₁ʷ=$νₕ₁ʷ)"))
+    νₕ₂ʷ >= 0 || throw(ArgumentError("νₕ₂ʷ must be non-negative (got νₕ₂ʷ=$νₕ₂ʷ)"))
+    νz >= 0 || throw(ArgumentError("νz must be non-negative (got νz=$νz)"))
+
+    # Laplacian powers must be positive integers
+    ilap1 > 0 || throw(ArgumentError("ilap1 must be positive (got ilap1=$ilap1)"))
+    ilap2 > 0 || throw(ArgumentError("ilap2 must be positive (got ilap2=$ilap2)"))
+    ilap1w > 0 || throw(ArgumentError("ilap1w must be positive (got ilap1w=$ilap1w)"))
+    ilap2w > 0 || throw(ArgumentError("ilap2w must be positive (got ilap2w=$ilap2w)"))
+
+    # Stratification type
+    stratification in (:constant_N, :skewed_gaussian) ||
+        throw(ArgumentError("stratification must be :constant_N or :skewed_gaussian (got :$stratification)"))
+
+    # Warnings for non-optimal settings
+    if !ispow2(nx) || !ispow2(ny)
+        @warn "Grid dimensions (nx=$nx, ny=$ny) are not powers of 2 - FFTs may be slower"
+    end
+
     T = Float64
 
     #= Dimensional parameters f₀ and N²:
