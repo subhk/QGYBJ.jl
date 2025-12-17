@@ -264,16 +264,23 @@ mutable struct ParticleTracker{T<:AbstractFloat}
         
         # Set up domain decomposition if parallel
         local_domain = is_parallel ? compute_local_domain(grid, rank, nprocs) : nothing
-        
+
         # Initialize buffers
         send_buffers = [T[] for _ in 1:nprocs]
         recv_buffers = [T[] for _ in 1:nprocs]
-        
-        # Velocity field workspace
-        u_field = zeros(T, grid.nx, grid.ny, grid.nz)
-        v_field = zeros(T, grid.nx, grid.ny, grid.nz)
-        w_field = zeros(T, grid.nx, grid.ny, grid.nz)
-        
+
+        # Velocity field workspace - use LOCAL size in parallel mode
+        if is_parallel && local_domain !== nothing
+            nx_local = local_domain.nx_local
+            u_field = zeros(T, nx_local, grid.ny, grid.nz)
+            v_field = zeros(T, nx_local, grid.ny, grid.nz)
+            w_field = zeros(T, nx_local, grid.ny, grid.nz)
+        else
+            u_field = zeros(T, grid.nx, grid.ny, grid.nz)
+            v_field = zeros(T, grid.nx, grid.ny, grid.nz)
+            w_field = zeros(T, grid.nx, grid.ny, grid.nz)
+        end
+
         # Set up transform plans (using unified interface)
         plans = plan_transforms!(grid, parallel_config)
         
