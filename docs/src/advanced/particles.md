@@ -27,6 +27,8 @@ u_{QG} = -\frac{\partial \psi}{\partial y}, \quad v_{QG} = \frac{\partial \psi}{
 ```
 
 **2. Wave-Induced Stokes Drift** (from wave amplitude A):
+
+*Horizontal Stokes Drift:*
 ```math
 u_{wave} = 2\,\text{Re}\left[A^* \frac{\partial A}{\partial x}\right] = \frac{\partial |A|^2}{\partial x}
 ```
@@ -34,24 +36,33 @@ u_{wave} = 2\,\text{Re}\left[A^* \frac{\partial A}{\partial x}\right] = \frac{\p
 v_{wave} = 2\,\text{Re}\left[A^* \frac{\partial A}{\partial y}\right] = \frac{\partial |A|^2}{\partial y}
 ```
 
-**3. Vertical Velocity** (two options):
+*Vertical Stokes Drift:*
+```math
+w_{wave} = 2\,\text{Re}\left[A^* \frac{\partial A}{\partial z}\right] = \frac{\partial |A|^2}{\partial z}
+```
+
+The vertical derivative ∂A/∂z is computed by `invert_B_to_A!` and stored in `S.C`.
+
+**3. QG Vertical Velocity** (two options):
 
 *QG Omega Equation:*
 ```math
-\nabla^2 w + \frac{N^2}{f^2}\frac{\partial^2 w}{\partial z^2} = 2\,J(\psi_z, \nabla^2\psi)
+\nabla^2 w_{QG} + \frac{N^2}{f^2}\frac{\partial^2 w_{QG}}{\partial z^2} = 2\,J(\psi_z, \nabla^2\psi)
 ```
 
 *YBJ Formulation:*
 ```math
-w = -\frac{f^2}{N^2}\left[\left(\frac{\partial A}{\partial x}\right)_z - i\left(\frac{\partial A}{\partial y}\right)_z\right] + \text{c.c.}
+w_{QG} = -\frac{f^2}{N^2}\left[\left(\frac{\partial A}{\partial x}\right)_z - i\left(\frac{\partial A}{\partial y}\right)_z\right] + \text{c.c.}
 ```
 
 ### Total Velocity
 
 The complete velocity used for particle advection is:
 ```math
-\mathbf{u}_{total} = (u_{QG} + u_{wave},\; v_{QG} + v_{wave},\; w)
+\mathbf{u}_{total} = (u_{QG} + u_{wave},\; v_{QG} + v_{wave},\; w_{QG} + w_{wave})
 ```
+
+This includes both horizontal and **vertical Stokes drift**, ensuring particles are correctly advected by the full wave-induced velocity field.
 
 ## Quick Start
 

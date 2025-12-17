@@ -25,19 +25,19 @@ The physical domain `[0, Lx] × [0, Ly] × [0, Lz]` is partitioned into slabs al
 ```
          Physical Domain
 ┌─────────────────────────────────────────────────────────────────┐
-│                                                                  │
+│                                                                 │
 │   x=0                                                     x=Lx  │
-│    │                                                        │    │
-│    ▼                                                        ▼    │
-│   ┌──────────┬──────────┬──────────┬──────────┬──────────┐     │
+│    │                                                        │   │
+│    ▼                                                        ▼   │
+│   ┌──────────┬──────────┬──────────┬──────────┬──────────┐      │
 │   │          │          │          │          │          │      │
 │   │  Rank 0  │  Rank 1  │  Rank 2  │  Rank 3  │  Rank 4  │      │
 │   │          │          │          │          │          │      │
 │   │ x ∈ [0,  │ x ∈ [L/5,│ x ∈ [2L/5│ x ∈ [3L/5│ x ∈ [4L/5│      │
 │   │    L/5)  │   2L/5)  │   3L/5)  │   4L/5)  │    L)    │      │
 │   │          │          │          │          │          │      │
-│   └──────────┴──────────┴──────────┴──────────┴──────────┘     │
-│                                                                  │
+│   └──────────┴──────────┴──────────┴──────────┴──────────┘      │
+│                                                                 │
 │   • Each rank owns a contiguous x-range                         │
 │   • Full y and z dimensions on each rank                        │
 │   • Particles "belong" to the rank containing their x-position  │
@@ -99,18 +99,18 @@ When a particle is near a domain boundary, velocity interpolation requires data 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
 │                    EXTENDED ARRAY LAYOUT (Rank 1)                      │
-│                                                                         │
+│                                                                        │
 │   Index:   1    2   ...  hw   hw+1  ...  hw+nx  hw+nx+1 ... hw+nx+hw   │
 │           ┌────┬────┬───┬────┬─────┬───┬───────┬───────┬───┬────────┐  │
 │           │    │    │   │    │     │   │       │       │   │        │  │
-│           │ Left Halo  │ ←── Local Data ──→    │ Right Halo │        │  │
-│           │ (from R0)  │      (owned)          │ (from R2)  │        │  │
+│           │ Left Halo   │ ←── Local Data ──→   │ Right Halo│        │  │
+│           │ (from R0)   │      (owned)         │ (from R2) │        │  │
 │           └────┴────┴───┴────┴─────┴───┴───────┴───────┴───┴────────┘  │
-│                                                                         │
+│                                                                        │
 │   hw = halo_width (default: 2)                                         │
-│   nx = local grid points                                                │
-│                                                                         │
-│   Total extended size: nx + 2*hw                                        │
+│   nx = local grid points                                               │
+│                                                                        │
+│   Total extended size: nx + 2*hw                                       │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -118,24 +118,24 @@ When a particle is near a domain boundary, velocity interpolation requires data 
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│                      HALO EXCHANGE COMMUNICATION                        │
-│                                                                         │
-│   RANK 0                 RANK 1                 RANK 2                  │
-│   ┌─────────────┐       ┌─────────────┐       ┌─────────────┐          │
-│   │ L │ Local│ R │       │ L │ Local│ R │       │ L │ Local│ R │        │
-│   │   │      │   │       │   │      │   │       │   │      │   │        │
-│   └───┴──────┴───┘       └───┴──────┴───┘       └───┴──────┴───┘        │
-│                                                                         │
-│   Communication:                                                        │
-│   ═══════════════                                                       │
-│                                                                         │
+│                      HALO EXCHANGE COMMUNICATION                       │
+│                                                                        │
+│   RANK 0                 RANK 1                 RANK 2                 │
+│   ┌──────────────┐       ┌──────────────┐       ┌──────────────┐       │
+│   │ L │ Local│ R │       │ L │ Local│ R │       │ L │ Local│ R │       │
+│   │   │      │   │       │   │      │   │       │   │      │   │       │
+│   └───┴──────┴───┘       └───┴──────┴───┘       └───┴──────┴───┘       │
+│                                                                        │
+│   Communication:                                                       │
+│   ═══════════════                                                      │
+│                                                                        │
 │   Rank 0 → Rank 1:  send_right (R0's right edge) → recv_left (R1)      │
 │   Rank 1 → Rank 0:  send_left  (R1's left edge)  → recv_right (R0)     │
-│                                                                         │
+│                                                                        │
 │   Rank 1 → Rank 2:  send_right (R1's right edge) → recv_left (R2)      │
 │   Rank 2 → Rank 1:  send_left  (R2's left edge)  → recv_right (R1)     │
-│                                                                         │
-│   After exchange:                                                       │
+│                                                                        │
+│   After exchange:                                                      │
 │   • R1's left halo contains R0's right edge data                       │
 │   • R1's right halo contains R2's left edge data                       │
 │   • Particles in R1 can interpolate using neighbor data                │
@@ -201,9 +201,9 @@ After advection, particles may have moved outside their owning rank's domain:
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│                     PARTICLE CROSSING BOUNDARY                          │
-│                                                                         │
-│   Before advection:                                                     │
+│                     PARTICLE CROSSING BOUNDARY                         │
+│                                                                        │
+│   Before advection:                                                    │
 │   ┌───────────────────────┬───────────────────────┐                    │
 │   │       RANK 0          │       RANK 1          │                    │
 │   │                    •  │                       │                    │
@@ -211,15 +211,15 @@ After advection, particles may have moved outside their owning rank's domain:
 │   │     Particle moving   │                       │                    │
 │   │     toward boundary   │                       │                    │
 │   └───────────────────────┴───────────────────────┘                    │
-│                                                                         │
-│   After advection:                                                      │
+│                                                                        │
+│   After advection:                                                     │
 │   ┌───────────────────────┬───────────────────────┐                    │
 │   │       RANK 0          │       RANK 1          │                    │
 │   │                       │  •                    │                    │
 │   │                       │  ↑ Particle now in    │                    │
 │   │                       │    Rank 1's domain    │                    │
 │   └───────────────────────┴───────────────────────┘                    │
-│                                                                         │
+│                                                                        │
 │   → Particle must be migrated from Rank 0 to Rank 1                    │
 └────────────────────────────────────────────────────────────────────────┘
 ```
@@ -317,65 +317,65 @@ end
 ## Complete Parallel Timestep
 
 ```
-┌────────────────────────────────────────────────────────────────────────┐
-│              PARALLEL PARTICLE ADVECTION TIMESTEP                       │
-│                                                                         │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │ STEP 1: UPDATE VELOCITY FIELDS                                   │   │
-│  │                                                                   │   │
-│  │   • Compute geostrophic velocities (distributed FFT):            │   │
-│  │       û = -i·kᵧ·ψ̂,  v̂ = i·kₓ·ψ̂                                  │   │
-│  │                                                                   │   │
-│  │   • Solve omega equation for w (tridiagonal in z):               │   │
-│  │       ∇²w + (N²/f²)∂²w/∂z² = 2·J(ψ_z, ∇²ψ)                       │   │
-│  │                                                                   │   │
-│  │   • Add wave Stokes drift:                                       │   │
-│  │       u += 2·Re[A*·∂A/∂x],  v += 2·Re[A*·∂A/∂y]                  │   │
-│  │                                                                   │   │
-│  │   • Exchange velocity halos (MPI non-blocking)                   │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                                ↓                                        │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │ STEP 2: ADVECT PARTICLES (each rank independently)               │   │
-│  │                                                                   │   │
-│  │   For each local particle:                                       │   │
-│  │     1. Interpolate velocity at (x, y, z)                         │   │
-│  │        • Use extended arrays (halos) if near boundary            │   │
-│  │        • Trilinear/Tricubic/Quintic interpolation                │   │
-│  │                                                                   │   │
-│  │     2. Time integration:                                         │   │
-│  │        • Euler:  x_{n+1} = x_n + dt·u                            │   │
-│  │        • RK2:    Midpoint method                                 │   │
-│  │        • RK4:    Classical 4th order                             │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                                ↓                                        │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │ STEP 3: MIGRATE PARTICLES                                        │   │
-│  │                                                                   │   │
-│  │   1. Identify particles outside local domain                     │   │
-│  │   2. Pack outgoing particles into send buffers                   │   │
-│  │   3. MPI.Alltoall - exchange particle counts                     │   │
-│  │   4. MPI.Send/Recv - transfer particle data                      │   │
-│  │   5. Unpack incoming particles into local arrays                 │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                                ↓                                        │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │ STEP 4: APPLY BOUNDARY CONDITIONS                                │   │
-│  │                                                                   │   │
-│  │   Horizontal (periodic):  x = mod(x, Lx),  y = mod(y, Ly)        │   │
-│  │                                                                   │   │
-│  │   Vertical (reflective):                                         │   │
-│  │     if z < 0:   z = -z,        w = -w                            │   │
-│  │     if z > Lz:  z = 2·Lz - z,  w = -w                            │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                                ↓                                        │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │ STEP 5: SAVE TRAJECTORIES (if save_interval reached)             │   │
-│  │                                                                   │   │
-│  │   Option A: Each rank saves local particles independently        │   │
-│  │   Option B: Gather all particles to rank 0, unified output       │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-└────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│              PARALLEL PARTICLE ADVECTION TIMESTEP                            │
+│                                                                              │
+│  ┌────────────────────────────────────────────────────────────────────────┐  │
+│  │ STEP 1: UPDATE VELOCITY FIELDS                                         │  │
+│  │                                                                        │  │
+│  │   • Compute geostrophic velocities (distributed FFT):                  │  │
+│  │       û = -i·kᵧ·ψ̂,  v̂ = i·kₓ·ψ̂                                         │  │
+│  │                                                                        │  │
+│  │   • Solve omega equation for w (tridiagonal in z):                     │  │
+│  │       ∇²w + (N²/f²)∂²w/∂z² = 2·J(ψ_z, ∇²ψ)                             │  │
+│  │                                                                        │  │
+│  │   • Add wave Stokes drift (horizontal + vertical):                     │  │
+│  │       u += 2·Re[A*·∂A/∂x],  v += 2·Re[A*·∂A/∂y],  w += 2·Re[A*·∂A/∂z]  │  │
+│  │                                                                        │  │
+│  │   • Exchange velocity halos (MPI non-blocking)                         │  │
+│  └────────────────────────────────────────────────────────────────────────┘  │ 
+│                                ↓                                             │
+│  ┌─────────────────────────────────────────────────────────────────┐         │
+│  │ STEP 2: ADVECT PARTICLES (each rank independently)              │         │
+│  │                                                                 │         │
+│  │   For each local particle:                                      │         │
+│  │     1. Interpolate velocity at (x, y, z)                        │         │
+│  │        • Use extended arrays (halos) if near boundary           │         │
+│  │        • Trilinear/Tricubic/Quintic interpolation               │         │
+│  │                                                                 │         │
+│  │     2. Time integration:                                        │         │
+│  │        • Euler:  x_{n+1} = x_n + dt·u                           │         │
+│  │        • RK2:    Midpoint method                                │         │
+│  │        • RK4:    Classical 4th order                            │         │
+│  └─────────────────────────────────────────────────────────────────┘         │
+│                                ↓                                             │
+│  ┌─────────────────────────────────────────────────────────────────┐         │
+│  │ STEP 3: MIGRATE PARTICLES                                       │         │
+│  │                                                                 │         │
+│  │   1. Identify particles outside local domain                    │         │
+│  │   2. Pack outgoing particles into send buffers                  │         │
+│  │   3. MPI.Alltoall - exchange particle counts                    │         │
+│  │   4. MPI.Send/Recv - transfer particle data                     │         │
+│  │   5. Unpack incoming particles into local arrays                │         │
+│  └─────────────────────────────────────────────────────────────────┘         │
+│                                ↓                                             │
+│  ┌─────────────────────────────────────────────────────────────────┐         │
+│  │ STEP 4: APPLY BOUNDARY CONDITIONS                               │         │
+│  │                                                                 │         │
+│  │   Horizontal (periodic):  x = mod(x, Lx),  y = mod(y, Ly)       │         │
+│  │                                                                 │         │
+│  │   Vertical (reflective):                                        │         │
+│  │     if z < 0:   z = -z,        w = -w                           │         │
+│  │     if z > Lz:  z = 2·Lz - z,  w = -w                           │         │
+│  └─────────────────────────────────────────────────────────────────┘         │
+│                                ↓                                             │
+│  ┌─────────────────────────────────────────────────────────────────┐         │
+│  │ STEP 5: SAVE TRAJECTORIES (if save_interval reached)            │         │
+│  │                                                                 │         │
+│  │   Option A: Each rank saves local particles independently       │         │
+│  │   Option B: Gather all particles to rank 0, unified output      │         │
+│  └─────────────────────────────────────────────────────────────────┘         │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Scalability Analysis
