@@ -112,9 +112,9 @@ Base.@kwdef mutable struct Grid{T, AT}
     nx::Int                # Number of points in x (horizontal)
     ny::Int                # Number of points in y (horizontal)
     nz::Int                # Number of points in z (vertical)
-    Lx::T                  # Domain size in x [m] (or 2π for nondimensional)
-    Ly::T                  # Domain size in y [m] (or 2π for nondimensional)
-    Lz::T                  # Domain size in z [m] (or 2π for nondimensional)
+    Lx::T                  # Domain size in x [m] (REQUIRED)
+    Ly::T                  # Domain size in y [m] (REQUIRED)
+    Lz::T                  # Domain size in z [m] (REQUIRED)
     dx::T                  # Grid spacing in x: dx = Lx/nx
     dy::T                  # Grid spacing in y: dy = Ly/ny
 
@@ -139,8 +139,7 @@ Initialize the spatial grid and spectral wavenumbers from parameters.
 # Grid Setup
 - Horizontal: Uniform grid with spacing dx = Lx/nx, dy = Ly/ny
 - Vertical: Uniform grid from 0 to Lz with spacing dz ≈ Lz/nz
-  - Nondimensional: Lz = 2π (default)
-  - Dimensional: Lz in meters (e.g., 4000 m for 4 km ocean depth)
+- Domain size (Lx, Ly, Lz) is REQUIRED - specify in meters (e.g., 500e3 for 500 km)
 
 # Wavenumber Arrays
 Computes kx, ky following FFTW conventions for periodic domain:
