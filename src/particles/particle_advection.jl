@@ -117,31 +117,31 @@ Base.@kwdef struct ParticleConfig{T<:AbstractFloat}
 end
 
 """
-    particles_in_box(z_level; x_min, x_max, y_min, y_max, nx, ny, kwargs...)
+    particles_in_box(z_level; x_max, y_max, x_min=0, y_min=0, nx=10, ny=10, kwargs...)
 
 Create particles uniformly distributed in a 2D rectangular box at a fixed z-level.
 
 # Arguments
-- `z_level`: Vertical level where particles are placed
-- `x_min, x_max`: Horizontal x-domain bounds (default: 0 to 2π)
-- `y_min, y_max`: Horizontal y-domain bounds (default: 0 to 2π)
+- `z_level`: Vertical level where particles are placed (REQUIRED)
+- `x_max, y_max`: Domain bounds (REQUIRED - use G.Lx, G.Ly)
+- `x_min, y_min`: Minimum bounds (default: 0.0)
 - `nx, ny`: Number of particles in x and y directions (default: 10 each)
 
 # Example
 ```julia
-# 100 particles in a box [0,2π] × [0,2π] at z = π/2
-config = particles_in_box(π/2; nx=10, ny=10)
+# 100 particles in the full domain at depth 2000m
+config = particles_in_box(2000.0; x_max=G.Lx, y_max=G.Ly, nx=10, ny=10)
 
-# 64 particles in a smaller region
-config = particles_in_box(1.0; x_min=π/2, x_max=3π/2, y_min=π/2, y_max=3π/2, nx=8, ny=8)
+# 64 particles in a smaller region at depth 1000m
+config = particles_in_box(1000.0; x_max=250e3, y_max=250e3, nx=8, ny=8)
 
 # With delayed release
-config = particles_in_box(π/2; nx=10, ny=10, particle_advec_time=0.5)
+config = particles_in_box(2000.0; x_max=G.Lx, y_max=G.Ly, nx=10, ny=10, particle_advec_time=0.5)
 ```
 """
 function particles_in_box(z_level::T;
-                          x_min::T=T(0), x_max::T=T(2π),
-                          y_min::T=T(0), y_max::T=T(2π),
+                          x_max::T, y_max::T,  # REQUIRED
+                          x_min::T=T(0), y_min::T=T(0),
                           nx::Int=10, ny::Int=10,
                           kwargs...) where T<:AbstractFloat
     return ParticleConfig{T}(;
@@ -152,8 +152,8 @@ end
 
 # Convenience method for non-typed call
 function particles_in_box(z_level::Real;
-                          x_min::Real=0.0, x_max::Real=2π,
-                          y_min::Real=0.0, y_max::Real=2π,
+                          x_max::Real, y_max::Real,  # REQUIRED
+                          x_min::Real=0.0, y_min::Real=0.0,
                           nx::Int=10, ny::Int=10,
                           kwargs...)
     T = Float64
