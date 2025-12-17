@@ -12,8 +12,11 @@ module EnhancedParticleConfig
 
 using ..InterpolationSchemes: InterpolationMethod, TRILINEAR
 
-export ParticleConfig3D, ParticleDistribution, create_particle_config_3d,
-       initialize_particles_3d!, UNIFORM_GRID, LAYERED, RANDOM_3D, CUSTOM
+export ParticleConfig3D, ParticleDistribution,
+       initialize_particles_3d!, UNIFORM_GRID, LAYERED, RANDOM_3D, CUSTOM,
+       # Simplified particle initialization constructors
+       particles_in_circle, particles_in_grid_3d, particles_in_layers,
+       particles_random_3d, particles_custom
 
 """
 Available particle distribution patterns.
@@ -110,23 +113,34 @@ Base.@kwdef struct ParticleConfig3D{T<:AbstractFloat}
 end
 
 """
-    create_particle_config_3d(; kwargs...)
+    particles_in_grid_3d(; x_min, x_max, y_min, y_max, z_min, z_max, nx, ny, nz, kwargs...)
 
-Convenience constructor for 3D particle configurations.
-"""
-function create_particle_config_3d(::Type{T}=Float64; kwargs...) where T
-    return ParticleConfig3D{T}(; kwargs...)
-end
+Create particles uniformly distributed in a 3D rectangular grid.
 
-"""
-    create_uniform_3d_grid(x_min, x_max, y_min, y_max, z_min, z_max, nx, ny, nz)
+# Arguments
+- `x_min, x_max`: x-domain bounds (default: 0 to 2π)
+- `y_min, y_max`: y-domain bounds (default: 0 to 2π)
+- `z_min, z_max`: z-domain bounds (default: 0 to π)
+- `nx, ny, nz`: Number of particles in each direction
 
-Create uniform 3D grid configuration.
+# Example
+```julia
+# 1000 particles in a 10×10×10 3D grid
+config = particles_in_grid_3d(; nx=10, ny=10, nz=10)
+
+# Custom domain
+config = particles_in_grid_3d(; x_min=0, x_max=π, z_min=0.5, z_max=2.5, nx=8, ny=8, nz=5)
+```
 """
-function create_uniform_3d_grid(x_min::T, x_max::T, y_min::T, y_max::T, z_min::T, z_max::T,
-                               nx::Int, ny::Int, nz::Int; kwargs...) where T
+function particles_in_grid_3d(; x_min::Real=0.0, x_max::Real=2π,
+                               y_min::Real=0.0, y_max::Real=2π,
+                               z_min::Real=0.0, z_max::Real=π,
+                               nx::Int=10, ny::Int=10, nz::Int=5,
+                               kwargs...)
+    T = Float64
     return ParticleConfig3D{T}(
-        x_min=x_min, x_max=x_max, y_min=y_min, y_max=y_max, z_min=z_min, z_max=z_max,
+        x_min=T(x_min), x_max=T(x_max), y_min=T(y_min), y_max=T(y_max),
+        z_min=T(z_min), z_max=T(z_max),
         distribution_type=UNIFORM_GRID,
         nx_particles=nx, ny_particles=ny, nz_particles=nz;
         kwargs...
@@ -134,64 +148,114 @@ function create_uniform_3d_grid(x_min::T, x_max::T, y_min::T, y_max::T, z_min::T
 end
 
 """
-    create_layered_distribution(x_min, x_max, y_min, y_max, z_levels, particles_per_level)
+    particles_in_layers(z_levels; x_min, x_max, y_min, y_max, nx, ny, kwargs...)
 
-Create layered particle distribution at specific z-levels.
+Create particles distributed in 2D grids at multiple z-levels.
+
+# Arguments
+- `z_levels`: Vector of z-levels where particles are placed
+- `x_min, x_max`: x-domain bounds (default: 0 to 2π)
+- `y_min, y_max`: y-domain bounds (default: 0 to 2π)
+- `nx, ny`: Number of particles per level in x and y (default: 10 each)
+
+# Example
+```julia
+# 3 layers at z = π/4, π/2, 3π/4 with 10×10 particles each
+config = particles_in_layers([π/4, π/2, 3π/4]; nx=10, ny=10)
+
+# Custom domain with 5 particles per side at each layer
+config = particles_in_layers([0.5, 1.0, 1.5, 2.0]; x_min=0, x_max=π, nx=5, ny=5)
+```
 """
-function create_layered_distribution(x_min::T, x_max::T, y_min::T, y_max::T,
-                                   z_levels::Vector{T}, nx::Int, ny::Int;
-                                   particles_per_level::Vector{Int}=Int[], kwargs...) where T
-    
-    z_min = minimum(z_levels)
-    z_max = maximum(z_levels)
-    
+function particles_in_layers(z_levels::Vector{<:Real};
+                            x_min::Real=0.0, x_max::Real=2π,
+                            y_min::Real=0.0, y_max::Real=2π,
+                            nx::Int=10, ny::Int=10,
+                            particles_per_level::Vector{Int}=Int[], kwargs...)
+    T = Float64
+    z_levels_T = T.(z_levels)
+    z_min = minimum(z_levels_T)
+    z_max = maximum(z_levels_T)
+
     # Default: same number of particles per level
     if isempty(particles_per_level)
-        particles_per_level = fill(nx * ny, length(z_levels))
+        particles_per_level = fill(nx * ny, length(z_levels_T))
     end
-    
+
     return ParticleConfig3D{T}(
-        x_min=x_min, x_max=x_max, y_min=y_min, y_max=y_max, z_min=z_min, z_max=z_max,
+        x_min=T(x_min), x_max=T(x_max), y_min=T(y_min), y_max=T(y_max),
+        z_min=z_min, z_max=z_max,
         distribution_type=LAYERED,
-        nx_particles=nx, ny_particles=ny, nz_particles=length(z_levels),
-        z_levels=z_levels, particles_per_level=particles_per_level;
+        nx_particles=nx, ny_particles=ny, nz_particles=length(z_levels_T),
+        z_levels=z_levels_T, particles_per_level=particles_per_level;
         kwargs...
     )
 end
 
 """
-    create_random_3d_distribution(x_min, x_max, y_min, y_max, z_min, z_max, n_particles)
+    particles_random_3d(n; x_min, x_max, y_min, y_max, z_min, z_max, seed, kwargs...)
 
-Create random 3D particle distribution.
+Create randomly distributed particles in a 3D volume.
+
+# Arguments
+- `n`: Number of particles
+- `x_min, x_max`: x-domain bounds (default: 0 to 2π)
+- `y_min, y_max`: y-domain bounds (default: 0 to 2π)
+- `z_min, z_max`: z-domain bounds (default: 0 to π)
+- `seed`: Random seed for reproducibility (default: 1234)
+
+# Example
+```julia
+# 500 random particles in the default domain
+config = particles_random_3d(500)
+
+# 1000 random particles in a custom domain
+config = particles_random_3d(1000; x_min=0, x_max=π, z_min=0.5, z_max=2.5)
+```
 """
-function create_random_3d_distribution(x_min::T, x_max::T, y_min::T, y_max::T, z_min::T, z_max::T,
-                                      n_particles::Int; random_seed::Int=1234, kwargs...) where T
-    
+function particles_random_3d(n::Int;
+                            x_min::Real=0.0, x_max::Real=2π,
+                            y_min::Real=0.0, y_max::Real=2π,
+                            z_min::Real=0.0, z_max::Real=π,
+                            seed::Int=1234, kwargs...)
+    T = Float64
+
     # Generate random positions
-    Random.seed!(random_seed)
-    custom_x = x_min .+ (x_max - x_min) .* rand(T, n_particles)
-    custom_y = y_min .+ (y_max - y_min) .* rand(T, n_particles)
-    custom_z = z_min .+ (z_max - z_min) .* rand(T, n_particles)
-    
+    Random.seed!(seed)
+    custom_x = T(x_min) .+ (T(x_max) - T(x_min)) .* rand(T, n)
+    custom_y = T(y_min) .+ (T(y_max) - T(y_min)) .* rand(T, n)
+    custom_z = T(z_min) .+ (T(z_max) - T(z_min)) .* rand(T, n)
+
     return ParticleConfig3D{T}(
-        x_min=x_min, x_max=x_max, y_min=y_min, y_max=y_max, z_min=z_min, z_max=z_max,
+        x_min=T(x_min), x_max=T(x_max), y_min=T(y_min), y_max=T(y_max),
+        z_min=T(z_min), z_max=T(z_max),
         distribution_type=CUSTOM,
-        nx_particles=n_particles, ny_particles=1, nz_particles=1,
+        nx_particles=n, ny_particles=1, nz_particles=1,
         custom_x=custom_x, custom_y=custom_y, custom_z=custom_z;
         kwargs...
     )
 end
 
 """
-    create_custom_distribution(positions)
+    particles_custom(positions; kwargs...)
 
-Create custom particle distribution from user-provided positions.
+Create particles at user-specified positions.
+
+# Arguments
+- `positions`: Vector of (x, y, z) tuples
+
+# Example
+```julia
+# 4 particles at specific locations
+config = particles_custom([(1.0, 1.0, 0.5), (2.0, 2.0, 1.0), (3.0, 1.5, 0.75), (1.5, 3.0, 1.25)])
+```
 """
-function create_custom_distribution(positions::Vector{Tuple{T,T,T}}; kwargs...) where T
+function particles_custom(positions::Vector{<:Tuple{Real,Real,Real}}; kwargs...)
+    T = Float64
 
-    custom_x = [pos[1] for pos in positions]
-    custom_y = [pos[2] for pos in positions]
-    custom_z = [pos[3] for pos in positions]
+    custom_x = T[pos[1] for pos in positions]
+    custom_y = T[pos[2] for pos in positions]
+    custom_z = T[pos[3] for pos in positions]
 
     x_min, x_max = extrema(custom_x)
     y_min, y_max = extrema(custom_y)

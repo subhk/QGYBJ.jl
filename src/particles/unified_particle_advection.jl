@@ -117,54 +117,53 @@ Base.@kwdef struct ParticleConfig{T<:AbstractFloat}
 end
 
 """
-    create_particle_config(; kwargs...)
+    particles_in_box(z_level; x_min, x_max, y_min, y_max, nx, ny, kwargs...)
 
-Convenience constructor for ParticleConfig.
+Create particles uniformly distributed in a 2D rectangular box at a fixed z-level.
 
-Common usage patterns:
+# Arguments
+- `z_level`: Vertical level where particles are placed
+- `x_min, x_max`: Horizontal x-domain bounds (default: 0 to 2π)
+- `y_min, y_max`: Horizontal y-domain bounds (default: 0 to 2π)
+- `nx, ny`: Number of particles in x and y directions (default: 10 each)
+
+# Example
 ```julia
-# Immediate particle release (default)
-config = create_particle_config(
-    x_min=0.0, x_max=2π, y_min=0.0, y_max=2π,
-    nx_particles=10, ny_particles=10,
-    particle_advec_time=0.0  # Start immediately
-)
+# 100 particles in a box [0,2π] × [0,2π] at z = π/2
+config = particles_in_box(π/2; nx=10, ny=10)
 
-# Delayed particle release - let flow develop first
-config = create_particle_config(
-    x_min=π/2, x_max=3π/2, y_min=π/2, y_max=3π/2,
-    nx_particles=8, ny_particles=8,
-    particle_advec_time=0.5,  # Wait 0.5 time units
-    use_ybj_w=true           # Use YBJ vertical velocity
-)
+# 64 particles in a smaller region
+config = particles_in_box(1.0; x_min=π/2, x_max=3π/2, y_min=π/2, y_max=3π/2, nx=8, ny=8)
 
-# Control trajectory saving rate (independent of simulation timestep)
-config = create_particle_config(
-    x_min=0.0, x_max=2π, y_min=0.0, y_max=2π,
-    nx_particles=10, ny_particles=10,
-    save_interval=0.1,       # Save particle positions every 0.1 time units
-    max_save_points=500      # Limit trajectory length to prevent memory overflow
-)
-
-# Multiple z-levels with automatic file separation by depth
-layered_config = create_layered_distribution(
-    0.0, 2π, 0.0, 2π, [π/4, π/2, 3π/4], 6, 6  # 3 z-levels, 6x6 particles each
-)
-# After simulation: use write_particle_trajectories_by_zlevel() to save each depth separately
-
-# Automatic file splitting for long simulations
-config = create_particle_config(
-    x_min=0.0, x_max=2π, y_min=0.0, y_max=2π,
-    nx_particles=10, ny_particles=10,
-    max_save_points=1000,    # Points per file
-    auto_split_files=true    # Create new files automatically when max reached
-)
-# Or use: enable_auto_file_splitting!(tracker, "long_simulation", max_points_per_file=1000)
+# With delayed release
+config = particles_in_box(π/2; nx=10, ny=10, particle_advec_time=0.5)
 ```
 """
-function create_particle_config(::Type{T}=Float64; kwargs...) where T
-    return ParticleConfig{T}(; kwargs...)
+function particles_in_box(z_level::T;
+                          x_min::T=T(0), x_max::T=T(2π),
+                          y_min::T=T(0), y_max::T=T(2π),
+                          nx::Int=10, ny::Int=10,
+                          kwargs...) where T<:AbstractFloat
+    return ParticleConfig{T}(;
+        x_min=x_min, x_max=x_max, y_min=y_min, y_max=y_max,
+        z_level=z_level, nx_particles=nx, ny_particles=ny,
+        kwargs...)
 end
+
+# Convenience method for non-typed call
+function particles_in_box(z_level::Real;
+                          x_min::Real=0.0, x_max::Real=2π,
+                          y_min::Real=0.0, y_max::Real=2π,
+                          nx::Int=10, ny::Int=10,
+                          kwargs...)
+    T = Float64
+    return particles_in_box(T(z_level);
+        x_min=T(x_min), x_max=T(x_max), y_min=T(y_min), y_max=T(y_max),
+        nx=nx, ny=ny, kwargs...)
+end
+
+# Legacy alias for backwards compatibility
+create_particle_config(::Type{T}=Float64; kwargs...) where T = ParticleConfig{T}(; kwargs...)
 
 """
 Particle state including positions, velocities, and trajectory history.
