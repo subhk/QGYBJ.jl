@@ -112,13 +112,14 @@ Base.@kwdef mutable struct Grid{T, AT}
     nx::Int                # Number of points in x (horizontal)
     ny::Int                # Number of points in y (horizontal)
     nz::Int                # Number of points in z (vertical)
-    Lx::T                  # Domain size in x
-    Ly::T                  # Domain size in y
+    Lx::T                  # Domain size in x [m] (or 2π for nondimensional)
+    Ly::T                  # Domain size in y [m] (or 2π for nondimensional)
+    Lz::T                  # Domain size in z [m] (or 2π for nondimensional)
     dx::T                  # Grid spacing in x: dx = Lx/nx
     dy::T                  # Grid spacing in y: dy = Ly/ny
 
     #= Vertical grid (unstaggered) =#
-    z::Vector{T}           # Vertical levels z[k], size nz
+    z::Vector{T}           # Vertical levels z[k] ∈ [0, Lz], size nz
     dz::Vector{T}          # Layer thicknesses: dz[k] = z[k+1] - z[k], size nz-1
 
     #= Spectral wavenumbers =#
@@ -137,10 +138,12 @@ Initialize the spatial grid and spectral wavenumbers from parameters.
 
 # Grid Setup
 - Horizontal: Uniform grid with spacing dx = Lx/nx, dy = Ly/ny
-- Vertical: Uniform grid from 0 to 2π (nondimensional) matching Fortran
+- Vertical: Uniform grid from 0 to Lz with spacing dz ≈ Lz/nz
+  - Nondimensional: Lz = 2π (default)
+  - Dimensional: Lz in meters (e.g., 4000 m for 4 km ocean depth)
 
 # Wavenumber Arrays
-Computes kx, ky following FFTW conventions for 2π-periodic domain:
+Computes kx, ky following FFTW conventions for periodic domain:
 ```
 kx[i] = (i-1)           for i = 1, ..., nx/2
         (i-1-nx)        for i = nx/2+1, ..., nx
@@ -148,14 +151,19 @@ kx[i] = (i-1)           for i = 1, ..., nx/2
 multiplied by 2π/Lx.
 
 # Arguments
-- `par::QGParams`: Parameter struct with nx, ny, nz, Lx, Ly
+- `par::QGParams`: Parameter struct with nx, ny, nz, Lx, Ly, Lz
 
 # Returns
 Initialized `Grid` struct with all arrays allocated.
 
 # Example
 ```julia
+# Nondimensional (Lz = 2π by default)
 par = default_params(nx=64, ny=64, nz=32)
+G = init_grid(par)
+
+# Dimensional with 4 km depth
+par = default_params(nx=64, ny=64, nz=32, Lz=4000.0)
 G = init_grid(par)
 ```
 
@@ -170,17 +178,19 @@ function init_grid(par::QGParams)
     dx = par.Lx / nx
     dy = par.Ly / ny
 
-    #= Vertical grid: match Fortran nondimensional domain L3 = 2π
-    z[k] ranges from 0 to 2π with nz points =#
-    z = T.(collect(range(0, 2π; length=nz)))
+    #= Vertical grid: z ∈ [0, Lz]
+    z[k] ranges from 0 to Lz with nz points
+    For nondimensional: Lz = 2π (default)
+    For dimensional: Lz in meters (e.g., 4000 m for 4 km depth) =#
+    z = T.(collect(range(0, par.Lz; length=nz)))
     dz = diff(z)
 
-    #= Wavenumbers for 2π-periodic domain
+    #= Wavenumbers for periodic domain
     Following FFTW convention:
     - Positive wavenumbers first: 0, 1, 2, ..., n/2-1
     - Then negative: -n/2, -n/2+1, ..., -1
 
-    With 2π-periodicity: k_physical = k_index × (2π/L) =#
+    k_physical = k_index × (2π/L) =#
     kx = T.([i <= nx÷2 ? (2π/par.Lx)*(i-1) : (2π/par.Lx)*(i-1-nx) for i in 1:nx])
     ky = T.([j <= ny÷2 ? (2π/par.Ly)*(j-1) : (2π/par.Ly)*(j-1-ny) for j in 1:ny])
 
@@ -193,7 +203,7 @@ function init_grid(par::QGParams)
     # No MPI decomposition by default (serial mode)
     decomp = nothing
 
-    return Grid{T, typeof(kh2)}(nx, ny, nz, par.Lx, par.Ly, dx, dy, z, dz, kx, ky, kh2, decomp)
+    return Grid{T, typeof(kh2)}(nx, ny, nz, par.Lx, par.Ly, par.Lz, dx, dy, z, dz, kx, ky, kh2, decomp)
 end
 
 """

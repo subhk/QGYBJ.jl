@@ -68,24 +68,29 @@ function init_analytical_psi!(psik, G::Grid, amplitude::Real)
     # Initialize in real space first
     psir = zeros(Float64, G.nx, G.ny, G.nz)
     
-    dx = 2π / G.nx
-    dy = 2π / G.ny
-    dz = 2π / G.nz
-    
+    dx = G.Lx / G.nx
+    dy = G.Ly / G.ny
+    dz = G.Lz / G.nz
+
     for k in 1:G.nz
         z = (k - 1) * dz
         for j in 1:G.ny
             y = (j - 1) * dy
             for i in 1:G.nx
                 x = (i - 1) * dx
-                
+
                 # Example: sum of Rossby waves with different modes
+                # Use normalized coordinates for wave patterns: x̃ = 2πx/Lx, etc.
+                x_norm = 2π * x / G.Lx
+                y_norm = 2π * y / G.Ly
+                z_norm = 2π * z / G.Lz
+
                 # This mimics typical geostrophic turbulence patterns
                 psir[i,j,k] = amplitude * (
-                    sin(2*x) * cos(y) * cos(z) +
-                    0.5 * cos(x) * sin(2*y) * sin(z) +
-                    0.3 * sin(3*x) * sin(y) * cos(2*z) +
-                    0.2 * cos(2*x) * cos(3*y) * sin(2*z)
+                    sin(2*x_norm) * cos(y_norm) * cos(z_norm) +
+                    0.5 * cos(x_norm) * sin(2*y_norm) * sin(z_norm) +
+                    0.3 * sin(3*x_norm) * sin(y_norm) * cos(2*z_norm) +
+                    0.2 * cos(2*x_norm) * cos(3*y_norm) * sin(2*z_norm)
                 )
             end
         end
@@ -152,31 +157,40 @@ Initialize wave field (L+A) with analytical expression.
 """
 function init_analytical_waves!(Bk, G::Grid, amplitude::Real)
     @info "Initializing analytical wave field (amplitude=$amplitude)"
-    
+
     # Initialize in real space
     Br = zeros(Float64, G.nx, G.ny, G.nz)
     Bi = zeros(Float64, G.nx, G.ny, G.nz)
-    
-    dx = 2π / G.nx
-    dy = 2π / G.ny  
-    dz = 2π / G.nz
-    
+
+    dx = G.Lx / G.nx
+    dy = G.Ly / G.ny
+    dz = G.Lz / G.nz
+
+    # Mid-depth for vertical decay (in domain coordinates)
+    z_mid = G.Lz / 2
+    sigma_z = G.Lz / 10  # Decay scale
+
     for k in 1:G.nz
         z = (k - 1) * dz
         for j in 1:G.ny
             y = (j - 1) * dy
             for i in 1:G.nx
                 x = (i - 1) * dx
-                
-                # Example wave pattern - can be modified based on physics
+
+                # Use normalized coordinates for wave patterns
+                x_norm = 2π * x / G.Lx
+                y_norm = 2π * y / G.Ly
+                z_norm = 2π * z / G.Lz
+
+                # Example wave pattern with vertical decay centered at mid-depth
                 Br[i,j,k] = amplitude * (
-                    sin(4*x + z) * cos(2*y) * exp(-((z-π)^2)/(2*0.5^2)) +
-                    0.3 * cos(2*x) * sin(4*y + 2*z) * exp(-((z-π)^2)/(2*0.3^2))
+                    sin(4*x_norm + z_norm) * cos(2*y_norm) * exp(-((z-z_mid)^2)/(2*sigma_z^2)) +
+                    0.3 * cos(2*x_norm) * sin(4*y_norm + 2*z_norm) * exp(-((z-z_mid)^2)/(2*(0.6*sigma_z)^2))
                 )
-                
+
                 Bi[i,j,k] = amplitude * 0.1 * (
-                    cos(4*x + z) * sin(2*y) * exp(-((z-π)^2)/(2*0.5^2)) +
-                    0.3 * sin(2*x) * cos(4*y + 2*z) * exp(-((z-π)^2)/(2*0.3^2))
+                    cos(4*x_norm + z_norm) * sin(2*y_norm) * exp(-((z-z_mid)^2)/(2*sigma_z^2)) +
+                    0.3 * sin(2*x_norm) * cos(4*y_norm + 2*z_norm) * exp(-((z-z_mid)^2)/(2*(0.6*sigma_z)^2))
                 )
             end
         end

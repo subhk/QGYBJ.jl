@@ -38,7 +38,7 @@ const N² = 1e-5              # Buoyancy frequency squared [s⁻²]
 # Domain size [m] - typical mesoscale eddy domain
 const Lx = 500e3             # 500 km horizontal domain
 const Ly = 500e3             # 500 km horizontal domain
-# Note: Vertical grid is nondimensional z ∈ [0, 2π], surface at z = 2π
+const Lz = 4000.0            # 4 km depth, surface at z = Lz
 
 # Time stepping
 const n_inertial_periods = 15
@@ -48,7 +48,7 @@ const nt = round(Int, n_inertial_periods * T_inertial / dt)
 
 # Wave parameters
 const u0_wave = 0.05         # Wave velocity amplitude [m/s]
-const sigma_z = 0.01 * 2π    # Vertical decay scale (nondimensional, surface-confined)
+const sigma_z = 0.01 * Lz    # Vertical decay scale [m] (surface-confined, ~40m e-folding)
 
 # Flow parameters
 const U0_flow = 0.5          # Flow velocity scale [m/s]
@@ -87,10 +87,10 @@ function main()
     )
 
     # Parameters matching Asselin et al. (2020)
-    # Dimensional simulation with physical domain size
+    # Fully dimensional simulation with physical domain size
     par = QGYBJ.default_params(
         nx = nx, ny = ny, nz = nz,
-        Lx = Lx, Ly = Ly,      # Domain size [m]
+        Lx = Lx, Ly = Ly, Lz = Lz,  # Domain size [m]
         dt = dt, nt = nt,
         f₀ = f₀,               # Coriolis parameter [s⁻¹]
         N² = N²,               # Buoyancy frequency squared [s⁻²]
@@ -146,7 +146,7 @@ function main()
     B_local = parent(S.B)
     for k_local in axes(B_local, 3)
         k_global = local_range[3][k_local]
-        depth = 2π - G.z[k_global]  # Distance from surface (nondimensional)
+        depth = G.Lz - G.z[k_global]  # Distance from surface [m]
         wave_profile = exp(-(depth^2) / (sigma_z^2))
         for j_local in axes(B_local, 2)
             j_global = local_range[2][j_local]

@@ -312,7 +312,7 @@ par = default_params(no_wave_feedback=false)
 
 See also: [`QGParams`](@ref)
 """
-function default_params(; nx=64, ny=64, nz=64, Lx=2π, Ly=2π,
+function default_params(; nx=64, ny=64, nz=64, Lx=2π, Ly=2π, Lz=2π,
                            dt=1e-3, nt=10_000, f₀=1.0, N²=1.0,
                            W2F=0.01, γ=1e-3,
                            νₕ=0.0, νᵥ=0.0,
@@ -334,14 +334,14 @@ function default_params(; nx=64, ny=64, nz=64, Lx=2π, Ly=2π,
     =#
 
     #= Skewed Gaussian stratification parameters (Fortran test1 values)
-    These are nondimensionalized for L3 = 2π domain =#
+    These are nondimensionalized for Lz = 2π domain =#
     N₀²_sg = T(0.537713935783168)     # Background N²
     N₁²_sg = T(2.684198470106461)     # Peak N² amplitude
     σ_sg = T(0.648457170048730)       # Pycnocline width
     z₀_sg = T(6.121537923499139)      # Pycnocline depth
     α_sg = T(-5.338431587899242)      # Skewness
 
-    return QGParams{T}(; nx, ny, nz, Lx=T(Lx), Ly=T(Ly), dt=T(dt), nt,
+    return QGParams{T}(; nx, ny, nz, Lx=T(Lx), Ly=T(Ly), Lz=T(Lz), dt=T(dt), nt,
                          f₀=T(f₀), νₕ=T(νₕ), νᵥ=T(νᵥ),
                          linear_vert_structure, stratification,
                          N²=T(N²), W2F=T(W2F), γ=T(γ),

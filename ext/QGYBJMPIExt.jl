@@ -444,7 +444,7 @@ function QGYBJ.init_mpi_grid(params::QGParams, mpi_config::MPIConfig)
     dy = params.Ly / ny
 
     # Vertical grid (same on all processes)
-    z = T.(collect(range(0, 2π; length=nz)))
+    z = T.(collect(range(0, params.Lz; length=nz)))
     dz = diff(z)
 
     # Wavenumbers (global arrays, same on all processes)
@@ -471,7 +471,7 @@ function QGYBJ.init_mpi_grid(params::QGParams, mpi_config::MPIConfig)
 
     return Grid{T, typeof(kh2_pencil)}(
         nx, ny, nz,
-        params.Lx, params.Ly,
+        params.Lx, params.Ly, params.Lz,
         dx, dy,
         z, dz,
         kx, ky,

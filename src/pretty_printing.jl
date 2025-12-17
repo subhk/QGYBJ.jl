@@ -208,12 +208,15 @@ function Base.show(io::IO, ::MIME"text/plain", G::Grid{T,AT}) where {T,AT}
     print_section_header(io, "Domain", width)
     print_box_row(io, "Lx", format_number(G.Lx), width; key_width)
     print_box_row(io, "Ly", format_number(G.Ly), width; key_width)
+    print_box_row(io, "Lz", format_number(G.Lz), width; key_width)
 
     # Grid spacing
     print_section_header(io, "Grid Spacing", width)
     print_box_row(io, "dx", format_number(G.dx), width; key_width)
     print_box_row(io, "dy", format_number(G.dy), width; key_width)
-    print_box_row(io, "dz", format_number(G.dz), width; key_width)
+    if !isempty(G.dz)
+        print_box_row(io, "dz (mean)", format_number(sum(G.dz)/length(G.dz)), width; key_width)
+    end
 
     # z range
     if !isempty(G.z)

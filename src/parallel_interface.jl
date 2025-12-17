@@ -64,7 +64,7 @@ function init_parallel_grid(params::QGParams, pconfig::ParallelConfig)
     nx, ny, nz = params.nx, params.ny, params.nz
     dx = params.Lx / nx
     dy = params.Ly / ny
-    z = T.(collect(range(0, 2π; length=nz)))
+    z = T.(collect(range(0, params.Lz; length=nz)))
     dz = diff(z)
 
     # Wavenumbers (same on all processes)
@@ -95,7 +95,7 @@ function init_parallel_grid(params::QGParams, pconfig::ParallelConfig)
         kh2[i,j] = kx[i]^2 + ky[j]^2
     end
 
-    return Grid{T, typeof(kh2)}(nx, ny, nz, params.Lx, params.Ly, dx, dy, z, dz, kx, ky, kh2, decomp)
+    return Grid{T, typeof(kh2)}(nx, ny, nz, params.Lx, params.Ly, params.Lz, dx, dy, z, dz, kx, ky, kh2, decomp)
 end
 
 """
