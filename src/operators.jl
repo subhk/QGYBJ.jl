@@ -90,6 +90,10 @@ using ..QGYBJ: local_to_global_z, allocate_z_pencil
 using ..QGYBJ: invert_B_to_A!
 const PARENT = Base.parentmodule(@__MODULE__)
 
+# Access invert_B_to_A! through the Elliptic submodule via PARENT
+# (Direct import via `using ..QGYBJ: invert_B_to_A!` can fail in some loading contexts)
+# @inline invert_B_to_A!(args...; kwargs...) = PARENT.Elliptic.invert_B_to_A!(args...; kwargs...)
+
 #=
 ================================================================================
                     GEOSTROPHIC VELOCITY COMPUTATION

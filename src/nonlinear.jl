@@ -166,15 +166,13 @@ function jacobian_spectral!(dstk, φₖ, χₖ, G::Grid, plans)
 
     #= Normalization note:
     The pseudo-spectral convolution involves:
-    - 4 normalized IFFTs (each divides by N internally)
+    - 4 normalized IFFTs (each divides by N internally via FFTW.ifft)
     - Pointwise product in physical space
-    - 1 unnormalized FFT (gives N × amplitude)
+    - 1 FFT (FFTW.fft, which is already properly normalized in spectral convention)
 
-    For the correct spectral convolution amplitude, we divide by N once.
-    This accounts for the FFT's unnormalized output and yields proper scaling
-    for the tendency terms used in time-stepping. =#
-    norm = nx*ny
-    @inbounds dst_arr .= dst_arr ./ norm
+    Since fft_backward! uses normalized IFFT (divides by N), the pseudo-spectral
+    product is already correctly scaled. No additional normalization is needed.
+    Previous code incorrectly divided by nx*ny, weakening nonlinear dynamics. =#
 
     return dstk
 end
@@ -326,11 +324,9 @@ function convol_waqg!(nqk, nBRk, nBIk, u, v, qk, BRk, BIk, G::Grid, plans; Lmask
         end
     end
 
-    #= Normalize for unnormalized inverse FFT =#
-    norm = nx*ny
-    nqk_arr  ./= norm
-    nBRk_arr ./= norm
-    nBIk_arr ./= norm
+    #= No additional normalization needed:
+    fft_backward! uses normalized IFFT (divides by N internally).
+    Previous code incorrectly divided by nx*ny, weakening advection terms. =#
 
     return nqk, nBRk, nBIk
 end
@@ -435,14 +431,14 @@ function refraction_waqg!(rBRk, rBIk, BRk, BIk, ψₖ, G::Grid, plans; Lmask=not
     fft_forward!(rBIk, rBIᵣ, plans)
     rBRk_arr = parent(rBRk); rBIk_arr = parent(rBIk)
 
-    norm = nx*ny
+    #= No additional normalization needed:
+    fft_backward! uses normalized IFFT (divides by N internally).
+    Previous code incorrectly divided by nx*ny, weakening refraction terms.
+    Just apply dealiasing mask. =#
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
         i_global = local_to_global(i_local, 1, G)
         j_global = local_to_global(j_local, 2, G)
-        if should_keep(i_global, j_global)
-            rBRk_arr[i_local, j_local, k] /= norm
-            rBIk_arr[i_local, j_local, k] /= norm
-        else
+        if !should_keep(i_global, j_global)
             rBRk_arr[i_local, j_local, k] = 0  # Dealiased
             rBIk_arr[i_local, j_local, k] = 0
         end
@@ -586,7 +582,10 @@ function compute_qw!(qʷₖ, BRk, BIk, par, G::Grid, plans; Lmask=nothing)
     fft_forward!(qʷₖ, qʷᵣ, plans)
     qʷₖ_arr = parent(qʷₖ)
 
-    norm = nx*ny
+    #= No additional normalization needed:
+    fft_backward! uses normalized IFFT (divides by N internally).
+    Previous code incorrectly divided by nx*ny, weakening wave feedback.
+    Just combine terms and apply dealiasing. =#
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
         i_global = local_to_global(i_local, 1, G)
         j_global = local_to_global(j_local, 2, G)
@@ -596,7 +595,7 @@ function compute_qw!(qʷₖ, BRk, BIk, par, G::Grid, plans; Lmask=nothing)
         if should_keep(i_global, j_global)
             # qʷ = (i/2)J(B*, B) - (1/4)∇²|B|²
             # For dimensional equations, B has actual amplitude - no W2F scaling needed
-            qʷₖ_arr[i_local, j_local, k] = (qʷₖ_arr[i_local, j_local, k] - 0.25*kₕ²*tempₖ_arr[i_local, j_local, k]) / norm
+            qʷₖ_arr[i_local, j_local, k] = qʷₖ_arr[i_local, j_local, k] + 0.25*kₕ²*tempₖ_arr[i_local, j_local, k]
         else
             qʷₖ_arr[i_local, j_local, k] = 0
         end
