@@ -193,19 +193,21 @@ Create stratification configuration.
 
 # Examples
 ```julia
-# Constant N
+# Constant N (SUPPORTED)
 strat = create_stratification_config(:constant_N, N0=2.0)
 
-# Skewed Gaussian (using default parameters from Fortran code)
+# Skewed Gaussian (SUPPORTED - uses default parameters from Fortran code)
 strat = create_stratification_config(:skewed_gaussian)
 
-# Tanh profile (pycnocline-like)
-strat = create_stratification_config(:tanh_profile, 
-    N_upper=0.01, N_lower=0.025, z_pycno=0.6, width=0.05)
+# Tanh profile (NOT YET IMPLEMENTED - will error at runtime)
+# strat = create_stratification_config(:tanh_profile,
+#     N_upper=0.01, N_lower=0.025, z_pycno=0.6, width=0.05)
 
-# From NetCDF file
-strat = create_stratification_config(:from_file, filename="N2_profile.nc")
+# From file (NOT YET IMPLEMENTED - will error at runtime)
+# strat = create_stratification_config(:from_file, filename="N2_profile.nc")
 ```
+
+See [`StratificationConfig`](@ref) for details on supported types.
 """
 function create_stratification_config(type::Symbol; kwargs...)
     T = Float64
@@ -376,6 +378,19 @@ function validate_config(config::ModelConfig)
     # Output directory
     if !isdir(dirname(config.output.output_dir))
         push!(warnings, "Output directory parent does not exist: $(dirname(config.output.output_dir))")
+    end
+
+    # Viscosity validation (must be non-negative)
+    if config.nu_h < 0
+        push!(errors, "Horizontal viscosity nu_h must be non-negative (got nu_h=$(config.nu_h))")
+    end
+    if config.nu_v < 0
+        push!(errors, "Vertical viscosity nu_v must be non-negative (got nu_v=$(config.nu_v))")
+    end
+
+    # FFT efficiency warning
+    if !ispow2(config.domain.nx) || !ispow2(config.domain.ny)
+        push!(warnings, "Grid dimensions (nx=$(config.domain.nx), ny=$(config.domain.ny)) are not powers of 2 - FFTs may be slower")
     end
     
     return errors, warnings

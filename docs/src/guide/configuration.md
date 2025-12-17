@@ -11,7 +11,27 @@ This page explains how to configure QGYBJ.jl simulations.
 QGYBJ.jl offers two ways to configure simulations:
 
 1. **Simple API**: Use `create_simple_config()` for quick setup
-2. **Full Control**: Create `QGParams` and `Grid` directly
+2. **Full Control**: Create `QGParams` and `Grid` directly via `default_params()`
+
+!!! warning "Different Defaults Between APIs"
+    The two APIs have different default settings for physics flags:
+
+    | Flag | `create_simple_config()` | `default_params()` |
+    |:-----|:------------------------|:-------------------|
+    | `inviscid` | `true` (no dissipation) | `false` (with dissipation) |
+    | `no_wave_feedback` | `false` (two-way coupling) | `true` (one-way coupling) |
+
+    **Simple API** defaults are designed for idealized/educational runs.
+    **Full Control API** defaults match the Fortran code for production runs.
+
+    To get production-like settings with the simple API, explicitly set:
+    ```julia
+    config = create_simple_config(
+        Lx=500e3, Ly=500e3, Lz=4000.0,
+        inviscid=false,           # Enable dissipation
+        no_wave_feedback=true     # One-way wave-flow coupling
+    )
+    ```
 
 ## Simple Configuration
 
