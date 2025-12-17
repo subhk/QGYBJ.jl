@@ -1,9 +1,14 @@
 using Test
 using QGYBJ
 
+# Test domain size (small for unit tests)
+const TEST_Lx = 500e3  # 500 km
+const TEST_Ly = 500e3  # 500 km
+const TEST_Lz = 4000.0 # 4 km
+
 @testset "QGYBJ basic API" begin
-    par = default_params(nx=8, ny=8, nz=8, stratification=:constant_N)
-    G, S, plans, a = setup_model(; par)
+    par = default_params(nx=8, ny=8, nz=8, Lx=TEST_Lx, Ly=TEST_Ly, Lz=TEST_Lz, stratification=:constant_N)
+    G, S, plans, a = setup_model(par)
     @test size(S.q) == (par.nx, par.ny, par.nz)
 
     # Invert q->psi (all zeros)
@@ -28,12 +33,12 @@ using QGYBJ
 end
 
 @testset "Normal YBJ branch + dealias + kh=0" begin
-    par = default_params(nx=12, ny=12, nz=8, stratification=:constant_N)
+    par = default_params(nx=12, ny=12, nz=8, Lx=TEST_Lx, Ly=TEST_Ly, Lz=TEST_Lz, stratification=:constant_N)
 
     # switch to normal YBJ
     par = QGParams(; (field=>getfield(par, field) for field in fieldnames(typeof(par)))... )
     setfield!(par, :ybj_plus, false)
-    G, S, plans, a = setup_model(; par)
+    G, S, plans, a = setup_model(par)
     L = dealias_mask(G)
 
     # Dealias property checks for a few indices

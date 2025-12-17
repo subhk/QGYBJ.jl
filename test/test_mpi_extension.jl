@@ -22,6 +22,11 @@ using Test
 # Check if we're running in serial mode
 const SERIAL_MODE = "--serial" in ARGS
 
+# Test domain size (used throughout)
+const TEST_Lx = 500e3  # 500 km
+const TEST_Ly = 500e3  # 500 km
+const TEST_Lz = 4000.0 # 4 km
+
 function run_serial_tests()
     # Load QGYBJ using @eval to allow non-top-level loading
     @eval using QGYBJ
@@ -39,7 +44,7 @@ function run_serial_tests()
         end
 
         @testset "Basic Types" begin
-            params = QGYBJ.default_params(nx=32, ny=32, nz=16)
+            params = QGYBJ.default_params(nx=32, ny=32, nz=16, Lx=TEST_Lx, Ly=TEST_Ly, Lz=TEST_Lz)
             @test params.nx == 32
             @test params.ny == 32
             @test params.nz == 16
@@ -56,7 +61,7 @@ function run_serial_tests()
         end
 
         @testset "FFT Transforms (Serial)" begin
-            params = QGYBJ.default_params(nx=32, ny=32, nz=16)
+            params = QGYBJ.default_params(nx=32, ny=32, nz=16, Lx=TEST_Lx, Ly=TEST_Ly, Lz=TEST_Lz)
             grid = QGYBJ.init_grid(params)
             plans = QGYBJ.plan_transforms!(grid)
 
@@ -125,7 +130,7 @@ function run_mpi_tests()
 
             @testset "Parallel Grid" begin
                 mpi_config = QGYBJ.setup_mpi_environment()
-                params = QGYBJ.default_params(nx=64, ny=64, nz=32)
+                params = QGYBJ.default_params(nx=64, ny=64, nz=32, Lx=TEST_Lx, Ly=TEST_Ly, Lz=TEST_Lz)
 
                 grid = QGYBJ.init_mpi_grid(params, mpi_config)
                 @test grid.nx == 64
@@ -140,7 +145,7 @@ function run_mpi_tests()
 
             @testset "Parallel State" begin
                 mpi_config = QGYBJ.setup_mpi_environment()
-                params = QGYBJ.default_params(nx=64, ny=64, nz=32)
+                params = QGYBJ.default_params(nx=64, ny=64, nz=32, Lx=TEST_Lx, Ly=TEST_Ly, Lz=TEST_Lz)
                 grid = QGYBJ.init_mpi_grid(params, mpi_config)
 
                 state = QGYBJ.init_mpi_state(grid, mpi_config)
@@ -157,7 +162,7 @@ function run_mpi_tests()
 
             @testset "Parallel FFT Plans" begin
                 mpi_config = QGYBJ.setup_mpi_environment()
-                params = QGYBJ.default_params(nx=64, ny=64, nz=32)
+                params = QGYBJ.default_params(nx=64, ny=64, nz=32, Lx=TEST_Lx, Ly=TEST_Ly, Lz=TEST_Lz)
                 grid = QGYBJ.init_mpi_grid(params, mpi_config)
 
                 plans = QGYBJ.plan_mpi_transforms(grid, mpi_config)
@@ -174,7 +179,7 @@ function run_mpi_tests()
 
             @testset "Parallel FFT Execution" begin
                 mpi_config = QGYBJ.setup_mpi_environment()
-                params = QGYBJ.default_params(nx=64, ny=64, nz=32)
+                params = QGYBJ.default_params(nx=64, ny=64, nz=32, Lx=TEST_Lx, Ly=TEST_Ly, Lz=TEST_Lz)
                 grid = QGYBJ.init_mpi_grid(params, mpi_config)
                 state = QGYBJ.init_mpi_state(grid, mpi_config)
                 plans = QGYBJ.plan_mpi_transforms(grid, mpi_config)
