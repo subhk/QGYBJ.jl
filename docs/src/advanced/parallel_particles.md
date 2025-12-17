@@ -114,33 +114,44 @@ When a particle is near a domain boundary, velocity interpolation requires data 
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Communication Pattern
+### Communication Pattern (Periodic Boundaries)
+
+For doubly-periodic domains, the halo exchange wraps around:
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│                      HALO EXCHANGE COMMUNICATION                       │
+│                  PERIODIC HALO EXCHANGE COMMUNICATION                  │
 │                                                                        │
-│   RANK 0                 RANK 1                 RANK 2                 │
+│   RANK 0                 RANK 1                 RANK 2 (last)          │
 │   ┌──────────────┐       ┌──────────────┐       ┌──────────────┐       │
 │   │ L │ Local│ R │       │ L │ Local│ R │       │ L │ Local│ R │       │
 │   │   │      │   │       │   │      │   │       │   │      │   │       │
 │   └───┴──────┴───┘       └───┴──────┴───┘       └───┴──────┴───┘       │
+│     ↑                                                      │           │
+│     └──────────────── Periodic wrap ──────────────────────┘           │
 │                                                                        │
-│   Communication:                                                       │
-│   ═══════════════                                                      │
+│   Interior Communication (same as before):                             │
+│   ═════════════════════════════════════                                │
+│   Rank 0 → Rank 1:  send_right → recv_left                             │
+│   Rank 1 → Rank 0:  send_left  → recv_right                            │
+│   Rank 1 → Rank 2:  send_right → recv_left                             │
+│   Rank 2 → Rank 1:  send_left  → recv_right                            │
 │                                                                        │
-│   Rank 0 → Rank 1:  send_right (R0's right edge) → recv_left (R1)      │
-│   Rank 1 → Rank 0:  send_left  (R1's left edge)  → recv_right (R0)     │
-│                                                                        │
-│   Rank 1 → Rank 2:  send_right (R1's right edge) → recv_left (R2)      │
-│   Rank 2 → Rank 1:  send_left  (R2's left edge)  → recv_right (R1)     │
+│   Periodic Boundary Communication:                                     │
+│   ════════════════════════════════                                     │
+│   Rank 2 → Rank 0:  send_right (R2's right edge) → recv_left (R0)      │
+│   Rank 0 → Rank 2:  send_left  (R0's left edge)  → recv_right (R2)     │
 │                                                                        │
 │   After exchange:                                                      │
-│   • R1's left halo contains R0's right edge data                       │
-│   • R1's right halo contains R2's left edge data                       │
-│   • Particles in R1 can interpolate using neighbor data                │
+│   • R0's left halo contains R2's right edge data (periodic wrap!)      │
+│   • R2's right halo contains R0's left edge data (periodic wrap!)      │
+│   • All particles can interpolate correctly near boundaries            │
 └────────────────────────────────────────────────────────────────────────┘
 ```
+
+**Key**: With `periodic_x=true` (default), rank 0's left neighbor is the last rank,
+and the last rank's right neighbor is rank 0. This ensures correct velocity
+interpolation for particles near the periodic boundaries.
 
 ### Implementation
 
