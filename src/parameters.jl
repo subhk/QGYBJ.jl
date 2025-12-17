@@ -310,6 +310,11 @@ par = default_params(Lx=500e3, Ly=500e3, Lz=4000.0, N²=4.0)
 par = default_params(Lx=500e3, Ly=500e3, Lz=4000.0, no_wave_feedback=false)
 ```
 
+!!! note "Differences from ModelConfig"
+    The defaults here differ from `ModelConfig` (used by `create_simple_config`):
+    - `default_params`: `inviscid=false`, `no_wave_feedback=true` (production runs with dissipation)
+    - `ModelConfig`: `inviscid=true`, `no_wave_feedback=false` (idealized inviscid runs)
+
 See also: [`QGParams`](@ref)
 """
 function default_params(; nx=64, ny=64, nz=64,
