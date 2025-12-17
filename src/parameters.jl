@@ -302,11 +302,11 @@ par = default_params()
 # Custom resolution with steady flow
 par = default_params(nx=128, ny=128, nz=64, fixed_flow=true)
 
-# Custom wave amplitude (30% of flow velocity)
-par = default_params(W2F=0.09)  # W2F = (0.3)² = 0.09
-
 # Custom stratification (stronger N²)
 par = default_params(N²=4.0)  # Dispersion = 4/(2×1) = 2.0
+
+# Enable wave feedback on mean flow
+par = default_params(no_wave_feedback=false)
 ```
 
 See also: [`QGParams`](@ref)
