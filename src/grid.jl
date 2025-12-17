@@ -11,9 +11,9 @@ This file defines the fundamental data structures for the QG-YBJ+ model:
 GRID STRUCTURE:
 ---------------
 The model uses a doubly-periodic horizontal domain with:
-- x ∈ [0, Lx) with nx points (typically Lx = 2π)
-- y ∈ [0, Ly) with ny points (typically Ly = 2π)
-- z ∈ [0, Lz] with nz points (typically Lz = 2π for nondimensional)
+- x ∈ [0, Lx) with nx points (Lx in meters - REQUIRED)
+- y ∈ [0, Ly) with ny points (Ly in meters - REQUIRED)
+- z ∈ [0, Lz] with nz points (Lz in meters - REQUIRED, e.g., 4000.0 for 4km depth)
 
 SPECTRAL REPRESENTATION:
 ------------------------
@@ -75,7 +75,7 @@ Numerical grid and spectral metadata for the QG-YBJ+ model.
 
 ## Grid Dimensions
 - `nx, ny, nz::Int`: Number of grid points in x, y, z directions
-- `Lx, Ly::T`: Domain size in x, y (typically 2π for nondimensional)
+- `Lx, Ly, Lz::T`: Domain size in x, y, z in meters (REQUIRED - no default)
 - `dx, dy::T`: Grid spacing in x, y (computed as Lx/nx, Ly/ny)
 
 ## Vertical Grid
@@ -157,12 +157,8 @@ Initialized `Grid` struct with all arrays allocated.
 
 # Example
 ```julia
-# Nondimensional (Lz = 2π by default)
-par = default_params(nx=64, ny=64, nz=32)
-G = init_grid(par)
-
-# Dimensional with 4 km depth
-par = default_params(nx=64, ny=64, nz=32, Lz=4000.0)
+# Domain size is REQUIRED - specify in meters
+par = default_params(nx=64, ny=64, nz=32, Lx=500e3, Ly=500e3, Lz=4000.0)  # 500km × 500km × 4km
 G = init_grid(par)
 ```
 
@@ -179,8 +175,7 @@ function init_grid(par::QGParams)
 
     #= Vertical grid: z ∈ [0, Lz]
     z[k] ranges from 0 to Lz with nz points
-    For nondimensional: Lz = 2π (default)
-    For dimensional: Lz in meters (e.g., 4000 m for 4 km depth) =#
+    Lz in meters (e.g., 4000.0 for 4 km depth) =#
     z = T.(collect(range(0, par.Lz; length=nz)))
     dz = diff(z)
 
