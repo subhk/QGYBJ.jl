@@ -9,6 +9,14 @@ Provides nicely formatted output with Unicode box characters.
 ================================================================================
 =#
 
+using Printf
+
+# Import types from parent module
+using ..QGYBJ: QGParams, Grid, State, OutputConfig, Plans, ParallelConfig,
+               DomainConfig, StratificationConfig, InitialConditionConfig, ModelConfig
+using ..QGYBJ.UnifiedParticleAdvection: ParticleConfig, ParticleTracker
+using ..QGYBJ.UnifiedParticleAdvection.EnhancedParticleConfig: ParticleConfig3D
+
 # ============================================================================
 #                       FORMATTING UTILITIES
 # ============================================================================
@@ -295,23 +303,32 @@ function Base.show(io::IO, ::MIME"text/plain", cfg::ParticleConfig{T}) where T
     print_box_top(io, "ParticleConfig{$T}", width)
 
     print_section_header(io, "Particles", width)
-    print_box_row(io, "Number of particles", format_number(cfg.n_particles), width; key_width)
+    n_total = cfg.nx_particles * cfg.ny_particles
+    print_box_row(io, "Grid (nx × ny)", "$(cfg.nx_particles) × $(cfg.ny_particles)", width; key_width)
+    print_box_row(io, "Total particles", format_number(n_total), width; key_width)
     print_box_row(io, "Depth (z-level)", format_number(cfg.z_level), width; key_width)
+
+    print_section_header(io, "Domain", width)
+    print_box_row(io, "x range", "[$(format_number(cfg.x_min)), $(format_number(cfg.x_max))]", width; key_width)
+    print_box_row(io, "y range", "[$(format_number(cfg.y_min)), $(format_number(cfg.y_max))]", width; key_width)
 
     print_section_header(io, "Integration", width)
     print_box_row(io, "Method", string(cfg.integration_method), width; key_width)
     print_box_row(io, "Save interval", format_number(cfg.save_interval), width; key_width)
-    print_box_row(io, "Max history", format_number(cfg.max_history), width; key_width)
+    print_box_row(io, "Max save points", format_number(cfg.max_save_points), width; key_width)
 
-    print_section_header(io, "Interpolation", width)
-    print_box_row(io, "Method", string(cfg.interp_method), width; key_width)
+    print_section_header(io, "Physics", width)
+    print_box_row(io, "3D advection", format_number(cfg.use_3d_advection), width; key_width)
+    print_box_row(io, "YBJ w-velocity", format_number(cfg.use_ybj_w), width; key_width)
+    print_box_row(io, "Interpolation", string(cfg.interpolation_method), width; key_width)
 
     print_box_bottom(io, width)
 end
 
 # Compact single-line show
-function Base.show(io::IO, cfg::ParticleConfig)
-    print(io, "ParticleConfig(n=$(cfg.n_particles), z=$(format_number(cfg.z_level)))")
+function Base.show(io::IO, cfg::ParticleConfig{T}) where T
+    n_total = cfg.nx_particles * cfg.ny_particles
+    print(io, "ParticleConfig{$T}(n=$n_total, z=$(format_number(cfg.z_level)))")
 end
 
 # ============================================================================
