@@ -242,6 +242,19 @@ function first_projection_step!(S::State, G::Grid, par::QGParams, plans; a, deal
     rBRk_arr = parent(rBRk); rBIk_arr = parent(rBIk)
     dqk_arr = parent(dqk)
 
+    # Precompute dispersion coefficients for each vertical level
+    # αdisp(z) = N²(z) / (2f₀) - uses N² profile when available
+    αdisp_profile = Vector{Float64}(undef, nz)
+    if N2_profile !== nothing && length(N2_profile) == nz
+        for k_level in 1:nz
+            αdisp_profile[k_level] = N2_profile[k_level] / (2.0 * par.f₀)
+        end
+    else
+        # Fallback to constant N² from params
+        αdisp_const = par.N² / (2.0 * par.f₀)
+        fill!(αdisp_profile, αdisp_const)
+    end
+
     @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
         # Get global indices for wavenumber lookup
         i_global = local_to_global(i, 1, G)
@@ -272,7 +285,8 @@ function first_projection_step!(S::State, G::Grid, par::QGParams, plans; a, deal
             In terms of real/imaginary parts:
                 ∂BR/∂t = -J(ψ,BR) - (kₕ²·N²/(2f))AI + (1/2)BI×ζ
                 ∂BI/∂t = -J(ψ,BI) + (kₕ²·N²/(2f))AR - (1/2)BR×ζ =#
-            αdisp = par.N² / (2.0 * par.f₀)  # Dispersion coefficient N²/(2f)
+            # Use depth-varying N²(z) for dispersion coefficient
+            αdisp = αdisp_profile[k]
             BRnew = ( BRok_arr[i,j,k] - par.dt*nBRk_arr[i,j,k]
                       - par.dt*αdisp*kₕ²*Complex(imag(A_arr[i,j,k]),0)
                       + par.dt*0.5*rBIk_arr[i,j,k] ) * exp(-λʷ)
@@ -515,6 +529,19 @@ function leapfrog_step!(Snp1::State, Sn::State, Snm1::State,
     rBRk_arr = parent(rBRk); rBIk_arr = parent(rBIk)
     dqk_arr = parent(dqk)
 
+    # Precompute dispersion coefficients for each vertical level
+    # αdisp(z) = N²(z) / (2f₀) - uses N² profile when available
+    αdisp_profile = Vector{Float64}(undef, nz)
+    if N2_profile !== nothing && length(N2_profile) == nz
+        for k_level in 1:nz
+            αdisp_profile[k_level] = N2_profile[k_level] / (2.0 * par.f₀)
+        end
+    else
+        # Fallback to constant N² from params
+        αdisp_const = par.N² / (2.0 * par.f₀)
+        fill!(αdisp_profile, αdisp_const)
+    end
+
     @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
         # Get global indices for wavenumber lookup
         i_global = local_to_global(i, 1, G)
@@ -540,7 +567,8 @@ function leapfrog_step!(Snp1::State, Sn::State, Snm1::State,
             #= Update B (real and imaginary parts)
             BR^(n+1) = BR^(n-1)×e^(-2λdt) - 2dt×[J(ψ,BR) + (kₕ²·N²/(2f))AI - (1/2)BI×ζ]×e^(-λdt)
             BI^(n+1) = BI^(n-1)×e^(-2λdt) - 2dt×[J(ψ,BI) - (kₕ²·N²/(2f))AR + (1/2)BR×ζ]×e^(-λdt) =#
-            αdisp = par.N² / (2.0 * par.f₀)  # Dispersion coefficient N²/(2f)
+            # Use depth-varying N²(z) for dispersion coefficient
+            αdisp = αdisp_profile[k]
             BRtemp_arr[i,j,k] = Complex(real(Bnm1_arr[i,j,k]),0)*exp(-2λʷ) -
                            2*par.dt*( nBRk_arr[i,j,k] +
                                      αdisp*kₕ²*Complex(imag(An_arr[i,j,k]),0) -

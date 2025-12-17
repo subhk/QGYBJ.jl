@@ -801,6 +801,12 @@ factor = exp(-lambda_dt)  # Multiply solution by this
 ```
 """
 function int_factor(kₓ::Real, kᵧ::Real, par; waves::Bool=false)
+    # When inviscid=true, disable ALL dissipation including hyperdiffusion
+    # Return 0 so that exp(-0) = 1 (no damping)
+    if hasfield(typeof(par), :inviscid) && par.inviscid
+        return 0.0
+    end
+
     Δt = par.dt
     # Use isotropic form: ν * (kx² + ky²)^n = ν * kh^{2n}
     # This is the standard (-∇²)^n hyperdiffusion operator.

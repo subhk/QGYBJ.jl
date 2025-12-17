@@ -351,15 +351,18 @@ function _compute_vertical_velocity_direct!(S::State, G::Grid, plans, params, N2
                 dᵤ = zeros(Float64, n_interior-1)   # upper diagonal
                 rhs = zeros(eltype(S.psi), n_interior)  # RHS vector
 
-                # Fill tridiagonal system
+                # Fill tridiagonal system for ∇²w + (N²/f²)(∂²w/∂z²) = RHS
+                # Centered second derivative: ∂²w/∂z² ≈ (w[k+1] - 2w[k] + w[k-1])/Δz²
+                # So diagonal gets factor of 2 from the -2w[k] term
                 for iz in 1:n_interior
                     k = iz + 1  # Actual z-level (2 to nz-1)
-                    d[iz] = -(N2_profile[k]/f²)/(Δz*Δz) - kₕ²
+                    coeff_z = (N2_profile[k]/f²)/(Δz*Δz)
+                    d[iz] = -2*coeff_z - kₕ²  # Factor of 2 for centered difference diagonal
                     if iz > 1
-                        dₗ[iz-1] = (N2_profile[k]/f²)/(Δz*Δz)
+                        dₗ[iz-1] = coeff_z
                     end
                     if iz < n_interior
-                        dᵤ[iz] = (N2_profile[k]/f²)/(Δz*Δz)
+                        dᵤ[iz] = coeff_z
                     end
                     rhs[iz] = rhsk_arr[i_local, j_local, k]
                 end
@@ -482,14 +485,18 @@ function _compute_vertical_velocity_2d!(S::State, G::Grid, plans, params, N2_pro
                 dᵤ = zeros(Float64, n_interior-1)
                 rhs = zeros(ComplexF64, n_interior)
 
+                # Fill tridiagonal system for ∇²w + (N²/f²)(∂²w/∂z²) = RHS
+                # Centered second derivative: ∂²w/∂z² ≈ (w[k+1] - 2w[k] + w[k-1])/Δz²
+                # So diagonal gets factor of 2 from the -2w[k] term
                 for iz in 1:n_interior
                     k = iz + 1
-                    d[iz] = -(N2_profile[k]/f²)/(Δz*Δz) - kₕ²
+                    coeff_z = (N2_profile[k]/f²)/(Δz*Δz)
+                    d[iz] = -2*coeff_z - kₕ²  # Factor of 2 for centered difference diagonal
                     if iz > 1
-                        dₗ[iz-1] = (N2_profile[k]/f²)/(Δz*Δz)
+                        dₗ[iz-1] = coeff_z
                     end
                     if iz < n_interior
-                        dᵤ[iz] = (N2_profile[k]/f²)/(Δz*Δz)
+                        dᵤ[iz] = coeff_z
                     end
                     rhs[iz] = rhsk_z_arr[i_local, j_local, k]
                 end
@@ -741,22 +748,32 @@ function _compute_ybj_vertical_velocity_2d!(S::State, G::Grid, plans, params, N2
         f = 1.0
     end
 
-    # Get N² profile
+    # Get N² value from params (default to 1.0 if not available)
+    N2_const = if params !== nothing && hasfield(typeof(params), :N²)
+        params.N²
+    else
+        1.0
+    end
+
+    # Get N² profile - use provided profile, or create constant profile from params.N²
     if N2_profile === nothing
-        N2_profile = ones(Float64, nz)
+        N2_profile = fill(N2_const, nz)
     elseif length(N2_profile) != nz
-        @warn "N2_profile length mismatch, using constant N²=1.0"
-        N2_profile = ones(Float64, nz)
+        @warn "N2_profile length mismatch, using constant N²=$(N2_const)"
+        N2_profile = fill(N2_const, nz)
     end
 
     Δz = nz > 1 ? (G.z[2] - G.z[1]) : 1.0
 
     # Step 1: Recover A from B = L⁺A (invert_B_to_A! handles 2D decomposition internally)
     # a(z) = f²/N²(z) is the elliptic coefficient
+    # NOTE: This re-inverts B→A with the given N² profile. If the timestep already
+    # computed A with a different stratification, this will overwrite S.A and S.C.
+    # Ensure N2_profile matches what was used in the timestep!
     a_vec = similar(G.z)
     f_sq = f^2
     @inbounds for k in eachindex(a_vec)
-        a_vec[k] = f_sq / N2_profile[k]  # a = f²/N² (was incorrectly 1/N²)
+        a_vec[k] = f_sq / N2_profile[k]  # a = f²/N²
     end
     # Pass workspace if available
     invert_B_to_A!(S, G, params, a_vec; workspace=workspace)

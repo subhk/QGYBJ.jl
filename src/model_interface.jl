@@ -263,67 +263,100 @@ end
     run_simulation!(sim::QGYBJSimulation; progress_callback=nothing)
 
 Run the complete simulation with output management.
+
+Uses leapfrog time stepping with Robert-Asselin filter, which requires
+three time levels (n-1, n, n+1). The simulation struct only stores two
+states, so a third is allocated internally for the integration.
 """
 function run_simulation!(sim::QGYBJSimulation{T}; progress_callback=nothing) where T
     @info "Starting QG-YBJ simulation"
     @info "Total time: $(sim.config.total_time), Time step: $(sim.params.dt), Steps: $(sim.params.nt)"
-    
+
+    # Compute required coefficients
+    a_ell = a_ell_ut(sim.params, sim.grid)
+    L_mask = dealias_mask(sim.grid)
+
     # Write initial output
     if should_output_psi(sim.output_manager, sim.current_time)
-        write_state_file(sim.output_manager, sim.state, sim.grid, sim.plans, 
+        write_state_file(sim.output_manager, sim.state, sim.grid, sim.plans,
                         sim.current_time; params=sim.params)
     end
-    
-    # Copy initial state to old state for first step
-    sim.state_old.psi .= sim.state.psi
-    sim.state_old.B .= sim.state.B
-    
-    # First step using projection method
+
+    # Leapfrog requires 3 time levels: Snm1 (n-1), Sn (n), Snp1 (n+1)
+    # sim.state will be used as the "current" state for output
+    # We allocate working states for the time integration
+
+    # Save initial state as Snm1 (time 0)
+    Snm1 = deepcopy(sim.state)
+
+    # First projection step (Forward Euler to initialize leapfrog)
+    # Advances sim.state from time 0 to time dt
     @info "Performing first projection step"
-    first_projection_step!(sim.state, sim.state_old, sim.grid, sim.params, sim.plans)
-    
+    first_projection_step!(sim.state, sim.grid, sim.params, sim.plans;
+                          a=a_ell, dealias_mask=L_mask, N2_profile=sim.N2_profile)
+
     sim.time_step = 1
     sim.current_time = sim.params.dt
-    
+
+    # Sn = state at time dt (after first projection step)
+    Sn = deepcopy(sim.state)
+    # Snp1 will hold state at time 2*dt (computed by first leapfrog step)
+    Snp1 = deepcopy(sim.state)
+
     # Output after first step if needed
     check_and_output!(sim)
-    
-    # Main time stepping loop  
+
+    # Main time stepping loop
     @info "Starting main time integration loop"
-    
+
     for step in 2:sim.params.nt
-        # Leapfrog time step
-        leapfrog_step!(sim.state, sim.state_old, sim.grid, sim.params, sim.plans)
-        
+        # Leapfrog time step: compute Snp1 from Sn and Snm1
+        leapfrog_step!(Snp1, Sn, Snm1, sim.grid, sim.params, sim.plans;
+                      a=a_ell, dealias_mask=L_mask, N2_profile=sim.N2_profile)
+
+        # Rotate states: (n-1) ← (n) ← (n+1) ← (n-1)
+        Snm1, Sn, Snp1 = Sn, Snp1, Snm1
+
+        # Update sim.state to point to current state (for output/diagnostics)
+        # Copy the current state (Sn after rotation) to sim.state
+        sim.state.q .= Sn.q
+        sim.state.psi .= Sn.psi
+        sim.state.B .= Sn.B
+        sim.state.A .= Sn.A
+        sim.state.C .= Sn.C
+        sim.state.u .= Sn.u
+        sim.state.v .= Sn.v
+        sim.state.w .= Sn.w
+
         sim.time_step = step
         sim.current_time = step * sim.params.dt
-        
+
         # Output if needed
         check_and_output!(sim)
-        
+
         # Compute diagnostics periodically
         if should_output_diagnostics(sim.output_manager, sim.current_time)
             compute_and_output_diagnostics!(sim)
         end
-        
+
         # Progress callback
         if !isnothing(progress_callback)
             progress_callback(sim)
         end
-        
+
         # Check for early termination conditions
         if check_termination_conditions(sim)
             @warn "Simulation terminated early at t=$(sim.current_time)"
             break
         end
-        
+
         # Progress reporting
         if step % max(1, sim.params.nt ÷ 20) == 0
             progress = 100 * step / sim.params.nt
             @info @sprintf("Progress: %.1f%% (t=%.3f)", progress, sim.current_time)
         end
     end
-    
+
     # Finalize energy diagnostics - write all energy files to diagnostic/ folder
     finalize!(sim.energy_diagnostics_manager)
 
@@ -1165,22 +1198,92 @@ end
     setup_model_with_config(config::ModelConfig)
 
 Set up model components from configuration (for compatibility).
+
+Maps all fields from ModelConfig to QGParams, including:
+- Domain parameters (nx, ny, nz, Lx, Ly, Lz)
+- Time stepping (dt, nt)
+- Physical parameters (f₀, N²)
+- Viscosity (νₕ, νᵥ, νz)
+- Hyperdiffusion (νₕ₁, νₕ₂, ilap1, ilap2, etc.)
+- Physics switches (inviscid, linear, ybj_plus, etc.)
+- Stratification parameters (for skewed_gaussian)
 """
 function setup_model_with_config(config::ModelConfig{T}) where T
+    # Extract stratification parameters
+    strat = config.stratification
+    strat_type = strat.type
+
+    # Get N² value based on stratification type
+    N2_value = if strat_type == :constant_N
+        strat.N0^2  # N² = N0²
+    else
+        T(1.0)  # For skewed_gaussian, N² profile varies spatially
+    end
+
+    # Compute number of time steps
+    nt = ceil(Int, config.total_time / config.dt)
+
+    # Build QGParams with all required fields from ModelConfig
     params = QGParams{T}(;
+        # Domain
         nx = config.domain.nx,
         ny = config.domain.ny,
         nz = config.domain.nz,
         Lx = config.domain.Lx,
         Ly = config.domain.Ly,
-        Lz = config.domain.Lz,  # Was missing!
+        Lz = config.domain.Lz,
+
+        # Time stepping
         dt = config.dt,
-        nt = ceil(Int, config.total_time / config.dt),
-        f₀ = config.f0  # Note: QGParams uses f₀, ModelConfig uses f0
+        nt = nt,
+
+        # Physical parameters
+        f₀ = config.f0,
+        N² = N2_value,
+        W2F = T(0.01),  # Default (deprecated parameter)
+        γ = T(1e-3),    # Robert-Asselin filter coefficient
+
+        # Legacy viscosity (use hyperdiffusion instead)
+        νₕ = config.nu_h,
+        νᵥ = config.nu_v,
+
+        # Hyperdiffusion for mean flow (use reasonable defaults)
+        νₕ₁ = T(0.01),
+        νₕ₂ = T(10.0),
+        ilap1 = 2,
+        ilap2 = 6,
+
+        # Hyperdiffusion for waves
+        νₕ₁ʷ = T(0.0),
+        νₕ₂ʷ = T(10.0),
+        ilap1w = 2,
+        ilap2w = 6,
+
+        # Vertical diffusion
+        νz = T(0.0),
+
+        # Flags
+        linear_vert_structure = 0,
+        stratification = strat_type,
+        inviscid = config.inviscid,
+        linear = config.linear,
+        no_dispersion = config.no_dispersion,
+        passive_scalar = config.passive_scalar,
+        ybj_plus = config.ybj_plus,
+        no_feedback = config.no_feedback,
+        fixed_flow = config.fixed_mean_flow,
+        no_wave_feedback = config.no_wave_feedback,
+
+        # Skewed Gaussian stratification parameters
+        N₀²_sg = strat.N02_sg,
+        N₁²_sg = strat.N12_sg,
+        σ_sg = strat.sigma_sg,
+        z₀_sg = strat.z0_sg,
+        α_sg = strat.alpha_sg,
     )
 
     grid = init_grid(params)
-    state = init_state(grid)  # Fixed: init_state takes Grid, not QGParams
+    state = init_state(grid)
     plans = plan_transforms!(grid)
 
     return params, grid, state, plans
