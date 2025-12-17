@@ -636,13 +636,11 @@ function _compute_ybj_vertical_velocity_direct!(S::State, G::Grid, plans, params
     Δz = nz > 1 ? (G.z[2] - G.z[1]) : 1.0
 
     # Step 1: Recover A from B = L⁺A using centralized YBJ+ inversion
+    # a(z) = f²/N²(z) is the elliptic coefficient
     a_vec = similar(G.z)
-    if N2_profile === nothing
-        fill!(a_vec, one(eltype(a_vec)))
-    else
-        @inbounds for k in eachindex(a_vec)
-            a_vec[k] = one(eltype(a_vec)) / N2_profile[k]
-        end
+    f_sq = f^2
+    @inbounds for k in eachindex(a_vec)
+        a_vec[k] = f_sq / N2_profile[k]  # a = f²/N² (was incorrectly 1/N²)
     end
     invert_B_to_A!(S, G, params, a_vec)
     Aₖ = S.A

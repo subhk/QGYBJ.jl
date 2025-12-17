@@ -179,9 +179,12 @@ function first_projection_step!(S::State, G::Grid, par::QGParams, plans; a, deal
         BIk_arr[i,j,k] = Complex(imag(B_arr[i,j,k]), 0)
     end
 
-    #= Step 1: Compute diagnostic fields ψ and velocities =#
+    #= Step 1: Compute diagnostic fields ψ, velocities, and A =#
     invert_q_to_psi!(S, G; a, par=par, workspace=workspace)           # q → ψ
     compute_velocities!(S, G; plans, params=par) # ψ → u, v
+
+    # Compute A from B for dispersion term (was missing - A was zero on first step!)
+    invert_B_to_A!(S, G, par, a; workspace=workspace)  # B → A, C
 
     #= Step 2: Compute nonlinear tendencies =#
 

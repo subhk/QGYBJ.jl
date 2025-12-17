@@ -802,18 +802,21 @@ factor = exp(-lambda_dt)  # Multiply solution by this
 """
 function int_factor(kₓ::Real, kᵧ::Real, par; waves::Bool=false)
     Δt = par.dt
+    # Use isotropic form: ν * (kx² + ky²)^n = ν * kh^{2n}
+    # This is the standard (-∇²)^n hyperdiffusion operator.
+    # Previous form ν*(|kx|^{2n} + |ky|^{2n}) under-damped diagonal modes.
+    kₕ² = kₓ^2 + kᵧ^2
+
     if waves
         # Wave field hyperdiffusion (often smaller or zero)
         ν₁ʷ = par.νₕ₁ʷ; n₁ʷ = par.ilap1w
         ν₂ʷ = par.νₕ₂ʷ; n₂ʷ = par.ilap2w
-        return Δt * ( ν₁ʷ*(abs(kₓ)^(2n₁ʷ) + abs(kᵧ)^(2n₁ʷ)) +
-                      ν₂ʷ*(abs(kₓ)^(2n₂ʷ) + abs(kᵧ)^(2n₂ʷ)) )
+        return Δt * ( ν₁ʷ * kₕ²^n₁ʷ + ν₂ʷ * kₕ²^n₂ʷ )
     else
         # Mean flow hyperdiffusion
         ν₁ = par.νₕ₁; n₁ = par.ilap1
         ν₂ = par.νₕ₂; n₂ = par.ilap2
-        return Δt * ( ν₁*(abs(kₓ)^(2n₁) + abs(kᵧ)^(2n₁)) +
-                      ν₂*(abs(kₓ)^(2n₂) + abs(kᵧ)^(2n₂)) )
+        return Δt * ( ν₁ * kₕ²^n₁ + ν₂ * kₕ²^n₂ )
     end
 end
 
