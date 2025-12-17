@@ -46,22 +46,30 @@ mutable struct HaloInfo{T<:AbstractFloat}
     rank::Int
     nprocs::Int
     
-    function HaloInfo{T}(grid::Grid, rank::Int, nprocs::Int, comm, halo_width::Int=2; periodic_x::Bool=true) where T
-        # Compute LOCAL grid size from global grid (1D decomposition in x)
-        # This is critical: grid.nx is GLOBAL, but each rank only owns a portion
-        nx_global = grid.nx
-        nx_local = nx_global ÷ nprocs
-        remainder = nx_global % nprocs
-
-        # Handle uneven distribution: first 'remainder' ranks get one extra point
-        if rank < remainder
-            nx_local += 1
+    function HaloInfo{T}(grid::Grid, rank::Int, nprocs::Int, comm, halo_width::Int=2;
+                         periodic_x::Bool=true, local_dims::Union{Nothing,Tuple{Int,Int,Int}}=nothing) where T
+        # Get LOCAL grid dimensions
+        # For 2D pencil decomposition, all three dimensions may be < global size
+        # If local_dims provided, use them; otherwise compute from 1D decomposition in x
+        if local_dims !== nothing
+            nx_local, ny_local, nz_local = local_dims
+        else
+            # Fallback: assume 1D decomposition in x only
+            nx_global = grid.nx
+            nx_local = nx_global ÷ nprocs
+            remainder = nx_global % nprocs
+            if rank < remainder
+                nx_local += 1
+            end
+            ny_local = grid.ny
+            nz_local = grid.nz
         end
 
         # Extended grid dimensions (local + 2*halo_width in x-direction)
+        # Note: For 2D decomposition, we only add halos in x (slab decomposition for particles)
         nx_ext = nx_local + 2*halo_width
-        ny_ext = grid.ny  # No halo in y for 1D decomposition
-        nz_ext = grid.nz  # No halo in z for 1D decomposition
+        ny_ext = ny_local  # Use LOCAL ny (may be < grid.ny in 2D decomposition)
+        nz_ext = nz_local  # Use LOCAL nz (may be < grid.nz in 2D decomposition)
 
         # Create extended arrays (sized for LOCAL domain + halos)
         u_extended = zeros(T, nx_ext, ny_ext, nz_ext)
@@ -70,7 +78,7 @@ mutable struct HaloInfo{T<:AbstractFloat}
 
         # Local domain indices in extended array (1-based)
         local_start = (halo_width + 1, 1, 1)
-        local_end = (halo_width + nx_local, grid.ny, grid.nz)
+        local_end = (halo_width + nx_local, ny_local, nz_local)
 
         # Determine neighbors (1D decomposition in x with periodic boundaries)
         if periodic_x
@@ -83,8 +91,8 @@ mutable struct HaloInfo{T<:AbstractFloat}
             right_neighbor = rank < nprocs - 1 ? rank + 1 : -1
         end
 
-        # Communication buffer sizes (halo_width * ny * nz * 3_components)
-        buffer_size = halo_width * grid.ny * grid.nz * 3
+        # Communication buffer sizes (halo_width * ny_local * nz_local * 3_components)
+        buffer_size = halo_width * ny_local * nz_local * 3
         send_left = Vector{T}(undef, buffer_size)
         send_right = Vector{T}(undef, buffer_size)
         recv_left = Vector{T}(undef, buffer_size)
