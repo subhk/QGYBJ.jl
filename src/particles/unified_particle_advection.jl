@@ -58,8 +58,8 @@ using .HaloExchange
 include("interpolation_schemes.jl")
 using .InterpolationSchemes
 
-# Include enhanced 3D particle configuration
-include("enhanced_particle_config.jl")
+# Include 3D particle configuration
+include("particle_config.jl")
 using .EnhancedParticleConfig
 
 """
