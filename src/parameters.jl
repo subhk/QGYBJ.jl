@@ -43,7 +43,7 @@ Container for all physical and numerical parameters of the QG-YBJ+ model.
 
 # Domain Parameters
 - `nx, ny, nz`: Grid resolution in x, y, z directions
-- `Lx, Ly`: Horizontal domain size (typically 2π for nondimensional)
+- `Lx, Ly, Lz`: Domain size in x, y, z (2π for nondimensional, or meters for dimensional)
 
 # Time Stepping
 - `dt`: Time step size
@@ -102,8 +102,9 @@ Base.@kwdef mutable struct QGParams{T}
     nx::Int                    # Number of grid points in x (horizontal)
     ny::Int                    # Number of grid points in y (horizontal)
     nz::Int                    # Number of grid points in z (vertical)
-    Lx::T                      # Domain size in x (typically 2π)
-    Ly::T                      # Domain size in y (typically 2π)
+    Lx::T                      # Domain size in x [m] (or 2π for nondimensional)
+    Ly::T                      # Domain size in y [m] (or 2π for nondimensional)
+    Lz::T                      # Domain size in z [m] (or 2π for nondimensional)
 
     #= ====================================================================
                             TIME STEPPING
@@ -270,7 +271,7 @@ With f₀=1, N²=1 (constant_N stratification):
 
 **Domain and Time:**
 - `nx, ny, nz`: Grid resolution (default: 64)
-- `Lx, Ly`: Domain size (default: 2π)
+- `Lx, Ly, Lz`: Domain size (default: 2π for all)
 - `dt`: Time step (default: 0.001)
 - `nt`: Number of steps (default: 10000)
 
