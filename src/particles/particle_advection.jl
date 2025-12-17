@@ -697,11 +697,15 @@ end
     interpolate_velocity_with_halos_advanced(x, y, z, tracker, halo_info)
 
 Advanced interpolation using halo data for parallel case.
+
+The extended arrays have layout: [left_halo | local_data | right_halo]
+So index 1 is the left halo, and local data starts at index (halo_width + 1).
+We need to offset x_local by halo_width * dx to account for this.
 """
-function interpolate_velocity_with_halos_advanced(x::T, y::T, z::T, 
+function interpolate_velocity_with_halos_advanced(x::T, y::T, z::T,
                                                  tracker::ParticleTracker{T},
                                                  halo_info::HaloInfo{T}) where T
-    
+
     # For high-order interpolation, we need extended halos
     if tracker.config.interpolation_method == TRICUBIC || tracker.config.interpolation_method == ADAPTIVE
         # Check if we have enough halo width for tricubic (needs at least 2)
@@ -709,31 +713,39 @@ function interpolate_velocity_with_halos_advanced(x::T, y::T, z::T,
             @warn "Insufficient halo width for tricubic interpolation, falling back to trilinear"
             return interpolate_velocity_with_halos(x, y, z, tracker, halo_info)
         end
-        
-        # Use extended arrays for high-order interpolation
+
+        # Adjust grid_info for extended arrays (includes halo regions)
+        # The extended array is larger by 2*halo_width in x
+        hw = halo_info.halo_width
+        nx_ext, ny_ext, nz_ext = size(halo_info.u_extended)
+        Lx_ext = nx_ext * tracker.dx  # Extended domain length
+
         grid_info = (dx=tracker.dx, dy=tracker.dy, dz=tracker.dz,
-                    Lx=tracker.Lx, Ly=tracker.Ly, Lz=tracker.Lz)
-        
-        boundary_conditions = (periodic_x=tracker.config.periodic_x,
+                    Lx=Lx_ext, Ly=tracker.Ly, Lz=tracker.Lz)
+
+        # For extended arrays, we don't use periodic in x (halo handles boundaries)
+        boundary_conditions = (periodic_x=false,
                               periodic_y=tracker.config.periodic_y,
                               periodic_z=false)
-        
-        # Adjust position for extended grid coordinates
+
+        # Convert global position to extended array coordinates
+        # x_local is position relative to local domain start
+        # Add halo_width * dx to shift into the extended array coordinate system
         local_domain = tracker.local_domain
-        x_local = x - local_domain.x_start
-        
+        x_local = x - local_domain.x_start + hw * tracker.dx
+
         u_interp, v_interp, w_interp = interpolate_velocity_advanced(
             x_local, y, z,
             halo_info.u_extended, halo_info.v_extended, halo_info.w_extended,
             grid_info, boundary_conditions,
             tracker.config.interpolation_method
         )
-        
+
         # For 2D advection, set w to zero
         if !tracker.config.use_3d_advection
             w_interp = 0.0
         end
-        
+
         return u_interp, v_interp, w_interp
     else
         # Use original halo interpolation for trilinear
@@ -989,16 +1001,50 @@ end
 
 """
 Find which rank should own a particle at position x.
+
+Uses the same domain decomposition logic as compute_local_domain to ensure consistency.
+Handles uneven division where first `remainder` ranks get one extra grid point.
 """
 function find_target_rank(x::T, tracker::ParticleTracker{T}) where T
     x_periodic = tracker.config.periodic_x ? mod(x, tracker.Lx) : x
-    dx_rank = tracker.Lx / tracker.nprocs
-    rank = min(tracker.nprocs - 1, floor(Int, x_periodic / dx_rank))
-    return rank
+
+    # Grid parameters
+    nx = tracker.nx
+    nprocs = tracker.nprocs
+    dx = tracker.dx
+
+    # Convert physical position to grid index (0-based)
+    grid_idx = floor(Int, x_periodic / dx)
+    grid_idx = min(grid_idx, nx - 1)  # Clamp to valid range
+
+    # Find which rank owns this grid index
+    # First `remainder` ranks own (nx_base + 1) points each
+    # Remaining ranks own nx_base points each
+    nx_base = nx ÷ nprocs
+    remainder = nx % nprocs
+
+    if remainder == 0
+        # Equal division - simple case
+        return min(nprocs - 1, grid_idx ÷ nx_base)
+    end
+
+    # Uneven division: first `remainder` ranks get (nx_base + 1) points
+    # Boundary between "large" and "small" domains
+    large_domain_end = remainder * (nx_base + 1)
+
+    if grid_idx < large_domain_end
+        # In the "large domain" region (ranks 0 to remainder-1)
+        return grid_idx ÷ (nx_base + 1)
+    else
+        # In the "small domain" region (ranks remainder to nprocs-1)
+        return remainder + (grid_idx - large_domain_end) ÷ nx_base
+    end
 end
 
 """
-Exchange particles between ranks using MPI.
+Exchange particles between ranks using MPI with non-blocking communication.
+
+Uses Isend/Irecv to avoid deadlock when all ranks try to communicate simultaneously.
 """
 function exchange_particles!(tracker::ParticleTracker{T}) where T
     if Base.find_package("MPI") === nothing
@@ -1009,33 +1055,54 @@ function exchange_particles!(tracker::ParticleTracker{T}) where T
         M = Base.require(:MPI)
         comm = tracker.comm
         nprocs = tracker.nprocs
-        
-        # Send/receive particle counts
+        rank = tracker.rank
+
+        # Send/receive particle counts using Alltoall
         send_counts = [length(tracker.send_buffers[i]) ÷ 6 for i in 1:nprocs]
         recv_counts = MPI.Alltoall(send_counts, comm)
-        
-        # Exchange particle data
+
+        # Post all non-blocking receives first
+        recv_reqs = MPI.Request[]
         for other_rank in 0:nprocs-1
-            if other_rank == tracker.rank
+            if other_rank == rank
                 continue
             end
-            
-            # Send to other_rank
-            if !isempty(tracker.send_buffers[other_rank + 1])
-                MPI.Send(tracker.send_buffers[other_rank + 1], other_rank, 0, comm)
-            end
-            
-            # Receive from other_rank
             if recv_counts[other_rank + 1] > 0
                 recv_data = Vector{T}(undef, recv_counts[other_rank + 1] * 6)
-                MPI.Recv!(recv_data, other_rank, 0, comm)
                 tracker.recv_buffers[other_rank + 1] = recv_data
+                req = MPI.Irecv!(recv_data, other_rank, other_rank, comm)  # Tag = sender rank
+                push!(recv_reqs, req)
             end
         end
-        
+
+        # Post all non-blocking sends
+        send_reqs = MPI.Request[]
+        for other_rank in 0:nprocs-1
+            if other_rank == rank
+                continue
+            end
+            if !isempty(tracker.send_buffers[other_rank + 1])
+                req = MPI.Isend(tracker.send_buffers[other_rank + 1], other_rank, rank, comm)  # Tag = my rank
+                push!(send_reqs, req)
+            end
+        end
+
+        # Wait for all receives to complete
+        if !isempty(recv_reqs)
+            MPI.Waitall(recv_reqs)
+        end
+
         # Add received particles
         add_received_particles!(tracker)
-        
+
+        # Wait for all sends to complete before clearing buffers
+        if !isempty(send_reqs)
+            MPI.Waitall(send_reqs)
+        end
+
+        # Synchronize to ensure all particle exchanges are complete
+        MPI.Barrier(comm)
+
     catch e
         @warn "Particle exchange failed: $e"
     end
