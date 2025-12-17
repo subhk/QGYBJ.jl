@@ -79,7 +79,7 @@ After this step:
 =#
 
 """
-    first_projection_step!(S, G, par, plans; a, dealias_mask=nothing, workspace=nothing)
+    first_projection_step!(S, G, par, plans; a, dealias_mask=nothing, workspace=nothing, N2_profile=nothing)
 
 Forward Euler initialization step for the leapfrog time stepper.
 
@@ -342,7 +342,7 @@ function first_projection_step!(S::State, G::Grid, par::QGParams, plans; a, deal
     end
 
     # Compute velocities from ψ
-    compute_velocities!(S, G; plans, params=par)
+    compute_velocities!(S, G; plans, params=par, N2_profile=N2_profile, workspace=workspace)
 
     return S
 end
@@ -366,7 +366,7 @@ This ensures exact treatment of the linear diffusion terms.
 =#
 
 """
-    leapfrog_step!(Snp1, Sn, Snm1, G, par, plans; a, dealias_mask=nothing, workspace=nothing)
+    leapfrog_step!(Snp1, Sn, Snm1, G, par, plans; a, dealias_mask=nothing, workspace=nothing, N2_profile=nothing)
 
 Advance the solution by one leapfrog time step with Robert-Asselin filtering.
 
@@ -412,6 +412,7 @@ q*^(n+1) = q^(n+1) - qʷ^(n+1)
 - `a`: Elliptic coefficient array
 - `dealias_mask`: Optional dealiasing mask
 - `workspace`: Optional pre-allocated workspace for 2D decomposition
+- `N2_profile`: Optional N²(z) profile for vertical velocity computation
 
 # Returns
 Modified Snp1 with solution at time n+1.
@@ -444,7 +445,7 @@ end
 ```
 """
 function leapfrog_step!(Snp1::State, Sn::State, Snm1::State,
-                        G::Grid, par::QGParams, plans; a, dealias_mask=nothing, workspace=nothing)
+                        G::Grid, par::QGParams, plans; a, dealias_mask=nothing, workspace=nothing, N2_profile=nothing)
     #= Setup - get local dimensions for PencilArray compatibility =#
     qn_arr = parent(Sn.q)
     Bn_arr = parent(Sn.B)
@@ -468,7 +469,7 @@ function leapfrog_step!(Snp1::State, Sn::State, Snm1::State,
     if !par.fixed_flow
         invert_q_to_psi!(Sn, G; a, par=par, workspace=workspace)
     end
-    compute_velocities!(Sn, G; plans, params=par)
+    compute_velocities!(Sn, G; plans, params=par, N2_profile=N2_profile, workspace=workspace)
 
     #= Step 2: Allocate and compute tendencies =#
     nqk  = similar(Sn.q)    # Advection of q
@@ -633,7 +634,7 @@ function leapfrog_step!(Snp1::State, Sn::State, Snm1::State,
     end
 
     # Compute velocities
-    compute_velocities!(Snp1, G; plans, params=par)
+    compute_velocities!(Snp1, G; plans, params=par, N2_profile=N2_profile, workspace=workspace)
 
     return Snp1
 end
