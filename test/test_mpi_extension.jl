@@ -232,7 +232,7 @@ function run_mpi_tests()
 
             @testset "Transpose Operations (Two-Step)" begin
                 mpi_config = QGYBJ.setup_mpi_environment()
-                params = QGYBJ.default_params(nx=64, ny=64, nz=32)
+                params = QGYBJ.default_params(nx=64, ny=64, nz=32, Lx=TEST_Lx, Ly=TEST_Ly, Lz=TEST_Lz)
                 grid = QGYBJ.init_mpi_grid(params, mpi_config)
                 state = QGYBJ.init_mpi_state(grid, mpi_config)
 
@@ -289,7 +289,7 @@ function run_mpi_tests()
 
             @testset "Gather/Scatter" begin
                 mpi_config = QGYBJ.setup_mpi_environment()
-                params = QGYBJ.default_params(nx=64, ny=64, nz=32)
+                params = QGYBJ.default_params(nx=64, ny=64, nz=32, Lx=TEST_Lx, Ly=TEST_Ly, Lz=TEST_Lz)
                 grid = QGYBJ.init_mpi_grid(params, mpi_config)
                 state = QGYBJ.init_mpi_state(grid, mpi_config)
 
