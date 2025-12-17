@@ -22,8 +22,6 @@ using PencilArrays
 using PencilFFTs
 using QGYBJ
 using Printf
-using Dates
-using NCDatasets
 
 # ============================================================================
 #                       SIMULATION PARAMETERS
@@ -53,83 +51,6 @@ const save_interval_IP = 1.0  # Save every 1 inertial period
 #                       MAIN FUNCTION
 # ============================================================================
 
-"""
-    save_state_netcdf(S, G, plans, time, file_count, mpi_config)
-
-Save flow (psi) and wave (LAr, LAi) variables to NetCDF file.
-Uses gather-to-root approach for parallel I/O.
-"""
-function save_state_netcdf(S, G, plans, time, file_count, mpi_config)
-    is_root = mpi_config.is_root
-
-    # Gather fields to root process
-    psi_global = QGYBJ.gather_to_root(S.psi, G, mpi_config)
-    B_global = QGYBJ.gather_to_root(S.B, G, mpi_config)
-
-    if is_root && psi_global !== nothing && B_global !== nothing
-        # Create serial FFT plans for full domain
-        temp_plans = QGYBJ.plan_transforms!(G)
-
-        # Convert spectral fields to physical space
-        psi_phys = zeros(ComplexF64, G.nx, G.ny, G.nz)
-        B_phys = zeros(ComplexF64, G.nx, G.ny, G.nz)
-
-        QGYBJ.fft_backward!(psi_phys, psi_global, temp_plans)
-        QGYBJ.fft_backward!(B_phys, B_global, temp_plans)
-
-        # Write to NetCDF
-        filename = joinpath(output_dir, @sprintf("state%04d.nc", file_count))
-
-        NCDatasets.Dataset(filename, "c") do ds
-            # Define dimensions
-            ds.dim["x"] = G.nx
-            ds.dim["y"] = G.ny
-            ds.dim["z"] = G.nz
-
-            # Coordinate variables
-            x_var = defVar(ds, "x", Float64, ("x",))
-            y_var = defVar(ds, "y", Float64, ("y",))
-            z_var = defVar(ds, "z", Float64, ("z",))
-            time_var = defVar(ds, "time", Float64, ())
-
-            x_var[:] = collect(0:G.dx:(2π - G.dx))
-            y_var[:] = collect(0:G.dy:(2π - G.dy))
-            z_var[:] = G.z
-            time_var[] = time
-
-            # Flow variable: streamfunction psi
-            psi_var = defVar(ds, "psi", Float64, ("x", "y", "z"))
-            psi_var[:,:,:] = real.(psi_phys)
-            psi_var.attrib["units"] = "m²/s"
-            psi_var.attrib["long_name"] = "streamfunction"
-
-            # Wave variables: L+A real and imaginary parts
-            LAr_var = defVar(ds, "LAr", Float64, ("x", "y", "z"))
-            LAi_var = defVar(ds, "LAi", Float64, ("x", "y", "z"))
-            LAr_var[:,:,:] = real.(B_phys)
-            LAi_var[:,:,:] = imag.(B_phys)
-            LAr_var.attrib["units"] = "m/s"
-            LAr_var.attrib["long_name"] = "wave envelope real part (L+A)"
-            LAi_var.attrib["units"] = "m/s"
-            LAi_var.attrib["long_name"] = "wave envelope imaginary part (L+A)"
-
-            # Global attributes
-            ds.attrib["title"] = "QG-YBJ Simulation: Asselin et al. (2020) Dipole"
-            ds.attrib["created_at"] = string(now())
-            ds.attrib["time_IP"] = time / T_inertial
-            ds.attrib["nx"] = G.nx
-            ds.attrib["ny"] = G.ny
-            ds.attrib["nz"] = G.nz
-            ds.attrib["f0"] = f₀
-            ds.attrib["N2"] = N²
-        end
-
-        @printf("  Saved: %s (t = %.2f IP)\n", filename, time / T_inertial)
-    end
-
-    MPI.Barrier(mpi_config.comm)
-end
-
 function main()
     MPI.Init()
     mpi_config = QGYBJ.setup_mpi_environment()
@@ -146,6 +67,13 @@ function main()
         println("Output directory: $output_dir")
     end
     MPI.Barrier(mpi_config.comm)
+
+    # Create parallel config for I/O
+    parallel_config = QGYBJ.ParallelConfig(
+        use_mpi = true,
+        comm = mpi_config.comm,
+        parallel_io = false  # Use gather-to-root approach
+    )
 
     # Parameters matching Asselin et al. (2020)
     par = QGYBJ.default_params(
@@ -223,6 +151,21 @@ function main()
     L_mask = QGYBJ.dealias_mask(G)
     QGYBJ.compute_velocities!(S, G; plans=plans, params=par, workspace=workspace)
 
+    # Create OutputManager using codebase
+    output_config = QGYBJ.OutputConfig(
+        output_dir = output_dir,
+        state_file_pattern = "state%04d.nc",
+        psi_interval = save_interval_IP * T_inertial,
+        wave_interval = save_interval_IP * T_inertial,
+        diagnostics_interval = T_inertial,
+        save_psi = true,
+        save_waves = true,
+        save_velocities = false,
+        save_vorticity = false,
+        save_diagnostics = false
+    )
+    output_manager = QGYBJ.OutputManager(output_config, par, parallel_config)
+
     if is_root
         println("\n" * "="^70)
         println("Starting time integration...")
@@ -231,17 +174,15 @@ function main()
 
     output_interval = round(Int, T_inertial / dt)
     save_interval = round(Int, save_interval_IP * T_inertial / dt)
-    file_count = 0
 
     # Initial diagnostics
     local_EB = sum(abs2.(parent(S.B)))
     global_EB = QGYBJ.mpi_reduce_sum(local_EB, mpi_config)
     if is_root; @printf("\nt = 0.0 IP: E_B = %.4e\n", global_EB / (nx*ny*nz)); end
 
-    # Save initial state
+    # Save initial state using codebase OutputManager
     if is_root; println("\nSaving initial state..."); end
-    save_state_netcdf(S, G, plans, 0.0, file_count, mpi_config)
-    file_count += 1
+    QGYBJ.write_state_file(output_manager, S, G, plans, 0.0, parallel_config; params=par)
 
     QGYBJ.first_projection_step!(S, G, par, plans; a=a_ell, dealias_mask=L_mask, workspace=workspace)
 
@@ -262,10 +203,9 @@ function main()
             if is_root; @printf("t = %.1f IP: E_B = %.4e\n", t_IP, global_EB / (nx*ny*nz)); end
         end
 
-        # Save state at specified interval
+        # Save state at specified interval using codebase OutputManager
         if step % save_interval == 0
-            save_state_netcdf(Sn, G, plans, current_time, file_count, mpi_config)
-            file_count += 1
+            QGYBJ.write_state_file(output_manager, Sn, G, plans, current_time, parallel_config; params=par)
         end
     end
 
@@ -274,7 +214,7 @@ function main()
         println("Simulation complete!")
         println("="^70)
         println("Output files saved to: $output_dir/")
-        println("  - state0000.nc to state$(lpad(file_count-1, 4, '0')).nc")
+        println("  - state0001.nc to state$(lpad(output_manager.psi_counter-1, 4, '0')).nc")
         println("  - Variables: psi (flow), LAr, LAi (waves)")
         println("="^70)
     end
