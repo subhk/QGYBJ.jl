@@ -771,7 +771,7 @@ function _compute_ybj_vertical_velocity_direct!(S::State, G::Grid, plans, params
 end
 
 # 2D decomposition version with transposes
-function _compute_ybj_vertical_velocity_2d!(S::State, G::Grid, plans, params, N2_profile, workspace)
+function _compute_ybj_vertical_velocity_2d!(S::State, G::Grid, plans, params, N2_profile, workspace, skip_inversion)
     nx, ny, nz = G.nx, G.ny, G.nz
 
     # Get parameters
@@ -800,16 +800,21 @@ function _compute_ybj_vertical_velocity_2d!(S::State, G::Grid, plans, params, N2
 
     # Step 1: Recover A from B = L⁺A (invert_B_to_A! handles 2D decomposition internally)
     # a(z) = f²/N²(z) is the elliptic coefficient
-    # NOTE: This re-inverts B→A with the given N² profile. If the timestep already
-    # computed A with a different stratification, this will overwrite S.A and S.C.
-    # Ensure N2_profile matches what was used in the timestep!
-    a_vec = similar(G.z)
-    f_sq = f^2
-    @inbounds for k in eachindex(a_vec)
-        a_vec[k] = f_sq / N2_profile[k]  # a = f²/N²
+    if skip_inversion
+        # Use existing S.A and S.C computed by the timestep with correct stratification.
+        @assert !all(iszero, parent(S.A)) "skip_inversion=true but S.A is all zeros - compute A first"
+    else
+        # Re-invert B→A with the given N² profile.
+        # WARNING: If the timestep computed A with a different stratification,
+        # this will give inconsistent results.
+        a_vec = similar(G.z)
+        f_sq = f^2
+        @inbounds for k in eachindex(a_vec)
+            a_vec[k] = f_sq / N2_profile[k]  # a = f²/N²
+        end
+        # Pass workspace if available
+        invert_B_to_A!(S, G, params, a_vec; workspace=workspace)
     end
-    # Pass workspace if available
-    invert_B_to_A!(S, G, params, a_vec; workspace=workspace)
 
     # Now A and C (A_z) are in xy-pencil form
     # For vertical derivative computation in YBJ w, we need z local
