@@ -349,12 +349,12 @@ function check_and_output!(sim::QGYBJSimulation)
 end
 
 """
-    reduce_if_mpi(val, parallel_config)
+    reduce_sum_if_mpi(val, parallel_config)
 
-Reduce a value across MPI processes if running in parallel mode.
+Reduce a value across MPI processes using SUM if running in parallel mode.
 Returns the global sum in MPI mode, or the value unchanged in serial mode.
 """
-function reduce_if_mpi(val::T, parallel_config::ParallelConfig) where T
+function reduce_sum_if_mpi(val::T, parallel_config::ParallelConfig) where T
     if !parallel_config.use_mpi || parallel_config.comm === nothing
         return val
     end
@@ -368,6 +368,45 @@ function reduce_if_mpi(val::T, parallel_config::ParallelConfig) where T
         return val
     end
 end
+
+"""
+    reduce_min_if_mpi(val, parallel_config)
+
+Reduce a value across MPI processes using MIN if running in parallel mode.
+"""
+function reduce_min_if_mpi(val::T, parallel_config::ParallelConfig) where T
+    if !parallel_config.use_mpi || parallel_config.comm === nothing
+        return val
+    end
+
+    try
+        MPI = Base.require(Main, :MPI)
+        return MPI.Allreduce(val, min, parallel_config.comm)
+    catch
+        return val
+    end
+end
+
+"""
+    reduce_max_if_mpi(val, parallel_config)
+
+Reduce a value across MPI processes using MAX if running in parallel mode.
+"""
+function reduce_max_if_mpi(val::T, parallel_config::ParallelConfig) where T
+    if !parallel_config.use_mpi || parallel_config.comm === nothing
+        return val
+    end
+
+    try
+        MPI = Base.require(Main, :MPI)
+        return MPI.Allreduce(val, max, parallel_config.comm)
+    catch
+        return val
+    end
+end
+
+# Alias for backward compatibility
+const reduce_if_mpi = reduce_sum_if_mpi
 
 """
     compute_and_output_diagnostics!(sim::QGYBJSimulation)
@@ -427,22 +466,31 @@ function compute_and_output_diagnostics!(sim::QGYBJSimulation{T}) where T
     diagnostics["potential_energy"] = mean_flow_PE
     diagnostics["wave_energy"] = wave_KE + wave_PE + wave_CE
 
-    # Domain-integrated quantities
-    diagnostics["total_enstrophy"] = compute_enstrophy(sim.state, sim.grid, sim.plans)
+    # Domain-integrated quantities (with MPI reduction)
+    enstrophy_local = compute_enstrophy(sim.state, sim.grid, sim.plans)
+    diagnostics["total_enstrophy"] = reduce_sum_if_mpi(enstrophy_local, sim.parallel_config)
 
-    # Extrema
+    # Extrema (with MPI reduction for global min/max)
     psir = similar(sim.state.psi, Float64)
     fft_backward!(psir, sim.state.psi, sim.plans)
-    diagnostics["psi_min"] = minimum(psir)
-    diagnostics["psi_max"] = maximum(psir)
-    diagnostics["psi_rms"] = sqrt(sum(abs2, psir) / length(psir))
+    diagnostics["psi_min"] = reduce_min_if_mpi(minimum(psir), sim.parallel_config)
+    diagnostics["psi_max"] = reduce_max_if_mpi(maximum(psir), sim.parallel_config)
 
-    # Wave field extrema
+    # RMS needs sum reduction, then divide by global size
+    psi_sum_sq = reduce_sum_if_mpi(sum(abs2, psir), sim.parallel_config)
+    global_size = reduce_sum_if_mpi(length(psir), sim.parallel_config)
+    diagnostics["psi_rms"] = sqrt(psi_sum_sq / global_size)
+
+    # Wave field extrema (with MPI reduction)
     Br = similar(sim.state.B, Float64)
     fft_backward!(Br, real.(sim.state.B), sim.plans)
-    diagnostics["wave_min"] = minimum(Br)
-    diagnostics["wave_max"] = maximum(Br)
-    diagnostics["wave_rms"] = sqrt(sum(abs2, Br) / length(Br))
+    diagnostics["wave_min"] = reduce_min_if_mpi(minimum(Br), sim.parallel_config)
+    diagnostics["wave_max"] = reduce_max_if_mpi(maximum(Br), sim.parallel_config)
+
+    # Wave RMS with global reduction
+    wave_sum_sq = reduce_sum_if_mpi(sum(abs2, Br), sim.parallel_config)
+    wave_global_size = reduce_sum_if_mpi(length(Br), sim.parallel_config)
+    diagnostics["wave_rms"] = sqrt(wave_sum_sq / wave_global_size)
 
     # Store in simulation object
     sim.diagnostics["step_$(sim.time_step)"] = diagnostics
