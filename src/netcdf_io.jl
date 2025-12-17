@@ -190,22 +190,22 @@ function write_serial_state_file(manager::OutputManager, S::State, G::Grid, plan
         z_var = defVar(ds, "z", Float64, ("z",))
         time_var = defVar(ds, "time", Float64, ("time",))
         
-        # Set coordinate values
-        dx = 2π / G.nx  # Assuming domain [0, 2π]
-        dy = 2π / G.ny
+        # Set coordinate values using actual domain size
+        dx = G.Lx / G.nx
+        dy = G.Ly / G.ny
 
-        x_var[:] = collect(0:dx:(2π-dx))
-        y_var[:] = collect(0:dy:(2π-dy))
+        x_var[:] = collect(range(0, G.Lx - dx, length=G.nx))
+        y_var[:] = collect(range(0, G.Ly - dy, length=G.ny))
         z_var[:] = G.z  # Use actual grid z-values
         time_var[1] = time
-        
-        # Add coordinate attributes
-        x_var.attrib["units"] = "radians"
+
+        # Add coordinate attributes (units depend on whether dimensional or not)
+        x_var.attrib["units"] = G.Lx ≈ 2π ? "radians" : "m"
         x_var.attrib["long_name"] = "x coordinate"
-        y_var.attrib["units"] = "radians"
+        y_var.attrib["units"] = G.Ly ≈ 2π ? "radians" : "m"
         y_var.attrib["long_name"] = "y coordinate"
-        z_var.attrib["units"] = "nondimensional"
-        z_var.attrib["long_name"] = "z coordinate (vertical, nondimensional [0, 2π])"
+        z_var.attrib["units"] = G.Lz ≈ 2π ? "nondimensional" : "m"
+        z_var.attrib["long_name"] = "z coordinate (vertical)"
         time_var.attrib["units"] = "model time units"
         time_var.attrib["long_name"] = "time"
 
