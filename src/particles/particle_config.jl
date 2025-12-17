@@ -30,15 +30,18 @@ end
 
 """
 Enhanced particle configuration supporting 3D distributions.
+
+Domain bounds (x_max, y_max, z_max) are REQUIRED - no defaults.
+Use the Grid to get domain size: `x_max = G.Lx, y_max = G.Ly, z_max = G.Lz`
 """
 Base.@kwdef struct ParticleConfig3D{T<:AbstractFloat}
-    # Spatial domain for particle initialization
+    # Spatial domain for particle initialization (x_max, y_max, z_max are REQUIRED)
     x_min::T = 0.0
-    x_max::T = 2π
-    y_min::T = 0.0  
-    y_max::T = 2π
-    z_min::T = 0.0      # Minimum z-level
-    z_max::T = π        # Maximum z-level
+    x_max::T           # REQUIRED - use G.Lx
+    y_min::T = 0.0
+    y_max::T           # REQUIRED - use G.Ly
+    z_min::T = 0.0
+    z_max::T           # REQUIRED - use G.Lz
     
     # Particle distribution specification
     distribution_type::ParticleDistribution = UNIFORM_GRID

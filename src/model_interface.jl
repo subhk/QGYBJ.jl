@@ -803,13 +803,22 @@ function check_termination_conditions(sim::QGYBJSimulation{T}) where T
 end
 
 """
-    create_simple_config(; kwargs...)
+    create_simple_config(; Lx, Ly, Lz, kwargs...)
 
 Create a simple configuration for quick testing.
+
+# Arguments
+- `Lx, Ly, Lz`: Domain size in meters (REQUIRED - no defaults)
+- `kwargs...`: Additional parameters passed to sub-configs
+
+# Example
+```julia
+config = create_simple_config(Lx=500e3, Ly=500e3, Lz=4000.0)  # 500km × 500km × 4km
+```
 """
-function create_simple_config(; kwargs...)
+function create_simple_config(; Lx::Real, Ly::Real, Lz::Real, kwargs...)
     # Default simple configuration
-    domain = create_domain_config(nx=64, ny=64, nz=32, Lx=4π, Ly=4π, Lz=2π)
+    domain = create_domain_config(nx=64, ny=64, nz=32, Lx=Lx, Ly=Ly, Lz=Lz)
     stratification = create_stratification_config(:constant_N, N0=1.0)
     initial_conditions = create_initial_condition_config(
         psi_type=:random,
