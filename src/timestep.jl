@@ -184,8 +184,29 @@ function first_projection_step!(S::State, G::Grid, par::QGParams, plans; a, deal
     invert_q_to_psi!(S, G; a, par=par, workspace=workspace)           # q → ψ
     compute_velocities!(S, G; plans, params=par, N2_profile=N2_profile, workspace=workspace) # ψ → u, v
 
-    # Compute A from B for dispersion term (was missing - A was zero on first step!)
-    invert_B_to_A!(S, G, par, a; workspace=workspace)  # B → A, C
+    # Compute A from B for dispersion term
+    # Must use the same approach as the main integrator to avoid startup transients
+    if par.ybj_plus
+        # YBJ+: Solve elliptic problem B → A, C
+        invert_B_to_A!(S, G, par, a; workspace=workspace)
+    else
+        # Normal YBJ: Use sumB!/compute_sigma/compute_A! path
+        # First compute tendencies needed for sigma (will be recomputed below but needed here)
+        BRk_init = similar(S.B); BIk_init = similar(S.B)
+        BRk_init_arr = parent(BRk_init); BIk_init_arr = parent(BIk_init)
+        @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
+            BRk_init_arr[i,j,k] = Complex(real(B_arr[i,j,k]), 0)
+            BIk_init_arr[i,j,k] = Complex(imag(B_arr[i,j,k]), 0)
+        end
+        # For initial step, use zero tendencies for sigma computation
+        nBRk_zero = similar(S.B); fill!(nBRk_zero, 0)
+        nBIk_zero = similar(S.B); fill!(nBIk_zero, 0)
+        rBRk_zero = similar(S.B); fill!(rBRk_zero, 0)
+        rBIk_zero = similar(S.B); fill!(rBIk_zero, 0)
+        sumB!(S.B, G; Lmask=L)
+        sigma_init = compute_sigma(par, G, nBRk_zero, nBIk_zero, rBRk_zero, rBIk_zero; Lmask=L)
+        compute_A!(S.A, S.C, BRk_init, BIk_init, sigma_init, par, G; Lmask=L)
+    end
 
     #= Step 2: Compute nonlinear tendencies =#
 
