@@ -149,18 +149,28 @@ Initialize model with parallel support from configuration.
 """
 function parallel_initialization_from_config(config, pconfig)
     @info "Setting up parallel QG-YBJ simulation"
-    
+
     # Create parameters (same as serial)
     T = Float64
+
+    # For constant_N stratification, use N0² from config; otherwise use default
+    N²_value = if config.stratification.type == :constant_N
+        T(config.stratification.N0^2)  # N² = N0²
+    else
+        T(1.0)  # Default for non-constant stratification (profile-based)
+    end
+
     params = QGParams{T}(;
         nx = config.domain.nx,
         ny = config.domain.ny,
         nz = config.domain.nz,
         Lx = config.domain.Lx,
         Ly = config.domain.Ly,
+        Lz = config.domain.Lz,  # Domain depth (REQUIRED)
         dt = config.dt,
         nt = ceil(Int, config.total_time / config.dt),
-        f₀ = config.f0,
+        f₀ = config.f0,  # Note: QGParams uses f₀, ModelConfig uses f0
+        N² = N²_value,   # From config.stratification.N0 for constant_N
         νₕ = config.nu_h,
         νᵥ = config.nu_v,
         linear_vert_structure = 0,
