@@ -81,12 +81,12 @@ Advanced timing control:
 - Enables study of transient vs established flow patterns
 """
 Base.@kwdef struct ParticleConfig{T<:AbstractFloat}
-    # Spatial domain for particle initialization
+    # Spatial domain for particle initialization (x_max, y_max, z_level are REQUIRED)
     x_min::T = 0.0
-    x_max::T = 2π
-    y_min::T = 0.0  
-    y_max::T = 2π
-    z_level::T = π/2  # Constant z-level for initialization
+    x_max::T           # REQUIRED - use G.Lx
+    y_min::T = 0.0
+    y_max::T           # REQUIRED - use G.Ly
+    z_level::T         # REQUIRED - depth for particle initialization
     
     # Number of particles
     nx_particles::Int = 10

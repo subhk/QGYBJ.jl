@@ -116,28 +116,26 @@ Base.@kwdef struct ParticleConfig3D{T<:AbstractFloat}
 end
 
 """
-    particles_in_grid_3d(; x_min, x_max, y_min, y_max, z_min, z_max, nx, ny, nz, kwargs...)
+    particles_in_grid_3d(; x_max, y_max, z_max, nx, ny, nz, x_min=0, y_min=0, z_min=0, kwargs...)
 
 Create particles uniformly distributed in a 3D rectangular grid.
 
 # Arguments
-- `x_min, x_max`: x-domain bounds (default: 0 to 2π)
-- `y_min, y_max`: y-domain bounds (default: 0 to 2π)
-- `z_min, z_max`: z-domain bounds (default: 0 to π)
+- `x_max, y_max, z_max`: Domain bounds (REQUIRED - use G.Lx, G.Ly, G.Lz)
+- `x_min, y_min, z_min`: Minimum bounds (default: 0.0)
 - `nx, ny, nz`: Number of particles in each direction
 
 # Example
 ```julia
 # 1000 particles in a 10×10×10 3D grid
-config = particles_in_grid_3d(; nx=10, ny=10, nz=10)
+config = particles_in_grid_3d(x_max=G.Lx, y_max=G.Ly, z_max=G.Lz, nx=10, ny=10, nz=10)
 
-# Custom domain
-config = particles_in_grid_3d(; x_min=0, x_max=π, z_min=0.5, z_max=2.5, nx=8, ny=8, nz=5)
+# Custom subdomain
+config = particles_in_grid_3d(x_max=250e3, y_max=250e3, z_max=2000.0, nx=8, ny=8, nz=5)
 ```
 """
-function particles_in_grid_3d(; x_min::Real=0.0, x_max::Real=2π,
-                               y_min::Real=0.0, y_max::Real=2π,
-                               z_min::Real=0.0, z_max::Real=π,
+function particles_in_grid_3d(; x_max::Real, y_max::Real, z_max::Real,  # REQUIRED
+                               x_min::Real=0.0, y_min::Real=0.0, z_min::Real=0.0,
                                nx::Int=10, ny::Int=10, nz::Int=5,
                                kwargs...)
     T = Float64
@@ -151,28 +149,28 @@ function particles_in_grid_3d(; x_min::Real=0.0, x_max::Real=2π,
 end
 
 """
-    particles_in_layers(z_levels; x_min, x_max, y_min, y_max, nx, ny, kwargs...)
+    particles_in_layers(z_levels; x_max, y_max, nx, ny, x_min=0, y_min=0, kwargs...)
 
 Create particles distributed in 2D grids at multiple z-levels.
 
 # Arguments
 - `z_levels`: Vector of z-levels where particles are placed
-- `x_min, x_max`: x-domain bounds (default: 0 to 2π)
-- `y_min, y_max`: y-domain bounds (default: 0 to 2π)
+- `x_max, y_max`: Domain bounds (REQUIRED - use G.Lx, G.Ly)
+- `x_min, y_min`: Minimum bounds (default: 0.0)
 - `nx, ny`: Number of particles per level in x and y (default: 10 each)
 
 # Example
 ```julia
-# 3 layers at z = π/4, π/2, 3π/4 with 10×10 particles each
-config = particles_in_layers([π/4, π/2, 3π/4]; nx=10, ny=10)
+# 3 layers at depths 1000m, 2000m, 3000m with 10×10 particles each
+config = particles_in_layers([1000.0, 2000.0, 3000.0]; x_max=G.Lx, y_max=G.Ly, nx=10, ny=10)
 
-# Custom domain with 5 particles per side at each layer
-config = particles_in_layers([0.5, 1.0, 1.5, 2.0]; x_min=0, x_max=π, nx=5, ny=5)
+# Custom subdomain with 5 particles per side at each layer
+config = particles_in_layers([500.0, 1000.0, 1500.0]; x_max=250e3, y_max=250e3, nx=5, ny=5)
 ```
 """
 function particles_in_layers(z_levels::Vector{<:Real};
-                            x_min::Real=0.0, x_max::Real=2π,
-                            y_min::Real=0.0, y_max::Real=2π,
+                            x_max::Real, y_max::Real,  # REQUIRED
+                            x_min::Real=0.0, y_min::Real=0.0,
                             nx::Int=10, ny::Int=10,
                             particles_per_level::Vector{Int}=Int[], kwargs...)
     T = Float64
@@ -196,30 +194,28 @@ function particles_in_layers(z_levels::Vector{<:Real};
 end
 
 """
-    particles_random_3d(n; x_min, x_max, y_min, y_max, z_min, z_max, seed, kwargs...)
+    particles_random_3d(n; x_max, y_max, z_max, x_min=0, y_min=0, z_min=0, seed=1234, kwargs...)
 
 Create randomly distributed particles in a 3D volume.
 
 # Arguments
 - `n`: Number of particles
-- `x_min, x_max`: x-domain bounds (default: 0 to 2π)
-- `y_min, y_max`: y-domain bounds (default: 0 to 2π)
-- `z_min, z_max`: z-domain bounds (default: 0 to π)
+- `x_max, y_max, z_max`: Domain bounds (REQUIRED - use G.Lx, G.Ly, G.Lz)
+- `x_min, y_min, z_min`: Minimum bounds (default: 0.0)
 - `seed`: Random seed for reproducibility (default: 1234)
 
 # Example
 ```julia
-# 500 random particles in the default domain
-config = particles_random_3d(500)
+# 500 random particles in the full domain
+config = particles_random_3d(500; x_max=G.Lx, y_max=G.Ly, z_max=G.Lz)
 
-# 1000 random particles in a custom domain
-config = particles_random_3d(1000; x_min=0, x_max=π, z_min=0.5, z_max=2.5)
+# 1000 random particles in a subdomain
+config = particles_random_3d(1000; x_max=250e3, y_max=250e3, z_max=2000.0)
 ```
 """
 function particles_random_3d(n::Int;
-                            x_min::Real=0.0, x_max::Real=2π,
-                            y_min::Real=0.0, y_max::Real=2π,
-                            z_min::Real=0.0, z_max::Real=π,
+                            x_max::Real, y_max::Real, z_max::Real,  # REQUIRED
+                            x_min::Real=0.0, y_min::Real=0.0, z_min::Real=0.0,
                             seed::Int=1234, kwargs...)
     T = Float64
 
