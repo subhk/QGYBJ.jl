@@ -275,18 +275,18 @@ w = 0 at z = 0 and z = Lz (rigid lid and bottom).
 - `params`: Model parameters (f₀)
 - `N2_profile::Vector`: Optional N²(z) profile (default: constant N² = 1)
 - `workspace`: Optional pre-allocated workspace for 2D decomposition
-- `dealias_mask`: Optional 2D dealiasing mask for omega equation RHS (quadratic term)
+- `dealias_mask`: 2D dealiasing mask for omega equation RHS. If `nothing` (default),
+  a standard 2/3-rule mask is computed automatically to avoid aliasing in the
+  quadratic Jacobian term.
 
 # Fortran Correspondence
 Matches omega equation solver in the Fortran implementation.
 """
 function compute_vertical_velocity!(S::State, G::Grid, plans, params; N2_profile=nothing, workspace=nothing, dealias_mask=nothing)
-    # Warn about potential aliasing in omega equation RHS
-    # The omega equation involves a quadratic Jacobian J(ψ, ∇²ψ) which can alias without proper dealiasing
+    # Compute default dealiasing mask if not provided
+    # The omega equation involves a quadratic Jacobian J(ψ, ∇²ψ) that needs dealiasing
     if dealias_mask === nothing
-        @warn "compute_vertical_velocity!: No dealias_mask provided. The omega equation RHS " *
-              "contains a quadratic Jacobian that may include aliased energy. " *
-              "For accurate results, pass dealias_mask=QGYBJ.dealias_mask(grid)." maxlog=1
+        dealias_mask = PARENT.dealias_mask(G)
     end
 
     # Check if we need 2D decomposition with transposes

@@ -263,8 +263,18 @@ function _invert_q_to_psi_direct!(S::State, G::Grid, a::AbstractVector, par)
         # The operator ∂/∂z(a ∂/∂z) with Neumann BCs is singular (constant null space).
         # We set ψ=0 because: (1) mean ψ doesn't affect velocities in periodic domains,
         # (2) the ODE solution is only determined up to an arbitrary constant.
-        # See docstring for details on this design choice.
+        # CAUTION: This discards any horizontally uniform PV without enforcing the
+        # compatibility condition ∫q dz = 0. If the mean mode has significant magnitude,
+        # total PV may be misrepresented in diagnostics.
         if kₕ² == 0
+            # Check if mean mode has significant energy (warn once per run)
+            q_mean_mag = maximum(abs, @view q_arr[i_local, j_local, :])
+            if q_mean_mag > 1e-10  # Threshold for "significant"
+                @warn "invert_q_to_psi!: Non-zero horizontal mean in q (max |q(k=0)|=$(q_mean_mag)). " *
+                      "This barotropic component is discarded (ψ=0 for kₕ²=0) and will not " *
+                      "contribute to the flow field. This is physically correct for computing " *
+                      "velocities but may affect PV conservation diagnostics." maxlog=1
+            end
             @inbounds for k in 1:nz
                 ψ_arr[i_local, j_local, k] = 0
             end
@@ -366,8 +376,18 @@ function _invert_q_to_psi_2d!(S::State, G::Grid, a::AbstractVector, par, workspa
         kᵧ = G.ky[j_global]
         kₕ² = kₓ^2 + kᵧ^2
 
-        # Special case: kₕ² = 0 (horizontal mean mode) - see docstring for rationale
+        # Special case: kₕ² = 0 (horizontal mean mode)
+        # CAUTION: This discards any horizontally uniform PV without enforcing the
+        # compatibility condition ∫q dz = 0.
         if kₕ² == 0
+            # Check if mean mode has significant energy (warn once per run)
+            q_mean_mag = maximum(abs, @view q_z_arr[i_local, j_local, :])
+            if q_mean_mag > 1e-10  # Threshold for "significant"
+                @warn "invert_q_to_psi!: Non-zero horizontal mean in q (max |q(k=0)|=$(q_mean_mag)). " *
+                      "This barotropic component is discarded (ψ=0 for kₕ²=0) and will not " *
+                      "contribute to the flow field. This is physically correct for computing " *
+                      "velocities but may affect PV conservation diagnostics." maxlog=1
+            end
             @inbounds for k in 1:nz
                 ψ_z_arr[i_local, j_local, k] = 0
             end
