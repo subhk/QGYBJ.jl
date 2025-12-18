@@ -62,11 +62,11 @@ state = init_state(grid)
 All arrays are pre-allocated to avoid GC:
 
 ```julia
-# Work arrays created once
-work = create_work_arrays(grid)
+# All arrays are pre-allocated in setup_model()
+G, S, plans, a_ell = setup_model(params)
 
 # Reused every time step
-timestep!(state, grid, params, work, plans, a_ell, dt)
+leapfrog_step!(S, G, params, plans, a_ell)
 ```
 
 ### Memory Usage Estimate
