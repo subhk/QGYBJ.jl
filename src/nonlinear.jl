@@ -74,7 +74,7 @@ The Jacobian conserves both φ and χ integrals (energy and enstrophy).
 =#
 
 """
-    jacobian_spectral!(dstk, phik, chik, G, plans)
+    jacobian_spectral!(dstk, phik, chik, G, plans; Lmask=nothing)
 
 Compute the Jacobian J(φ, χ) = ∂φ/∂x ∂χ/∂y - ∂φ/∂y ∂χ/∂x using pseudo-spectral method.
 
