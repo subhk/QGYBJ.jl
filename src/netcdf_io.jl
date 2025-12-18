@@ -272,7 +272,13 @@ function write_serial_state_file(manager::OutputManager, S::State, G::Grid, plan
     @info "Wrote state file: $filename (t=$time)"
     manager.psi_counter += 1
     manager.last_psi_output = time
-    
+
+    # Also update wave counters when waves are saved (fixes runaway output bug)
+    if manager.save_waves
+        manager.wave_counter += 1
+        manager.last_wave_output = time
+    end
+
     return filepath
 end
 
@@ -312,7 +318,13 @@ function write_parallel_state_file(manager::OutputManager, S::State, G::Grid, pl
     
     manager.psi_counter += 1
     manager.last_psi_output = time
-    
+
+    # Also update wave counters when waves are saved (fixes runaway output bug)
+    if manager.save_waves
+        manager.wave_counter += 1
+        manager.last_wave_output = time
+    end
+
     if parallel_config.use_mpi
         rank = MPI.Comm_rank(parallel_config.comm)
         if rank == 0
@@ -321,7 +333,7 @@ function write_parallel_state_file(manager::OutputManager, S::State, G::Grid, pl
     else
         @info "Wrote state file: $filename (t=$time)"
     end
-    
+
     return filepath
 end
 
