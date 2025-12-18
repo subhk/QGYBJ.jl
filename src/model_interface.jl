@@ -273,7 +273,16 @@ function run_simulation!(sim::QGYBJSimulation{T}; progress_callback=nothing) whe
     @info "Total time: $(sim.config.total_time), Time step: $(sim.params.dt), Steps: $(sim.params.nt)"
 
     # Compute required coefficients
-    a_ell = a_ell_ut(sim.params, sim.grid)
+    # Use custom N2_profile for elliptic operators if provided, otherwise use params-derived profile
+    # This ensures consistency between the stratification used in elliptic inversions (q→ψ, B→A)
+    # and vertical velocity calculations. Previously, custom N2_profiles were only used for
+    # vertical velocity, causing inconsistent physics in non-constant stratification runs.
+    if sim.N2_profile !== nothing && !isempty(sim.N2_profile)
+        a_ell = a_ell_from_N2(sim.N2_profile, sim.params)
+        @info "Using custom N² profile for elliptic operators ($(length(sim.N2_profile)) levels)"
+    else
+        a_ell = a_ell_ut(sim.params, sim.grid)
+    end
     L_mask = dealias_mask(sim.grid)
 
     # Write initial output
