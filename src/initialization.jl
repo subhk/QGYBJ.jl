@@ -53,12 +53,18 @@ function initialize_from_config(config, G::Grid, S::State, plans)
 end
 
 """
-    init_analytical_psi!(psik, G::Grid, amplitude::Real)
+    init_analytical_psi!(psik, G::Grid, amplitude::Real, plans)
 
 Initialize stream function with analytical expression.
 Based on the generate_fields_stag routine from Fortran code.
+
+# Arguments
+- `psik`: Spectral field to populate (output)
+- `G::Grid`: Grid structure
+- `amplitude::Real`: Amplitude of the initial field
+- `plans`: FFT plans for forward transform
 """
-function init_analytical_psi!(psik, G::Grid, amplitude::Real)
+function init_analytical_psi!(psik, G::Grid, amplitude::Real, plans)
     @info "Initializing analytical stream function (amplitude=$amplitude)"
     
     # Create wavenumber arrays
@@ -151,11 +157,17 @@ function init_random_psi!(psik, G::Grid, amplitude::Real; slope::Real=-3.0)
 end
 
 """
-    init_analytical_waves!(Bk, G::Grid, amplitude::Real)
+    init_analytical_waves!(Bk, G::Grid, amplitude::Real, plans)
 
 Initialize wave field (L+A) with analytical expression.
+
+# Arguments
+- `Bk`: Spectral field to populate (output)
+- `G::Grid`: Grid structure
+- `amplitude::Real`: Amplitude of the initial field
+- `plans`: FFT plans for forward transform
 """
-function init_analytical_waves!(Bk, G::Grid, amplitude::Real)
+function init_analytical_waves!(Bk, G::Grid, amplitude::Real, plans)
     @info "Initializing analytical wave field (amplitude=$amplitude)"
 
     # Initialize in real space
