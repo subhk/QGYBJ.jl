@@ -137,18 +137,27 @@ end
     evaluate_N2(profile::SkewedGaussian, z::Real)
 
 Evaluate N² for skewed Gaussian profile.
+
+Uses the formula matching physics.jl:a_ell_ut():
+    N²(z) = N₁² exp(-(z-z₀)²/σ²) [1 + erf(α(z-z₀)/(σ√2))] + N₀²
+
+This creates a realistic pycnocline with:
+- Enhanced stratification near z₀
+- Asymmetric shape controlled by α (via error function)
+- Background N₀² in deep ocean
 """
 function evaluate_N2(profile::SkewedGaussian{T}, z::Real) where T
-    # Normalized coordinate
-    ζ = (z - profile.z0) / profile.sigma
-    
-    # Skewed Gaussian function
-    gaussian = exp(-ζ^2 / 2)
-    skewness = 1 + profile.alpha * ζ
-    
-    N2 = profile.N02 + profile.N12 * gaussian * skewness
-    
-    return max(N2, T(0.01) * profile.N02)  # Ensure N² remains positive
+    # Use the same formula as physics.jl:a_ell_ut() for consistency
+    # N²(z) = N₁² exp(-(z-z₀)²/σ²) [1 + erf(α(z-z₀)/(σ√2))] + N₀²
+    z0 = profile.z0
+    σ = profile.sigma
+    α = profile.alpha
+    N02 = profile.N02
+    N12 = profile.N12
+
+    N2 = N12 * exp(-((z - z0)^2) / (σ^2)) * (1 + erf(α * (z - z0) / (σ * sqrt(2.0)))) + N02
+
+    return max(N2, T(0.01) * N02)  # Ensure N² remains positive
 end
 
 """
