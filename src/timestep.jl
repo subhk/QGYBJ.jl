@@ -264,7 +264,7 @@ function first_projection_step!(S::State, G::Grid, par::QGParams, plans; a, deal
         rBRk_zero = similar(S.B); fill!(rBRk_zero, 0)
         rBIk_zero = similar(S.B); fill!(rBIk_zero, 0)
         sumB!(S.B, G; Lmask=L)
-        sigma_init = compute_sigma(par, G, nBRk_zero, nBIk_zero, rBRk_zero, rBIk_zero; Lmask=L)
+        sigma_init = compute_sigma(par, G, nBRk_zero, nBIk_zero, rBRk_zero, rBIk_zero; Lmask=L, N2_profile=N2_profile)
         compute_A!(S.A, S.C, BRk_init, BIk_init, sigma_init, par, G; Lmask=L)
     end
 
@@ -434,7 +434,7 @@ function first_projection_step!(S::State, G::Grid, par::QGParams, plans; a, deal
             BIk2_arr[i,j,k] = Complex(imag(B_arr[i,j,k]), 0)
         end
         sumB!(S.B, G; Lmask=L)  # Remove vertical mean
-        sigma = compute_sigma(par, G, nBRk, nBIk, rBRk, rBIk; Lmask=L)
+        sigma = compute_sigma(par, G, nBRk, nBIk, rBRk, rBIk; Lmask=L, N2_profile=N2_profile)
         compute_A!(S.A, S.C, BRk2, BIk2, sigma, par, G; Lmask=L)
     end
 
@@ -750,7 +750,7 @@ function leapfrog_step!(Snp1::State, Sn::State, Snm1::State,
             BIk3_arr[i,j,k] = Complex(imag(Bnp1_arr[i,j,k]), 0)
         end
         sumB!(Snp1.B, G; Lmask=L)
-        sigma2 = compute_sigma(par, G, nBRk, nBIk, rBRk, rBIk; Lmask=L)
+        sigma2 = compute_sigma(par, G, nBRk, nBIk, rBRk, rBIk; Lmask=L, N2_profile=N2_profile)
         compute_A!(Snp1.A, Snp1.C, BRk3, BIk3, sigma2, par, G; Lmask=L)
     end
 

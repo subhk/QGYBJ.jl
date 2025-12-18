@@ -252,7 +252,7 @@ function compute_sigma(par::QGParams, G::Grid,
 end
 
 # Direct computation when z is fully local
-function _compute_sigma_direct(par::QGParams, G::Grid, nBRk, nBIk, rBRk, rBIk, Lmask)
+function _compute_sigma_direct(par::QGParams, G::Grid, nBRk, nBIk, rBRk, rBIk, Lmask, N2_profile)
     nx, ny, nz = G.nx, G.ny, G.nz
     L = isnothing(Lmask) ? trues(nx,ny) : Lmask
 
@@ -285,8 +285,8 @@ function _compute_sigma_direct(par::QGParams, G::Grid, nBRk, nBIk, rBRk, rBIk, L
     end
 
     # Scale by f/N² (inverse of dispersion coefficient factor)
-    # Use vertical mean of N²(z) for variable stratification
-    N² = N2_ut(par, G)
+    # Use provided N2_profile if available, otherwise compute from params
+    N² = (N2_profile !== nothing && length(N2_profile) == nz) ? N2_profile : N2_ut(par, G)
     N²_mean = sum(N²) / nz
     σ .*= (par.f₀ / N²_mean)
 
@@ -294,7 +294,7 @@ function _compute_sigma_direct(par::QGParams, G::Grid, nBRk, nBIk, rBRk, rBIk, L
 end
 
 # 2D decomposition version with transposes
-function _compute_sigma_2d(par::QGParams, G::Grid, nBRk, nBIk, rBRk, rBIk, Lmask, workspace)
+function _compute_sigma_2d(par::QGParams, G::Grid, nBRk, nBIk, rBRk, rBIk, Lmask, workspace, N2_profile)
     nx, ny, nz = G.nx, G.ny, G.nz
     L = isnothing(Lmask) ? trues(nx,ny) : Lmask
 
@@ -337,8 +337,8 @@ function _compute_sigma_2d(par::QGParams, G::Grid, nBRk, nBIk, rBRk, rBIk, Lmask
     end
 
     # Scale by f/N² (inverse of dispersion coefficient factor)
-    # Use vertical mean of N²(z) for variable stratification
-    N² = N2_ut(par, G)
+    # Use provided N2_profile if available, otherwise compute from params
+    N² = (N2_profile !== nothing && length(N2_profile) == nz) ? N2_profile : N2_ut(par, G)
     N²_mean = sum(N²) / nz
     σ .*= (par.f₀ / N²_mean)
 
