@@ -810,6 +810,13 @@ function _invert_B_to_A_2d!(S::State, G::Grid, par, a::AbstractVector, workspace
             continue
         end
 
+        # Special case: nz == 1 (single-layer / 2D mode)
+        if nz == 1
+            @inbounds A_z_arr[i_local, j_local, 1] = -4 * B_z_arr[i_local, j_local, 1] / kh2
+            @inbounds C_z_arr[i_local, j_local, 1] = 0
+            continue
+        end
+
         fill!(dl, 0); fill!(d, 0); fill!(du, 0)
 
         d[1]  = -( (r_ut[1]*a[1]) / r_st[1] + (kh2*Δ2)/4 )
