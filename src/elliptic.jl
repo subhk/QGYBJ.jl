@@ -204,6 +204,14 @@ function _invert_q_to_psi_direct!(S::State, G::Grid, a::AbstractVector, par)
             continue
         end
 
+        # Special case: nz == 1 (single-layer / 2D mode)
+        # With only one vertical level and Neumann BCs, vertical derivative terms vanish.
+        # The equation reduces to: -kₕ² ψ = q  →  ψ = -q/kₕ²
+        if nz == 1
+            @inbounds ψ_arr[i_local, j_local, 1] = -q_arr[i_local, j_local, 1] / kₕ²
+            continue
+        end
+
         # Build tridiagonal matrix for this (kₓ, kᵧ)
         fill!(dₗ, 0); fill!(d, 0); fill!(dᵤ, 0)
 
