@@ -40,15 +40,6 @@ DEALIASING:
 -----------
 The 2/3 rule removes wavenumbers with |k| > 2/3 kmax to prevent aliasing
 from quadratic nonlinearities. The Lmask array encodes which modes to keep.
-
-FORTRAN CORRESPONDENCE:
-----------------------
-- convol_waqg!      ↔ convol_waqg (derivatives.f90)
-- refraction_waqg!  ↔ refraction_waqg (derivatives.f90)
-- compute_qw!       ↔ compute_qw (derivatives.f90)
-- dissipation_q_nv! ↔ dissipation_q_nv (derivatives.f90)
-- int_factor        ↔ integrating factor computation in main_waqg.f90
-
 ================================================================================
 =#
 
