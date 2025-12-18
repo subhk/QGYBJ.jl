@@ -249,7 +249,7 @@ mutable struct ParticleTracker{T<:AbstractFloat}
         # Use provided parallel config or detect environment
         if parallel_config !== nothing && parallel_config.use_mpi
             try
-                M = Base.require(:MPI)
+                M = Base.require(Base.PkgId(Base.UUID("da04e1cc-30fd-572f-bb4f-1f8673147195"), "MPI"))
                 comm = parallel_config.comm
                 rank = M.Comm_rank(comm)
                 nprocs = M.Comm_size(comm)
@@ -1077,17 +1077,17 @@ function exchange_particles!(tracker::ParticleTracker{T}) where T
         return
     end
     try
-        M = Base.require(:MPI)
+        M = Base.require(Base.PkgId(Base.UUID("da04e1cc-30fd-572f-bb4f-1f8673147195"), "MPI"))
         comm = tracker.comm
         nprocs = tracker.nprocs
         rank = tracker.rank
 
         # Send/receive particle counts using Alltoall
         send_counts = [length(tracker.send_buffers[i]) ÷ 6 for i in 1:nprocs]
-        recv_counts = MPI.Alltoall(send_counts, comm)
+        recv_counts = M.Alltoall(send_counts, comm)
 
         # Post all non-blocking receives first
-        recv_reqs = MPI.Request[]
+        recv_reqs = M.Request[]
         for other_rank in 0:nprocs-1
             if other_rank == rank
                 continue
@@ -1095,26 +1095,26 @@ function exchange_particles!(tracker::ParticleTracker{T}) where T
             if recv_counts[other_rank + 1] > 0
                 recv_data = Vector{T}(undef, recv_counts[other_rank + 1] * 6)
                 tracker.recv_buffers[other_rank + 1] = recv_data
-                req = MPI.Irecv!(recv_data, other_rank, other_rank, comm)  # Tag = sender rank
+                req = M.Irecv!(recv_data, other_rank, other_rank, comm)  # Tag = sender rank
                 push!(recv_reqs, req)
             end
         end
 
         # Post all non-blocking sends
-        send_reqs = MPI.Request[]
+        send_reqs = M.Request[]
         for other_rank in 0:nprocs-1
             if other_rank == rank
                 continue
             end
             if !isempty(tracker.send_buffers[other_rank + 1])
-                req = MPI.Isend(tracker.send_buffers[other_rank + 1], other_rank, rank, comm)  # Tag = my rank
+                req = M.Isend(tracker.send_buffers[other_rank + 1], other_rank, rank, comm)  # Tag = my rank
                 push!(send_reqs, req)
             end
         end
 
         # Wait for all receives to complete
         if !isempty(recv_reqs)
-            MPI.Waitall(recv_reqs)
+            M.Waitall(recv_reqs)
         end
 
         # Add received particles
@@ -1122,11 +1122,11 @@ function exchange_particles!(tracker::ParticleTracker{T}) where T
 
         # Wait for all sends to complete before clearing buffers
         if !isempty(send_reqs)
-            MPI.Waitall(send_reqs)
+            M.Waitall(send_reqs)
         end
 
         # Synchronize to ensure all particle exchanges are complete
-        MPI.Barrier(comm)
+        M.Barrier(comm)
 
     catch e
         @warn "Particle exchange failed: $e"
@@ -1431,6 +1431,4 @@ function finalize_trajectory_files!(tracker::ParticleTracker; final_metadata::Di
     return tracker
 end
 
-end # module UnifiedParticleAdvection
-
-using .UnifiedParticleAdvection
+end # m
