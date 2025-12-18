@@ -14,6 +14,7 @@ This page explains how to run and monitor QGYBJ.jl simulations.
 using QGYBJ
 
 config = create_simple_config(
+    Lx=500e3, Ly=500e3, Lz=4000.0,  # Domain size (REQUIRED)
     nx=64, ny=64, nz=32,
     dt=0.001,
     total_time=10.0
@@ -25,71 +26,65 @@ result = run_simple_simulation(config)
 ### Manual Control
 
 ```julia
-# Setup with domain size (REQUIRED)
-grid = Grid(nx=64, ny=64, nz=32)
-params = default_params(Lx=500e3, Ly=500e3, Lz=4000.0)  # 500km × 500km × 4km
-state = create_state(grid)
-initialize_random_flow!(state, grid)
-initialize_random_waves!(state, grid)
+using QGYBJ
 
-work = create_work_arrays(grid)
-plans = plan_transforms!(grid)
-a_ell = setup_elliptic_matrices(grid, params)
+# Setup with domain size (REQUIRED)
+par = default_params(
+    Lx=500e3, Ly=500e3, Lz=4000.0,
+    nx=64, ny=64, nz=32,
+    dt=0.001, nt=10000
+)
+G, S, plans, a_ell = setup_model(par)
+
+# Initialize
+init_random_psi!(S, G; amplitude=0.1)
+compute_q_from_psi!(S, G, plans, a_ell)
 
 # Time loop
-dt = 0.001
-nsteps = 10000
-
-for step = 1:nsteps
-    timestep!(state, grid, params, work, plans, a_ell, dt)
+first_projection_step!(S, G, par, plans, a_ell)
+for step = 2:par.nt
+    leapfrog_step!(S, G, par, plans, a_ell)
 end
 ```
 
 ## Time Stepping
 
-### The `timestep!` Function
+### Available Time Stepping Functions
+
+| Function | Description |
+|:---------|:------------|
+| `first_projection_step!` | Forward Euler for first step |
+| `leapfrog_step!` | Leapfrog with Robert-Asselin filter |
+
+### Basic Time Loop
 
 ```julia
-timestep!(state, grid, params, work, plans, a_ell, dt)
+# First step uses forward Euler
+first_projection_step!(S, G, par, plans, a_ell)
+
+# Subsequent steps use leapfrog
+for step = 2:par.nt
+    leapfrog_step!(S, G, par, plans, a_ell)
+end
 ```
 
-This performs one AB3 time step, including:
+Each time step performs:
 1. Compute nonlinear terms (Jacobians, refraction)
-2. Apply integrating factors for diffusion
+2. Apply dissipation via integrating factors
 3. Update prognostic variables (q, B)
 4. Invert elliptic equations (q→ψ, B→A)
 5. Compute velocities
-
-### Adaptive Time Stepping
-
-```julia
-function adaptive_timestep!(state, grid, params, work, plans, a_ell;
-                            cfl=0.5, dt_min=1e-6, dt_max=0.01)
-    # Compute CFL-based dt
-    u_max = maximum(abs.(state.u))
-    v_max = maximum(abs.(state.v))
-    dt = cfl * min(grid.dx/u_max, grid.dy/v_max)
-
-    # Clamp to limits
-    dt = clamp(dt, dt_min, dt_max)
-
-    # Take step
-    timestep!(state, grid, params, work, plans, a_ell, dt)
-
-    return dt
-end
-```
 
 ## Progress Monitoring
 
 ### Basic Progress
 
 ```julia
-for step = 1:nsteps
-    timestep!(...)
+for step = 2:par.nt
+    leapfrog_step!(S, G, par, plans, a_ell)
 
     if step % 100 == 0
-        println("Step $step / $nsteps ($(100*step/nsteps)%)")
+        println("Step $step / $(par.nt) ($(100*step/par.nt)%)")
     end
 end
 ```
@@ -97,13 +92,14 @@ end
 ### With Diagnostics
 
 ```julia
-for step = 1:nsteps
-    timestep!(...)
+for step = 2:par.nt
+    leapfrog_step!(S, G, par, plans, a_ell)
 
     if step % 100 == 0
-        KE = flow_kinetic_energy(state.u, state.v, grid)
-        WE = wave_energy(state.B, state.A, grid)[2]
-        println("Step $step: KE=$KE, WE=$WE")
+        compute_velocities!(S, G, plans)
+        KE = flow_kinetic_energy(S.u, S.v)
+        WE_B, WE_A = wave_energy(S.B, S.A)
+        println("Step $step: KE=$KE, WE_B=$WE_B")
     end
 end
 ```
@@ -113,8 +109,8 @@ end
 ```julia
 using ProgressMeter
 
-@showprogress for step = 1:nsteps
-    timestep!(...)
+@showprogress for step = 2:par.nt
+    leapfrog_step!(S, G, par, plans, a_ell)
 end
 ```
 
@@ -123,14 +119,17 @@ end
 ### Save Checkpoints
 
 ```julia
+using JLD2
+
 checkpoint_interval = 1000
 
-for step = 1:nsteps
-    timestep!(...)
+first_projection_step!(S, G, par, plans, a_ell)
+for step = 2:par.nt
+    leapfrog_step!(S, G, par, plans, a_ell)
 
     if step % checkpoint_interval == 0
         filename = "checkpoint_$(lpad(step, 8, '0')).jld2"
-        @save filename state grid params step
+        @save filename S G par step
     end
 end
 ```
@@ -141,11 +140,11 @@ end
 using JLD2
 
 # Load checkpoint
-@load "checkpoint_00005000.jld2" state grid params step
+@load "checkpoint_00005000.jld2" S G par step
 
 # Continue simulation
-for step = step+1:nsteps
-    timestep!(...)
+for step = step+1:par.nt
+    leapfrog_step!(S, G, par, plans, a_ell)
 end
 ```
 
@@ -154,17 +153,18 @@ end
 ### CFL Check
 
 ```julia
-function check_cfl(state, grid, dt)
-    u_max = maximum(abs.(state.u))
-    v_max = maximum(abs.(state.v))
-    cfl = dt * max(u_max/grid.dx, v_max/grid.dy)
+function check_cfl(S, G, dt)
+    u_max = maximum(abs.(S.u))
+    v_max = maximum(abs.(S.v))
+    cfl = dt * max(u_max/G.dx, v_max/G.dy)
     return cfl
 end
 
-for step = 1:nsteps
-    timestep!(...)
+for step = 2:par.nt
+    leapfrog_step!(S, G, par, plans, a_ell)
+    compute_velocities!(S, G, plans)
 
-    cfl = check_cfl(state, grid, dt)
+    cfl = check_cfl(S, G, par.dt)
     if cfl > 1.0
         @warn "CFL > 1 at step $step: $cfl"
     end
@@ -174,13 +174,15 @@ end
 ### Energy Conservation
 
 ```julia
-E0 = flow_total_energy(state, grid, params)
+compute_velocities!(S, G, plans)
+E0 = flow_kinetic_energy(S.u, S.v)
 
-for step = 1:nsteps
-    timestep!(...)
+for step = 2:par.nt
+    leapfrog_step!(S, G, par, plans, a_ell)
 
     if step % 100 == 0
-        E = flow_total_energy(state, grid, params)
+        compute_velocities!(S, G, plans)
+        E = flow_kinetic_energy(S.u, S.v)
         dE = (E - E0) / E0
         if abs(dE) > 0.1
             @warn "Energy drift: $dE at step $step"
@@ -191,23 +193,24 @@ end
 
 ## Output During Simulation
 
-### Snapshots
+### Snapshots with NetCDF
 
 ```julia
-output_interval = 100
-output_steps = Int[]
-output_times = Float64[]
+using QGYBJ
 
-for step = 1:nsteps
-    timestep!(...)
-    time = step * dt
+output_interval = 100
+
+first_projection_step!(S, G, par, plans, a_ell)
+for step = 2:par.nt
+    leapfrog_step!(S, G, par, plans, a_ell)
+    time = step * par.dt
 
     if step % output_interval == 0
-        push!(output_steps, step)
-        push!(output_times, time)
+        # Save streamfunction
+        ncdump_psi(S, G, step, time, "output/")
 
-        # Save to NetCDF
-        write_snapshot(state, grid, step, time, "output/")
+        # Save wave envelope
+        ncdump_la(S, G, step, time, "output/")
     end
 end
 ```
@@ -219,18 +222,51 @@ KE_history = Float64[]
 WE_history = Float64[]
 time_history = Float64[]
 
-for step = 1:nsteps
-    timestep!(...)
+for step = 2:par.nt
+    leapfrog_step!(S, G, par, plans, a_ell)
 
-    push!(time_history, step * dt)
-    push!(KE_history, flow_kinetic_energy(state.u, state.v, grid))
-    push!(WE_history, wave_energy(state.B, state.A, grid)[2])
+    push!(time_history, step * par.dt)
+    compute_velocities!(S, G, plans)
+    push!(KE_history, flow_kinetic_energy(S.u, S.v))
+    push!(WE_history, wave_energy(S.B, S.A)[1])
 end
+```
+
+## Using the High-Level API
+
+### QGYBJSimulation
+
+```julia
+using QGYBJ
+
+# Create configuration
+domain = create_domain_config(
+    nx=64, ny=64, nz=32,
+    Lx=500e3, Ly=500e3, Lz=4000.0
+)
+
+strat = create_stratification_config(type=:constant_N)
+
+model = create_model_config(
+    ybj_plus=true,
+    inviscid=false
+)
+
+output = create_output_config(
+    output_dir="output",
+    output_interval=100
+)
+
+# Setup simulation
+sim = setup_simulation(domain, strat; model=model, output=output)
+
+# Run
+run_simulation!(sim, dt=0.001, nsteps=10000)
 ```
 
 ## Parallel Execution
 
-### Multi-threaded
+### Multi-threaded (FFTs)
 
 ```julia
 # Set before starting Julia
@@ -240,13 +276,27 @@ export JULIA_NUM_THREADS=8
 println("Using $(Threads.nthreads()) threads")
 ```
 
-### MPI
+### MPI with 2D Pencil Decomposition
 
 ```julia
-using MPI
+using MPI, PencilArrays, PencilFFTs, QGYBJ
+
 MPI.Init()
+mpi_config = QGYBJ.setup_mpi_environment()
+
+# Setup distributed simulation
+params = default_params(
+    Lx=1000e3, Ly=1000e3, Lz=5000.0,
+    nx=256, ny=256, nz=128
+)
+grid = QGYBJ.init_mpi_grid(params, mpi_config)
+state = QGYBJ.init_mpi_state(grid, mpi_config)
+workspace = QGYBJ.init_mpi_workspace(grid, mpi_config)
+plans = QGYBJ.plan_mpi_transforms(grid, mpi_config)
 
 # Run with: mpiexec -n 16 julia simulation.jl
+
+MPI.Finalize()
 ```
 
 See [MPI Parallelization](@ref parallel) for details.
@@ -260,41 +310,51 @@ using QGYBJ
 using JLD2
 
 function run_production(;
-    nx, ny, nz, dt, nsteps,
-    Lx, Ly, Lz,  # Domain size is REQUIRED
+    Lx, Ly, Lz,              # Domain size (REQUIRED)
+    nx, ny, nz,
+    dt, nsteps,
     output_interval=100,
     checkpoint_interval=1000,
     output_dir="output"
 )
     # Setup
     mkpath(output_dir)
-    grid = Grid(nx=nx, ny=ny, nz=nz)
-    params = default_params(Lx=Lx, Ly=Ly, Lz=Lz)  # Domain size is REQUIRED
-    state = create_state(grid)
-    initialize_random_flow!(state, grid)
-    initialize_random_waves!(state, grid)
+    par = default_params(
+        Lx=Lx, Ly=Ly, Lz=Lz,
+        nx=nx, ny=ny, nz=nz,
+        dt=dt, nt=nsteps
+    )
+    G, S, plans, a_ell = setup_model(par)
 
-    work = create_work_arrays(grid)
-    plans = plan_transforms!(grid)
-    a_ell = setup_elliptic_matrices(grid, params)
+    # Initialize
+    init_random_psi!(S, G; amplitude=0.1)
+    compute_q_from_psi!(S, G, plans, a_ell)
 
     # Time loop
-    for step = 1:nsteps
-        timestep!(state, grid, params, work, plans, a_ell, dt)
+    first_projection_step!(S, G, par, plans, a_ell)
+    for step = 2:nsteps
+        leapfrog_step!(S, G, par, plans, a_ell)
 
         # Output
         if step % output_interval == 0
-            write_snapshot(state, grid, step, step*dt, output_dir)
+            ncdump_psi(S, G, step, step*dt, output_dir)
         end
 
         # Checkpoint
         if step % checkpoint_interval == 0
-            @save "$output_dir/checkpoint.jld2" state grid params step
+            @save "$output_dir/checkpoint.jld2" S G par step
         end
     end
 
-    return state
+    return S
 end
+
+# Run
+run_production(
+    Lx=500e3, Ly=500e3, Lz=4000.0,
+    nx=64, ny=64, nz=32,
+    dt=0.001, nsteps=10000
+)
 ```
 
 ## Troubleshooting
@@ -302,19 +362,19 @@ end
 ### NaN Values
 
 ```julia
-if any(isnan, state.psi)
+if any(isnan, S.psi)
     error("NaN detected at step $step")
 end
 ```
 
 ### Instability
 
-- Reduce time step
-- Increase dissipation
+- Reduce time step (`dt`)
+- Increase dissipation (`νₕ₂`, `ilap2`)
 - Check initial conditions for sharp gradients
 
 ### Memory Issues
 
 - Reduce grid size
 - Use checkpointing
-- Enable MPI for distribution
+- Enable MPI for distribution across nodes
