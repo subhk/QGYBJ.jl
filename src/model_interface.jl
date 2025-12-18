@@ -403,7 +403,7 @@ function reduce_sum_if_mpi(val::T, parallel_config::ParallelConfig) where T
 
     # MPI reduction - use dynamic dispatch to avoid direct MPI dependency
     try
-        MPI = Base.require(Main, :MPI)
+        MPI = Base.require(Base.PkgId(Base.UUID("da04e1cc-30fd-572f-bb4f-1f8673147195"), "MPI"))
         return MPI.Allreduce(val, +, parallel_config.comm)
     catch
         # If MPI not available, return local value
@@ -422,7 +422,7 @@ function reduce_min_if_mpi(val::T, parallel_config::ParallelConfig) where T
     end
 
     try
-        MPI = Base.require(Main, :MPI)
+        MPI = Base.require(Base.PkgId(Base.UUID("da04e1cc-30fd-572f-bb4f-1f8673147195"), "MPI"))
         return MPI.Allreduce(val, min, parallel_config.comm)
     catch
         return val
@@ -440,7 +440,7 @@ function reduce_max_if_mpi(val::T, parallel_config::ParallelConfig) where T
     end
 
     try
-        MPI = Base.require(Main, :MPI)
+        MPI = Base.require(Base.PkgId(Base.UUID("da04e1cc-30fd-572f-bb4f-1f8673147195"), "MPI"))
         return MPI.Allreduce(val, max, parallel_config.comm)
     catch
         return val
@@ -740,13 +740,20 @@ function compute_potential_energy(state::State, grid::Grid, plans, N2_profile::V
 
     PE = T(0)
 
+    # Check if we need global z-index for 2D decomposition
+    need_z_global = hasfield(typeof(grid), :decomp) && grid.decomp !== nothing &&
+                    hasfield(typeof(grid.decomp), :pencil_z)
+
     for k in 1:nz_local
         PE_level = T(0)
         PE_zero_mode = T(0)
 
+        # Use global z-index for N2_profile lookup in 2D decomposition
+        k_global = need_z_global ? local_to_global(k, 3, grid) : k
+
         # r_1 = 1.0 (Boussinesq), r_2 = N²
         r_1 = T(1.0)
-        r_2 = N2_profile[min(k, length(N2_profile))]
+        r_2 = N2_profile[min(k_global, length(N2_profile))]
         coeff = a_ell * r_1 / max(r_2, eps(T))
 
         for j_local in 1:ny_local, i_local in 1:nx_local
@@ -1112,16 +1119,18 @@ function check_termination_conditions(sim::QGYBJSimulation{T}) where T
         @error "NaN or Inf detected in solution"
         return true
     end
-    
+
     # Check for blow-up (very large values)
-    psir = similar(sim.state.psi, Float64)
-    fft_backward!(psir, sim.state.psi, sim.plans)
-    
+    # Note: fft_backward! returns complex arrays
+    psir_complex = similar(sim.state.psi)
+    fft_backward!(psir_complex, sim.state.psi, sim.plans)
+    psir = real.(psir_complex)
+
     if maximum(abs, psir) > 1e10
         @error "Solution appears to be blowing up (max |psi| = $(maximum(abs, psir)))"
         return true
     end
-    
+
     return false
 end
 
