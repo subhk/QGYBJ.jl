@@ -755,6 +755,12 @@ function _invert_B_to_A_direct!(S::State, G::Grid, par, a::AbstractVector)
     ρᵤₜ = isdefined(PARENT, :rho_ut) ? PARENT.rho_ut(par, G) : ones(eltype(a), nz)
     ρₛₜ = isdefined(PARENT, :rho_st) ? PARENT.rho_st(par, G) : ones(eltype(a), nz)
 
+    # Pre-allocate work arrays outside loop to reduce GC pressure
+    rhsᵣ = zeros(eltype(a), nz)
+    rhsᵢ = zeros(eltype(a), nz)
+    solᵣ = zeros(eltype(a), nz)
+    solᵢ = zeros(eltype(a), nz)
+
     for j_local in 1:ny_local, i_local in 1:nx_local
         i_global = local_to_global(i_local, 1, G)
         j_global = local_to_global(j_local, 2, G)
@@ -800,16 +806,15 @@ function _invert_B_to_A_direct!(S::State, G::Grid, par, a::AbstractVector)
         dₗ[nz] = (ρᵤₜ[nz-1]*a[nz-1]) / ρₛₜ[nz]
         d[nz]  = -( (ρᵤₜ[nz-1]*a[nz-1]) / ρₛₜ[nz] + (kₕ²*Δz²)/4 )
 
-        rhsᵣ = zeros(eltype(a), nz)
-        rhsᵢ = zeros(eltype(a), nz)
+        # Build RHS (reusing pre-allocated arrays)
         @inbounds for k in 1:nz
             # RHS is just Δz² * B (no a_ell_coeff - that was incorrect)
             rhsᵣ[k] = Δz² * real(B_arr[i_local, j_local, k])
             rhsᵢ[k] = Δz² * imag(B_arr[i_local, j_local, k])
         end
 
-        solᵣ = copy(rhsᵣ)
-        solᵢ = copy(rhsᵢ)
+        solᵣ .= rhsᵣ
+        solᵢ .= rhsᵢ
         thomas_solve!(solᵣ, dₗ, d, dᵤ, rhsᵣ)
         thomas_solve!(solᵢ, dₗ, d, dᵤ, rhsᵢ)
 
