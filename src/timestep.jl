@@ -301,11 +301,11 @@ function first_projection_step!(S::State, G::Grid, par::QGParams, plans; a, deal
 
             #= Update B (wave envelope)
             The YBJ+ equation for B is:
-                ∂B/∂t + J(ψ,B) = -i(kₕ²·N²/(2f))A + (1/2)B×ζ
+                ∂B/∂t + J(ψ,B) = i(kₕ²·N²/(2f))A - (i/2)ζ·B
 
-            In terms of real/imaginary parts:
-                ∂BR/∂t = -J(ψ,BR) - (kₕ²·N²/(2f))AI + (1/2)BI×ζ
-                ∂BI/∂t = -J(ψ,BI) + (kₕ²·N²/(2f))AR - (1/2)BR×ζ =#
+            In terms of real/imaginary parts (with αdisp = N²/(2f)):
+                ∂BR/∂t = -J(ψ,BR) - αdisp·kₕ²·AI + (1/2)ζ·BI
+                ∂BI/∂t = -J(ψ,BI) + αdisp·kₕ²·AR - (1/2)ζ·BR =#
             # Use depth-varying N²(z) for dispersion coefficient
             αdisp = αdisp_profile[k]
             BRnew = ( BRok_arr[i,j,k] - par.dt*nBRk_arr[i,j,k]
@@ -588,8 +588,9 @@ function leapfrog_step!(Snp1::State, Sn::State, Snm1::State,
             end
 
             #= Update B (real and imaginary parts)
-            BR^(n+1) = BR^(n-1)×e^(-2λdt) - 2dt×[J(ψ,BR) + (kₕ²·N²/(2f))AI - (1/2)BI×ζ]×e^(-λdt)
-            BI^(n+1) = BI^(n-1)×e^(-2λdt) - 2dt×[J(ψ,BI) - (kₕ²·N²/(2f))AR + (1/2)BR×ζ]×e^(-λdt) =#
+            Using YBJ+ equation: ∂B/∂t + J(ψ,B) = i·αdisp·kₕ²·A - (i/2)ζ·B
+            BR^(n+1) = BR^(n-1)×e^(-2λdt) - 2dt×[J(ψ,BR) + αdisp·kₕ²·AI - (1/2)ζ·BI]×e^(-λdt)
+            BI^(n+1) = BI^(n-1)×e^(-2λdt) - 2dt×[J(ψ,BI) - αdisp·kₕ²·AR + (1/2)ζ·BR]×e^(-λdt) =#
             # Use depth-varying N²(z) for dispersion coefficient
             αdisp = αdisp_profile[k]
             BRtemp_arr[i,j,k] = Complex(real(Bnm1_arr[i,j,k]),0)*exp(-2λʷ) -
@@ -631,7 +632,6 @@ function leapfrog_step!(Snp1::State, Sn::State, Snm1::State,
     end
 
     #= Step 6: Accept the new solution =#
-    Snp1.q .= qtemp
     @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
         qnp1_arr[i,j,k] = qtemp_arr[i,j,k]
         Bnp1_arr[i,j,k] = Complex(real(BRtemp_arr[i,j,k]),0) + im*Complex(real(BItemp_arr[i,j,k]),0)
