@@ -154,11 +154,11 @@ q_new = q_old * exp(-If) - dt * tendency                    # Euler
 using QGYBJ
 
 # Initialize
-params = default_params(nx=64, ny=64, nz=32)
+params = default_params(Lx=500e3, Ly=500e3, Lz=4000.0, nx=64, ny=64, nz=32)
 grid = init_grid(params)
 plans = plan_transforms!(grid)
 a_ell = a_ell_ut(params, grid)
-L = dealias_mask(params, grid)
+L = dealias_mask(grid)
 
 # Create three state arrays for leapfrog
 Snm1 = init_state(grid)  # n-1
@@ -192,7 +192,7 @@ MPI.Init()
 mpi_config = QGYBJ.setup_mpi_environment()
 
 # Initialize with MPI
-params = default_params(nx=256, ny=256, nz=128)
+params = default_params(Lx=1000e3, Ly=1000e3, Lz=5000.0, nx=256, ny=256, nz=128)
 grid = QGYBJ.init_mpi_grid(params, mpi_config)
 plans = QGYBJ.plan_mpi_transforms(grid, mpi_config)
 workspace = QGYBJ.init_mpi_workspace(grid, mpi_config)
@@ -255,7 +255,7 @@ The filter coefficient γ (`γ` in `QGParams`) controls damping of the computati
 - **Recommended**: γ ≈ 0.001 (default)
 
 ```julia
-params = default_params(nx=64, ny=64, nz=32; γ=0.001)
+params = default_params(Lx=500e3, Ly=500e3, Lz=4000.0, nx=64, ny=64, nz=32, γ=0.001)
 ```
 
 Note: Type `\gamma<tab>` in the Julia REPL to enter `γ`.
