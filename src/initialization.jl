@@ -238,9 +238,16 @@ Initialize wave field (L+A) with analytical expression.
 function init_analytical_waves!(Bk, G::Grid, amplitude::Real, plans)
     @info "Initializing analytical wave field (amplitude=$amplitude)"
 
-    # Initialize in real space
-    Br = zeros(Float64, G.nx, G.ny, G.nz)
-    Bi = zeros(Float64, G.nx, G.ny, G.nz)
+    # Get local dimensions from Bk (works for both Array and PencilArray)
+    Bk_arr = parent(Bk)
+    nx_local, ny_local, nz_local = size(Bk_arr)
+
+    # Initialize in real space with LOCAL dimensions
+    # Use similar() to get correct array type (Array or PencilArray)
+    Br = similar(Bk, Float64)
+    Bi = similar(Bk, Float64)
+    Br_arr = parent(Br)
+    Bi_arr = parent(Bi)
 
     dx = G.Lx / G.nx
     dy = G.Ly / G.ny
@@ -250,12 +257,23 @@ function init_analytical_waves!(Bk, G::Grid, amplitude::Real, plans)
     z_mid = G.Lz / 2
     sigma_z = G.Lz / 10  # Decay scale
 
-    for k in 1:G.nz
-        z = (k - 1) * dz
-        for j in 1:G.ny
-            y = (j - 1) * dy
-            for i in 1:G.nx
-                x = (i - 1) * dx
+    for k in 1:nz_local
+        # Get global z-index for correct coordinate
+        k_global = hasfield(typeof(G), :decomp) && G.decomp !== nothing ?
+                   local_to_global(k, 3, G) : k
+        z = (k_global - 1) * dz
+
+        for j_local in 1:ny_local
+            # Get global y-index
+            j_global = hasfield(typeof(G), :decomp) && G.decomp !== nothing ?
+                       local_to_global(j_local, 2, G) : j_local
+            y = (j_global - 1) * dy
+
+            for i_local in 1:nx_local
+                # Get global x-index
+                i_global = hasfield(typeof(G), :decomp) && G.decomp !== nothing ?
+                           local_to_global(i_local, 1, G) : i_local
+                x = (i_global - 1) * dx
 
                 # Use normalized coordinates for wave patterns
                 x_norm = 2π * x / G.Lx
@@ -263,25 +281,25 @@ function init_analytical_waves!(Bk, G::Grid, amplitude::Real, plans)
                 z_norm = 2π * z / G.Lz
 
                 # Example wave pattern with vertical decay centered at mid-depth
-                Br[i,j,k] = amplitude * (
+                Br_arr[i_local, j_local, k] = amplitude * (
                     sin(4*x_norm + z_norm) * cos(2*y_norm) * exp(-((z-z_mid)^2)/(2*sigma_z^2)) +
                     0.3 * cos(2*x_norm) * sin(4*y_norm + 2*z_norm) * exp(-((z-z_mid)^2)/(2*(0.6*sigma_z)^2))
                 )
 
-                Bi[i,j,k] = amplitude * 0.1 * (
+                Bi_arr[i_local, j_local, k] = amplitude * 0.1 * (
                     cos(4*x_norm + z_norm) * sin(2*y_norm) * exp(-((z-z_mid)^2)/(2*sigma_z^2)) +
                     0.3 * sin(2*x_norm) * cos(4*y_norm + 2*z_norm) * exp(-((z-z_mid)^2)/(2*(0.6*sigma_z)^2))
                 )
             end
         end
     end
-    
+
     # Transform to spectral space
     Brk = similar(Bk)
     Bik = similar(Bk)
     fft_forward!(Brk, Br, plans)
     fft_forward!(Bik, Bi, plans)
-    
+
     # Combine real and imaginary parts
     Bk .= Brk .+ im .* Bik
 end
