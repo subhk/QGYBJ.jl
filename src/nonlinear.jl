@@ -524,7 +524,7 @@ No W2F scaling is applied since B already has its actual dimensional amplitude.
 
 # Decomposition
 Let B = BR + i×BI. Then:
-- J(B*, B) = 2(BRᵧBIₓ - BRₓBIᵧ) [imaginary-valued]
+- J(B*, B) = 2i(BRₓBIᵧ - BRᵧBIₓ) [purely imaginary]
 - ∇²|B|² = ∇²(BR² + BI²)
 
 The final qʷ is real-valued after combining terms.

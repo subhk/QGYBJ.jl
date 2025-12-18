@@ -30,8 +30,9 @@ For each time step from n to n+1:
    - fixed_flow: zero q tendency
 
 3. Time step with hyperdiffusion integrating factors:
-   - Leapfrog: φ^(n+1) = φ^(n-1) × e^(-2λdt) - 2dt × tendency × e^(-λdt)
-   - Forward Euler: φ^(n+1) = φ^n × e^(-λdt) - dt × tendency
+   - Leapfrog: φ^(n+1) = φ^(n-1) × e^(-2λdt) + 2dt × tendency^n × e^(-λdt)
+   - Forward Euler: φ^(n+1) = (φ^n + dt × tendency) × e^(-λdt)
+   where tendency = -advection + diffusion (evaluated at time n)
 
 4. Robert-Asselin filter (leapfrog only):
    φ̃^n = φ^n + γ(φ^(n-1) - 2φ^n + φ^(n+1))
@@ -418,9 +419,10 @@ F_B^n = J(ψ^n, B^n) + dispersion + refraction
 **2. Leapfrog update with integrating factors:**
 For each spectral mode (k):
 ```
-q^(n+1) = q^(n-1) × e^(-2λdt) - 2dt × F_q^n × e^(-λdt) + 2dt × diff^(n-1) × e^(-2λdt)
-B^(n+1) = B^(n-1) × e^(-2λdt) - 2dt × F_B^n × e^(-λdt)
+q^(n+1) = q^(n-1) × e^(-2λdt) + 2dt × [-J(ψ,q)^n + diff^n] × e^(-λdt)
+B^(n+1) = B^(n-1) × e^(-2λdt) + 2dt × [-J(ψ,B)^n + dispersion + refraction] × e^(-λdt)
 ```
+Note: All tendencies are evaluated at time n and scaled by e^(-λdt) for second-order accuracy.
 
 **3. Robert-Asselin filter:**
 ```
@@ -537,8 +539,8 @@ function leapfrog_step!(Snp1::State, Sn::State, Snm1::State,
     #= Step 3: Apply physics switches =#
     if par.inviscid; dqk .= 0; end
     if par.linear; nqk .= 0; nBRk .= 0; nBIk .= 0; end
-    if par.no_dispersion; Sn.A .= 0; end
-    if par.passive_scalar; Sn.A .= 0; rBRk .= 0; rBIk .= 0; end
+    if par.no_dispersion; Sn.A .= 0; Sn.C .= 0; end
+    if par.passive_scalar; Sn.A .= 0; Sn.C .= 0; rBRk .= 0; rBIk .= 0; end
     if par.fixed_flow; nqk .= 0; end
 
     #= Step 4: Leapfrog update with integrating factors =#
