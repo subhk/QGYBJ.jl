@@ -59,43 +59,29 @@ mutable struct QGYBJSimulation{T}
 end
 
 """
-    setup_simulation(config::ModelConfig; use_mpi::Bool=false)
+    setup_simulation(config::ModelConfig; topology=nothing)
 
 Set up a complete QG-YBJ simulation from configuration.
+
+MPI is automatically initialized if not already done.
+
+# Arguments
+- `config::ModelConfig`: Model configuration
+- `topology`: Optional MPI process topology (px, py). Auto-computed if not provided.
 """
-function setup_simulation(config::ModelConfig{T}; use_mpi::Bool=false) where T
+function setup_simulation(config::ModelConfig{T}; topology=nothing) where T
     @info "Setting up QG-YBJ simulation"
-    
-    # Initialize parallel environment
-    parallel_config = if use_mpi
-        setup_parallel_environment()
-    else
-        ParallelConfig(use_mpi=false)
-    end
-    
-    # Print parallel info
-    if parallel_config.use_mpi
-        try
-            MPI = Base.require(Base.PkgId(Base.UUID("da04e1cc-30fd-572f-bb4f-1f8673147195"), "MPI"))
-            rank = MPI.Comm_rank(parallel_config.comm)
-            nprocs = MPI.Comm_size(parallel_config.comm)
-            if rank == 0; @info "Running with MPI: $nprocs processes"; end
-        catch
-            @info "Running with MPI (rank unknown)"
-        end
-    else
-        @info "Running in serial mode"
+
+    # Initialize MPI environment (always required)
+    parallel_config = setup_mpi_environment(; topology=topology)
+
+    # Print parallel info (only rank 0)
+    if parallel_config.is_root
+        @info "Running with MPI: $(parallel_config.nprocs) processes, topology=$(parallel_config.topology)"
     end
 
     # Validate configuration (only on rank 0 to avoid spam)
-    should_print = !parallel_config.use_mpi || begin
-        try
-            MPI = Base.require(Base.PkgId(Base.UUID("da04e1cc-30fd-572f-bb4f-1f8673147195"), "MPI"))
-            MPI.Comm_rank(parallel_config.comm) == 0
-        catch
-            true
-        end
-    end
+    should_print = parallel_config.is_root
     
     if should_print
         errors, warnings = validate_config(config)
@@ -165,24 +151,15 @@ function setup_simulation(config::ModelConfig{T}; use_mpi::Bool=false) where T
         # Optional vertical profiles not provided via config yet; leave as nothing
     )
     
-    # Initialize grid and state with parallel support
-    if parallel_config.use_mpi && should_print
-        @info "Initializing parallel grid and state"
-    elseif should_print
-        @info "Initializing grid and state"
+    # Initialize grid and state with MPI
+    if should_print
+        @info "Initializing MPI grid and state"
     end
-    
-    if parallel_config.use_mpi
-        grid = init_parallel_grid(params, parallel_config)
-        state = init_parallel_state(grid, parallel_config)
-        state_old = init_parallel_state(grid, parallel_config)
-        plans = plan_transforms!(grid, parallel_config)
-    else
-        grid = init_grid(params)
-        state = init_state(grid)
-        state_old = init_state(grid)
-        plans = plan_transforms!(grid)
-    end
+
+    grid = init_mpi_grid(params, parallel_config)
+    state = init_mpi_state(grid, parallel_config)
+    state_old = init_mpi_state(grid, parallel_config)
+    plans = plan_mpi_transforms(grid, parallel_config)
     
     # Set up stratification
     @info "Setting up stratification profile"
