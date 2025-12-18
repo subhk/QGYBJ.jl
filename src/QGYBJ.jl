@@ -101,6 +101,7 @@ GETTING STARTED:
 module QGYBJ
 
 using LinearAlgebra
+using SpecialFunctions: erf
 
 # External backends are optional. If you wish to use MPI/PencilArrays/PencilFFTs,
 # load them in your environment before using QGYBJ. Serial mode works by default.

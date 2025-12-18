@@ -45,8 +45,9 @@ DERIVED COEFFICIENTS:
 ---------------------
 From N²(z), we derive:
 
-- a_ell = 1/N²: Coefficient in elliptic operators
+- a_ell = f₀²/N²: Coefficient in elliptic operators
   Used in: ∂/∂z(a_ell ∂ψ/∂z) for streamfunction inversion
+  When f₀=1 (nondimensional): a_ell = 1/N²
 
 - rho_ut, rho_st: Density weights on unstaggered/staggered grids
   Used in: Mass-weighted vertical operators (currently unity for Boussinesq)
@@ -79,7 +80,7 @@ PV to streamfunction and wave envelope B to amplitude A.
 """
     a_ell_ut(par, G) -> Vector
 
-Compute the vertical elliptic coefficient a(z) = 1/N²(z) on unstaggered levels.
+Compute the vertical elliptic coefficient a(z) = f₀²/N²(z) on unstaggered levels.
 
 # Physical Meaning
 This coefficient appears in the stretching term of the QG elliptic operator:
