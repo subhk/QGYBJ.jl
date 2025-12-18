@@ -103,7 +103,7 @@ The primary diagnostic: horizontal and vertical velocities from streamfunction.
 =#
 
 """
-    compute_velocities!(S, G; plans=nothing, params=nothing, compute_w=true, use_ybj_w=false, N2_profile=nothing, workspace=nothing)
+    compute_velocities!(S, G; plans=nothing, params=nothing, compute_w=true, use_ybj_w=false, N2_profile=nothing, workspace=nothing, dealias_mask=nothing)
 
 Compute geostrophic velocities from the spectral streamfunction ψ̂.
 
@@ -137,6 +137,8 @@ w = -(f²/N²) [(∂A/∂x)_z - i(∂A/∂y)_z] + c.c.
 - `use_ybj_w::Bool`: If true, use YBJ formula instead of omega equation
 - `N2_profile::Vector`: Optional N²(z) profile for vertical velocity computation
 - `workspace`: Optional pre-allocated workspace for 2D decomposition
+- `dealias_mask`: Optional 2D dealiasing mask for omega equation RHS (quadratic term).
+  Should be the same mask used for other nonlinear terms (typically 2/3 rule).
 
 # Returns
 Modified State with updated u, v, w fields.
@@ -148,7 +150,7 @@ effects, use `compute_total_velocities!` instead.
 # Fortran Correspondence
 Matches `compute_velo` in derivatives.f90.
 """
-function compute_velocities!(S::State, G::Grid; plans=nothing, params=nothing, compute_w=true, use_ybj_w=false, N2_profile=nothing, workspace=nothing)
+function compute_velocities!(S::State, G::Grid; plans=nothing, params=nothing, compute_w=true, use_ybj_w=false, N2_profile=nothing, workspace=nothing, dealias_mask=nothing)
     nx, ny, nz = G.nx, G.ny, G.nz
 
     # Get underlying arrays (works for both Array and PencilArray)
@@ -206,8 +208,9 @@ function compute_velocities!(S::State, G::Grid; plans=nothing, params=nothing, c
             # Use YBJ vertical velocity formulation (equation 4)
             compute_ybj_vertical_velocity!(S, G, plans, params; N2_profile=N2_profile, workspace=workspace)
         else
-            # Use standard QG omega equation
-            compute_vertical_velocity!(S, G, plans, params; N2_profile=N2_profile, workspace=workspace)
+            # Use standard QG omega equation with dealiasing
+            # The omega equation RHS is a quadratic term J(ψ_z, ∇²ψ) that needs dealiasing
+            compute_vertical_velocity!(S, G, plans, params; N2_profile=N2_profile, workspace=workspace, dealias_mask=dealias_mask)
         end
     else
         # Set w to zero (leading-order QG approximation)

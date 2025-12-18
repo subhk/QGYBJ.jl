@@ -182,7 +182,7 @@ function first_projection_step!(S::State, G::Grid, par::QGParams, plans; a, deal
 
     #= Step 1: Compute diagnostic fields ψ, velocities, and A =#
     invert_q_to_psi!(S, G; a, par=par, workspace=workspace)           # q → ψ
-    compute_velocities!(S, G; plans, params=par, N2_profile=N2_profile, workspace=workspace) # ψ → u, v
+    compute_velocities!(S, G; plans, params=par, N2_profile=N2_profile, workspace=workspace, dealias_mask=L) # ψ → u, v
 
     # Compute A from B for dispersion term
     # Must use the same approach as the main integrator to avoid startup transients
@@ -376,8 +376,8 @@ function first_projection_step!(S::State, G::Grid, par::QGParams, plans; a, deal
         compute_A!(S.A, S.C, BRk2, BIk2, sigma, par, G; Lmask=L)
     end
 
-    # Compute velocities from ψ
-    compute_velocities!(S, G; plans, params=par, N2_profile=N2_profile, workspace=workspace)
+    # Compute velocities from ψ (with dealiasing for omega equation RHS)
+    compute_velocities!(S, G; plans, params=par, N2_profile=N2_profile, workspace=workspace, dealias_mask=L)
 
     return S
 end
@@ -504,7 +504,7 @@ function leapfrog_step!(Snp1::State, Sn::State, Snm1::State,
     if !par.fixed_flow
         invert_q_to_psi!(Sn, G; a, par=par, workspace=workspace)
     end
-    compute_velocities!(Sn, G; plans, params=par, N2_profile=N2_profile, workspace=workspace)
+    compute_velocities!(Sn, G; plans, params=par, N2_profile=N2_profile, workspace=workspace, dealias_mask=L)
 
     #= Step 2: Allocate and compute tendencies =#
     nqk  = similar(Sn.q)    # Advection of q
@@ -689,7 +689,7 @@ function leapfrog_step!(Snp1::State, Sn::State, Snm1::State,
     end
 
     # Compute velocities
-    compute_velocities!(Snp1, G; plans, params=par, N2_profile=N2_profile, workspace=workspace)
+    compute_velocities!(Snp1, G; plans, params=par, N2_profile=N2_profile, workspace=workspace, dealias_mask=L)
 
     return Snp1
 end
