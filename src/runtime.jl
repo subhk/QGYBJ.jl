@@ -83,13 +83,13 @@ end
 
 Compute N² profile using skewed Gaussian parameters from par.
 
-The skewed Gaussian formula is:
-    N²(z) = N₀² + N₁² × exp(-((z̃ - z₀)/σ)² × (1 + erf(α(z̃ - z₀))))
+The skewed Gaussian formula is (matching physics.jl):
+    N²(z) = N₁² × exp(-(z-z₀)²/σ²) × [1 + erf(α(z-z₀)/(σ√2))] + N₀²
 
-where z̃ = z/Lz is the normalized vertical coordinate.
-
-Note: The parameters z₀_sg, σ_sg are in normalized coordinates (0 to 1),
-matching the Fortran test1 configuration.
+Note: The parameters z₀_sg, σ_sg are in the SAME units as z (not normalized).
+This matches the physics.jl implementation and Fortran reference.
+Typical values assume z is in meters or nondimensional coordinates where
+z₀ ≈ 6 corresponds to pycnocline depth in a domain of height ~2π.
 """
 function compute_N2_skewed_gaussian(z::Vector{T}, par::QGParams) where T
     nz = length(z)
@@ -102,11 +102,12 @@ function compute_N2_skewed_gaussian(z::Vector{T}, par::QGParams) where T
     z0 = par.z₀_sg
     α = par.α_sg
 
-    # Compute N² at each level
-    # z₀_sg and σ_sg are in normalized coordinates, so we normalize z
-    for k in 1:nz
-        zk = z[k] / par.Lz  # Normalize by domain depth
-        N2_profile[k] = N02 + N12 * exp(-((zk - z0)/σ)^2 * (1 + erf(α * (zk - z0))))
+    # Compute N² at each level using the SAME formula as physics.jl:
+    # N²(z) = N₁² × exp(-(z-z₀)²/σ²) × [1 + erf(α(z-z₀)/(σ√2))] + N₀²
+    # Note: z is NOT normalized - use raw z values like physics.jl
+    @inbounds for k in 1:nz
+        zk = z[k]
+        N2_profile[k] = N12 * exp(-((zk - z0)^2) / (σ^2)) * (1 + erf(α * (zk - z0) / (σ * sqrt(2.0)))) + N02
     end
 
     return N2_profile

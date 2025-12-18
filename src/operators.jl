@@ -991,8 +991,8 @@ function compute_total_velocities!(S::State, G::Grid; plans=nothing, params=noth
     # First compute QG velocities (pass dealias_mask for omega equation RHS dealiasing)
     compute_velocities!(S, G; plans=plans, params=params, compute_w=compute_w, use_ybj_w=use_ybj_w, N2_profile=N2_profile, workspace=workspace, dealias_mask=dealias_mask)
 
-    # Add wave-induced velocities
-    compute_wave_velocities!(S, G; plans=plans, params=params)
+    # Add wave-induced velocities (respecting compute_w for vertical component)
+    compute_wave_velocities!(S, G; plans=plans, params=params, compute_w=compute_w)
 
     return S
 end
@@ -1007,7 +1007,7 @@ propagation. This is the Stokes drift correction.
 =#
 
 """
-    compute_wave_velocities!(S, G; plans=nothing, params=nothing)
+    compute_wave_velocities!(S, G; plans=nothing, params=nothing, compute_w=true)
 
 Compute wave-induced Stokes drift velocities and add to existing QG velocities.
 
@@ -1041,13 +1041,14 @@ w_wave = Re[(∂A*/∂z)A + A*(∂A/∂z)] = 2 Re[A* ∂A/∂z]
 - `G::Grid`: Grid structure
 - `plans`: FFT plans
 - `params`: Model parameters
+- `compute_w::Bool`: If true (default), compute and add vertical wave Stokes drift
 
 # Note
 This function modifies u, v, w in-place by adding wave contributions.
 Call after compute_velocities! to get total velocity.
 S.C must contain A_z (set by invert_B_to_A!) before calling this function.
 """
-function compute_wave_velocities!(S::State, G::Grid; plans=nothing, params=nothing)
+function compute_wave_velocities!(S::State, G::Grid; plans=nothing, params=nothing, compute_w=true)
     nx, ny, nz = G.nx, G.ny, G.nz
 
     # Get underlying arrays
@@ -1107,16 +1108,20 @@ function compute_wave_velocities!(S::State, G::Grid; plans=nothing, params=nothi
         A_phys = Aᵣ_arr[i_local, j_local, k]
         dAdx_phys = dA_dxᵣ_arr[i_local, j_local, k]
         dAdy_phys = dA_dyᵣ_arr[i_local, j_local, k]
-        dAdz_phys = dA_dzᵣ_arr[i_local, j_local, k]
 
-        # Stokes drift: (u,v,w)_wave = 2 * Re[conj(A) * ∂A/∂(x,y,z)]
+        # Stokes drift: (u,v)_wave = 2 * Re[conj(A) * ∂A/∂(x,y)]
         u_wave = 2.0 * real(conj(A_phys) * dAdx_phys)
         v_wave = 2.0 * real(conj(A_phys) * dAdy_phys)
-        w_wave = 2.0 * real(conj(A_phys) * dAdz_phys)
 
         u_arr[i_local, j_local, k] += u_wave
         v_arr[i_local, j_local, k] += v_wave
-        w_arr[i_local, j_local, k] += w_wave
+
+        # Only add vertical Stokes drift if compute_w is requested
+        if compute_w
+            dAdz_phys = dA_dzᵣ_arr[i_local, j_local, k]
+            w_wave = 2.0 * real(conj(A_phys) * dAdz_phys)
+            w_arr[i_local, j_local, k] += w_wave
+        end
     end
 
     return S
