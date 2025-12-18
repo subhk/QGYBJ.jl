@@ -43,24 +43,24 @@ w_{wave} = 2\,\text{Re}\left[A^* \frac{\partial A}{\partial z}\right] = \frac{\p
 
 The vertical derivative ∂A/∂z is computed by `invert_B_to_A!` and stored in `S.C`.
 
-**3. QG Vertical Velocity** (two options):
-
-*QG Omega Equation:*
+**3. QG Vertical Velocity** (from omega equation):
 ```math
 \nabla^2 w_{QG} + \frac{N^2}{f^2}\frac{\partial^2 w_{QG}}{\partial z^2} = 2\,J(\psi_z, \nabla^2\psi)
 ```
 
-*YBJ Formulation:*
+**4. YBJ Vertical Velocity** (alternative wave-induced formulation):
 ```math
-w_{QG} = -\frac{f^2}{N^2}\left[\left(\frac{\partial A}{\partial x}\right)_z - i\left(\frac{\partial A}{\partial y}\right)_z\right] + \text{c.c.}
+w_{YBJ} = -\frac{f^2}{N^2}\left[\left(\frac{\partial A}{\partial x}\right)_z - i\left(\frac{\partial A}{\partial y}\right)_z\right] + \text{c.c.}
 ```
+This is controlled by the `use_ybj_w` option. When `use_ybj_w=true`, this wave-induced vertical velocity is used instead of solving the QG omega equation.
 
 ### Total Velocity
 
 The complete velocity used for particle advection is:
 ```math
-\mathbf{u}_{total} = (u_{QG} + u_{wave},\; v_{QG} + v_{wave},\; w_{QG} + w_{wave})
+\mathbf{u}_{total} = (u_{QG} + u_{wave},\; v_{QG} + v_{wave},\; w + w_{wave})
 ```
+where $w$ is either $w_{QG}$ (from omega equation) or $w_{YBJ}$ (wave-induced) depending on the `use_ybj_w` setting.
 
 This includes both horizontal and **vertical Stokes drift**, ensuring particles are correctly advected by the full wave-induced velocity field.
 
