@@ -102,11 +102,9 @@ Pkg.add(url="https://github.com/subhk/QGYBJ.jl")
 Pkg.add(["MPI", "PencilArrays", "PencilFFTs"])
 ```
 
-### With NetCDF Output
+### NetCDF Support
 
-```julia
-Pkg.add("NCDatasets")
-```
+NCDatasets.jl is included as a dependency for NetCDF I/O functionality. No additional installation is required.
 
 ## Citation
 
