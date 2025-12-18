@@ -974,7 +974,7 @@ function create_empty_state_file(filepath::String, G::Grid, time::Real; metadata
         ds.dim["x"] = G.nx
         ds.dim["y"] = G.ny
         ds.dim["z"] = G.nz
-        ds.dim["time"] = NCDatasets.Unlimited()
+        ds.dim["time"] = Inf  # Unlimited dimension
         
         # Create coordinate variables
         x_var = NCDatasets.defVar(ds, "x", Float64, ("x",))
