@@ -446,7 +446,7 @@ function refraction_waqg!(rBRk, rBIk, BRk, BIk, ψₖ, G::Grid, plans; Lmask=not
 
     #= Compute products in real space: rB = ζ × B =#
     rBRᵣ = similar(BRᵣ); rBIᵣ = similar(BIᵣ)
-    rBRᵣ_arr = parent(rBRᵣ); rBIᵣ_arr = parent(rBIᵣ
+    rBRᵣ_arr = parent(rBRᵣ); rBIᵣ_arr = parent(rBIᵣ)
   
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
         rBRᵣ_arr[i_local, j_local, k] = real(ζᵣ_arr[i_local, j_local, k])*real(BRᵣ_arr[i_local, j_local, k])
