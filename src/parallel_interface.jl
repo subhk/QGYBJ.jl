@@ -206,7 +206,7 @@ function parallel_initialization_from_config(config, pconfig)
     plans = plan_transforms!(grid, pconfig)
     
     # Initialize fields (need parallel-aware initialization)
-    parallel_initialize_fields!(state, grid, plans, config, pconfig)
+    parallel_initialize_fields!(state, grid, plans, config, pconfig; params=params)
     
     # Set up output manager with parallel awareness  
     output_manager = OutputManager(config.output, params, pconfig)
