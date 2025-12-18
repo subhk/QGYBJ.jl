@@ -513,8 +513,10 @@ function compute_and_output_diagnostics!(sim::QGYBJSimulation{T}) where T
     diagnostics["total_enstrophy"] = reduce_sum_if_mpi(enstrophy_local, sim.parallel_config)
 
     # Extrema (with MPI reduction for global min/max)
-    psir = similar(sim.state.psi, Float64)
-    fft_backward!(psir, sim.state.psi, sim.plans)
+    # Note: fft_backward! returns complex arrays, extract real part for diagnostics
+    psir_complex = similar(sim.state.psi)
+    fft_backward!(psir_complex, sim.state.psi, sim.plans)
+    psir = real.(psir_complex)
     diagnostics["psi_min"] = reduce_min_if_mpi(minimum(psir), sim.parallel_config)
     diagnostics["psi_max"] = reduce_max_if_mpi(maximum(psir), sim.parallel_config)
 
@@ -524,8 +526,10 @@ function compute_and_output_diagnostics!(sim::QGYBJSimulation{T}) where T
     diagnostics["psi_rms"] = sqrt(psi_sum_sq / global_size)
 
     # Wave field extrema (with MPI reduction)
-    Br = similar(sim.state.B, Float64)
-    fft_backward!(Br, real.(sim.state.B), sim.plans)
+    # Transform full complex B to physical space, then extract real part
+    Br_complex = similar(sim.state.B)
+    fft_backward!(Br_complex, sim.state.B, sim.plans)
+    Br = real.(Br_complex)
     diagnostics["wave_min"] = reduce_min_if_mpi(minimum(Br), sim.parallel_config)
     diagnostics["wave_max"] = reduce_max_if_mpi(maximum(Br), sim.parallel_config)
 
