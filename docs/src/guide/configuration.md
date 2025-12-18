@@ -11,7 +11,7 @@ This page explains how to configure QGYBJ.jl simulations.
 QGYBJ.jl offers two ways to configure simulations:
 
 1. **Simple API**: Use `create_simple_config()` for quick setup
-2. **Full Control**: Create `QGParams` and `Grid` directly via `default_params()`
+2. **Full Control**: Create `QGParams` directly via `default_params()`
 
 !!! warning "Different Defaults Between APIs"
     The two APIs have different default settings for physics flags:
@@ -39,7 +39,12 @@ QGYBJ.jl offers two ways to configure simulations:
 
 ```julia
 config = create_simple_config(
-    # Required: Grid size
+    # Required: Domain size
+    Lx = 500e3,       # Domain length in x [m]
+    Ly = 500e3,       # Domain length in y [m]
+    Lz = 4000.0,      # Domain depth [m]
+
+    # Optional: Grid size (defaults: 64)
     nx = 128,
     ny = 128,
     nz = 64,
@@ -52,6 +57,9 @@ config = create_simple_config(
     output_interval = 100,
     output_dir = "output"
 )
+
+# Run simulation
+result = run_simple_simulation(config)
 ```
 
 ### All Options
@@ -63,22 +71,21 @@ config = create_simple_config(
     ny = 128,                    # Points in y
     nz = 64,                     # Points in z
 
-    # Domain size (nondimensional)
-    Lx = 2π,                     # Domain length in x
-    Ly = 2π,                     # Domain length in y
-    H = 1.0,                     # Domain depth
+    # Domain size (REQUIRED - no defaults)
+    Lx = 500e3,                  # Domain length in x [m]
+    Ly = 500e3,                  # Domain length in y [m]
+    Lz = 4000.0,                 # Domain depth [m]
 
     # Time stepping
     dt = 0.001,                  # Time step
     total_time = 10.0,           # Total simulation time
 
     # Stratification
-    stratification_type = :exponential,  # See Stratification section
-    N0 = 1.0,                    # Reference buoyancy frequency
-    pycnocline_depth = 0.1,      # Pycnocline depth (for some types)
+    stratification_type = :constant_N,  # or :skewed_gaussian
+    N² = 1.0,                    # Buoyancy frequency squared
 
     # Physics flags
-    inviscid = false,            # Disable all dissipation
+    inviscid = true,             # Disable all dissipation (default for simple API)
     linear = false,              # Disable nonlinear terms
     no_wave_feedback = false,    # Disable wave feedback on flow
     ybj_plus = true,             # Use YBJ+ (vs normal YBJ)
@@ -102,12 +109,24 @@ config = create_simple_config(
 
 ## Full Configuration
 
-For complete control, create components separately:
+For complete control, create components separately using the low-level API.
 
 ### Step 1: Create Parameters
 
 ```julia
-params = default_params(;
+par = default_params(;
+    # Domain (REQUIRED)
+    Lx = 500e3,                  # Domain length in x [m]
+    Ly = 500e3,                  # Domain length in y [m]
+    Lz = 4000.0,                 # Domain depth [m]
+
+    # Grid resolution
+    nx = 128, ny = 128, nz = 64,
+
+    # Time stepping
+    dt = 0.001,
+    nt = 10000,
+
     # Physical parameters
     f₀ = 1.0,                    # Coriolis parameter (type: f\_0<tab>)
     N² = 1.0,                    # Buoyancy frequency squared (type: N\^2<tab>)
@@ -127,55 +146,84 @@ params = default_params(;
 )
 ```
 
-### Step 2: Create Grid
+### Step 2: Initialize Grid and State
 
 ```julia
-grid = Grid(
-    nx = 128,
-    ny = 128,
-    nz = 64,
-    Lx = 2π,
-    Ly = 2π,
-    H = 1.0
+# Create grid from parameters
+G = init_grid(par)
+
+# Initialize state with allocated arrays
+S = init_state(G)
+```
+
+### Step 3: Set Up FFT Plans and Elliptic Coefficient
+
+```julia
+# Create FFT plans
+plans = plan_transforms!(G)
+
+# Compute elliptic coefficient for PV inversion
+a_ell = a_ell_ut(par, G)
+```
+
+Or for non-constant stratification:
+
+```julia
+# Get all components including N² profile
+G, S, plans, a_ell, N2_profile = setup_model_with_profile(par)
+```
+
+### Step 4: Set Initial Conditions
+
+```julia
+# Random streamfunction
+init_random_psi!(S, G; amplitude=0.1, seed=12345)
+
+# Or analytical initial condition
+init_analytical_psi!(S, G; mode=:dipole, amplitude=1.0)
+
+# Set wave envelope (optional)
+init_analytical_waves!(S, G; amplitude=0.01)
+
+# Compute initial q from ψ
+compute_q_from_psi!(S, G, plans, a_ell)
+```
+
+### Step 5: Time Integration
+
+```julia
+# First step uses forward Euler
+first_projection_step!(S, G, par, plans, a_ell)
+
+# Main time loop uses leapfrog
+for step = 2:par.nt
+    leapfrog_step!(S, G, par, plans, a_ell)
+end
+```
+
+### Complete Low-Level Example
+
+```julia
+using QGYBJ
+
+# Create parameters
+par = default_params(
+    Lx=500e3, Ly=500e3, Lz=4000.0,
+    nx=64, ny=64, nz=32,
+    dt=0.001, nt=1000
 )
-```
 
-### Step 3: Set Up Stratification
-
-```julia
-# Option A: Constant N²
-setup_stratification!(grid, params, :constant_N)
-
-# Option B: Exponential profile
-setup_stratification!(grid, params, :exponential; depth_scale=0.1)
-
-# Option C: Custom profile
-N2_custom = [compute_N2(z) for z in grid.z]
-set_stratification!(grid, N2_custom)
-```
-
-### Step 4: Initialize State
-
-```julia
-# Create state with allocated arrays
-state = create_state(grid)
+# Initialize components
+G, S, plans, a_ell = setup_model(par)
 
 # Set initial conditions
-initialize_random_flow!(state, grid; energy_level=1.0)
-initialize_random_waves!(state, grid; amplitude=0.1)
-```
+init_random_psi!(S, G; amplitude=0.1)
+compute_q_from_psi!(S, G, plans, a_ell)
 
-### Step 5: Run
-
-```julia
-# Create work arrays and plans
-work = create_work_arrays(grid)
-plans = plan_transforms!(grid)
-a_ell = setup_elliptic_matrices(grid, params)
-
-# Time loop
-for step = 1:nsteps
-    timestep!(state, grid, params, work, plans, a_ell, dt)
+# Time integration
+first_projection_step!(S, G, par, plans, a_ell)
+for step = 2:par.nt
+    leapfrog_step!(S, G, par, plans, a_ell)
 end
 ```
 
@@ -191,18 +239,27 @@ end
 
 Note: Type Unicode characters in Julia REPL using `\` + name + `<tab>`, e.g., `f\_0<tab>` → `f₀`
 
+### Domain Parameters
+
+| Parameter | Type | Default | Description |
+|:----------|:-----|:--------|:------------|
+| `nx`, `ny` | Int | 64 | Horizontal grid points |
+| `nz` | Int | 64 | Vertical grid points |
+| `Lx`, `Ly` | Float64 | **REQUIRED** | Horizontal domain size [m] |
+| `Lz` | Float64 | **REQUIRED** | Vertical domain depth [m] |
+
 ### Model Flags
 
 | Flag | Type | Default | Effect |
 |:-----|:-----|:--------|:-------|
 | `ybj_plus` | Bool | true | Use YBJ+ formulation |
-| `no_feedback` | Bool | false | Disable wave → flow feedback |
+| `no_feedback` | Bool | true | Master switch: disable all wave-mean coupling |
+| `no_wave_feedback` | Bool | true | Disable qʷ term specifically |
 | `inviscid` | Bool | false | Disable all dissipation |
 | `linear` | Bool | false | Disable nonlinear terms |
-| `no_advection_psi` | Bool | false | Disable ψ advection of PV |
-| `no_advection_B` | Bool | false | Disable ψ advection of B |
-| `no_refraction` | Bool | false | Disable wave refraction |
+| `fixed_flow` | Bool | false | Keep mean flow ψ constant |
 | `no_dispersion` | Bool | false | Disable wave dispersion |
+| `passive_scalar` | Bool | false | Waves as passive tracers |
 
 ### Dissipation Parameters
 
@@ -218,35 +275,25 @@ The model uses two hyperdiffusion operators: `ν₁(-∇²)^ilap1 + ν₂(-∇²
 | `νₕ₂ʷ` | Float64 | 10.0 | Second hyperviscosity coefficient (waves) |
 | `νz` | Float64 | 0.0 | Vertical diffusivity |
 
-### Grid Parameters
-
-| Parameter | Type | Default | Description |
-|:----------|:-----|:--------|:------------|
-| `nx`, `ny` | Int | - | Horizontal grid points |
-| `nz` | Int | - | Vertical grid points |
-| `Lx`, `Ly` | Float64 | 2π | Horizontal domain size |
-| `H` | Float64 | 1.0 | Vertical domain depth |
-
 ## Configuration Validation
 
 The package validates configurations on creation:
 
 ```julia
 # This will error if invalid
-config = create_simple_config(
-    nx = 65,  # Error: must be power of 2 for FFT efficiency
-    ny = 64,
-    nz = 32,
-    dt = 0.001,
-    total_time = 1.0
+par = default_params(
+    Lx=500e3, Ly=500e3, Lz=4000.0,
+    nx = -1,  # Error: must be positive
 )
 ```
 
 Common validation checks:
 - Grid dimensions must be positive integers
+- Domain sizes (Lx, Ly, Lz) must be positive
 - `dt` must be positive
-- `total_time` must be greater than `dt`
+- `N²` must be positive
 - Dissipation coefficients must be non-negative
+- Powers of 2 for nx, ny are recommended (warning if not)
 
 ## Saving and Loading Configurations
 
@@ -255,14 +302,14 @@ Common validation checks:
 ```julia
 using JLD2
 
-# Save all parameters
-@save "config.jld2" params grid
+# Save parameters
+@save "config.jld2" par
 ```
 
 ### Load Configuration
 
 ```julia
-@load "config.jld2" params grid
+@load "config.jld2" par
 ```
 
 ### TOML Format
@@ -273,9 +320,10 @@ For human-readable configs:
 using TOML
 
 config_dict = Dict(
-    "grid" => Dict("nx" => 128, "ny" => 128, "nz" => 64),
-    "physics" => Dict("ybj_plus" => true),
-    "time" => Dict("dt" => 0.001, "total" => 10.0)
+    "domain" => Dict("nx" => 128, "ny" => 128, "nz" => 64,
+                     "Lx" => 500e3, "Ly" => 500e3, "Lz" => 4000.0),
+    "physics" => Dict("ybj_plus" => true, "N2" => 1.0),
+    "time" => Dict("dt" => 0.001, "nt" => 10000)
 )
 
 open("config.toml", "w") do io
@@ -288,38 +336,83 @@ end
 ### Minimal QG-Only Run
 
 ```julia
-config = create_simple_config(
+par = default_params(
+    Lx=500e3, Ly=500e3, Lz=4000.0,
     nx=64, ny=64, nz=32,
-    dt=0.01, total_time=100.0,
-    init_B = zeros(ComplexF64, 33, 64, 32)  # No waves
+    dt=0.01, nt=10000,
+    no_dispersion=true  # No waves
 )
+
+G, S, plans, a_ell = setup_model(par)
+init_random_psi!(S, G)
+compute_q_from_psi!(S, G, plans, a_ell)
+
+first_projection_step!(S, G, par, plans, a_ell)
+for step = 2:par.nt
+    leapfrog_step!(S, G, par, plans, a_ell)
+end
 ```
 
 ### High-Resolution Wave-Eddy
 
 ```julia
 config = create_simple_config(
+    Lx=500e3, Ly=500e3, Lz=4000.0,
     nx=512, ny=512, nz=128,
     dt=0.0001, total_time=1.0,
-    nu_h2=1e-12, p2=8,  # Very selective dissipation
+    νₕ₂=1e-12, ilap2=8,  # Very selective dissipation
     output_interval=1000
 )
+
+result = run_simple_simulation(config)
 ```
 
 ### Linear Wave Propagation
 
 ```julia
 config = create_simple_config(
+    Lx=500e3, Ly=500e3, Lz=4000.0,
     nx=128, ny=128, nz=64,
     dt=0.001, total_time=10.0,
-    linear=true,         # No nonlinear terms
-    inviscid=true,       # No dissipation
+    linear=true,           # No nonlinear terms
+    inviscid=true,         # No dissipation
     no_wave_feedback=true  # One-way coupling only
 )
+
+result = run_simple_simulation(config)
+```
+
+### Using QGYBJSimulation API
+
+```julia
+using QGYBJ
+
+# Create configuration components
+domain = create_domain_config(
+    nx=64, ny=64, nz=32,
+    Lx=500e3, Ly=500e3, Lz=4000.0
+)
+
+strat = create_stratification_config(type=:constant_N, N0=1.0)
+
+model = create_model_config(
+    ybj_plus=true,
+    inviscid=false,
+    no_wave_feedback=false  # Enable two-way coupling
+)
+
+output = create_output_config(
+    output_dir="results",
+    output_interval=100
+)
+
+# Setup and run
+sim = setup_simulation(domain, strat; model=model, output=output)
+run_simulation!(sim, dt=0.001, nsteps=1000)
 ```
 
 ## Next Steps
 
 - [Stratification](@ref stratification): Configure density profiles
-- [Initial Conditions](@ref initial-conditions): Set up initial fields
-- [Running Simulations](@ref running): Execute and monitor runs
+- [I/O and Output](@ref io-output): Saving and loading data
+- [Diagnostics](@ref diagnostics): Energy and analysis tools
