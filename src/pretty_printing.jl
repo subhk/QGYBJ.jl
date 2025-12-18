@@ -12,7 +12,7 @@ Provides nicely formatted output with Unicode box characters.
 using Printf
 
 # Import types from parent module
-using ..QGYBJ: QGParams, Grid, State, OutputConfig, Plans, ParallelConfig,
+using ..QGYBJ: QGParams, Grid, State, OutputConfig, Plans, MPIConfig,
                DomainConfig, StratificationConfig, InitialConditionConfig, ModelConfig
 using ..QGYBJ.UnifiedParticleAdvection: ParticleConfig, ParticleTracker
 using ..QGYBJ.UnifiedParticleAdvection.EnhancedParticleConfig: ParticleConfig3D
@@ -402,27 +402,27 @@ function Base.show(io::IO, tracker::ParticleTracker)
 end
 
 # ============================================================================
-#                       ParallelConfig PRETTY PRINTING
+#                       MPIConfig PRETTY PRINTING
 # ============================================================================
 
-function Base.show(io::IO, ::MIME"text/plain", cfg::ParallelConfig)
+function Base.show(io::IO, ::MIME"text/plain", cfg::MPIConfig)
     width = 50
     key_width = 18
 
-    print_box_top(io, "ParallelConfig", width)
+    print_box_top(io, "MPIConfig", width)
 
-    print_box_row(io, "Use MPI", format_number(cfg.use_mpi), width; key_width)
-    if cfg.use_mpi && cfg.comm !== nothing
-        print_box_row(io, "Parallel I/O", format_number(cfg.parallel_io), width; key_width)
-    end
+    print_box_row(io, "Rank", string(cfg.rank), width; key_width)
+    print_box_row(io, "Processes", string(cfg.nprocs), width; key_width)
+    print_box_row(io, "Topology", string(cfg.topology), width; key_width)
+    print_box_row(io, "Is Root", format_number(cfg.is_root), width; key_width)
+    print_box_row(io, "Parallel I/O", format_number(cfg.parallel_io), width; key_width)
 
     print_box_bottom(io, width)
 end
 
 # Compact single-line show
-function Base.show(io::IO, cfg::ParallelConfig)
-    mpi_str = cfg.use_mpi ? "MPI" : "Serial"
-    print(io, "ParallelConfig($mpi_str)")
+function Base.show(io::IO, cfg::MPIConfig)
+    print(io, "MPIConfig(rank=$(cfg.rank)/$(cfg.nprocs), topology=$(cfg.topology))")
 end
 
 # ============================================================================
