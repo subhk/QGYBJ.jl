@@ -15,14 +15,20 @@ The buoyancy frequency ``N(z)`` affects:
 - **Refraction**: Waves bend toward regions of lower ``N``
 - **Energy flux**: Vertical group velocity scales with ``N``
 
-## Built-in Profiles
+## Built-in Stratification Types
+
+QGYBJ.jl supports two stratification modes through the `default_params()` function:
 
 ### Constant N
 
-Uniform stratification throughout the water column:
+Uniform stratification throughout the water column (default):
 
 ```julia
-setup_stratification!(grid, params, :constant_N)
+par = default_params(
+    Lx=500e3, Ly=500e3, Lz=4000.0,
+    stratification=:constant_N,  # This is the default
+    N²=1.0                       # Buoyancy frequency squared
+)
 ```
 
 Profile:
@@ -35,38 +41,28 @@ Best for:
 - Analytical comparisons
 - Simple mode structure
 
-### Exponential
-
-Stratification decreasing exponentially with depth:
-
-```julia
-setup_stratification!(grid, params, :exponential;
-    depth_scale = 0.1  # e-folding scale
-)
-```
-
-Profile:
-```math
-N^2(z) = N_0^2 \, e^{z/d}
-```
-
-where ``d`` is the depth scale and ``z`` is negative (depth).
-
-Best for:
-- Realistic ocean upper thermocline
-- Simple continuous variation
-
 ### Skewed Gaussian (Pycnocline)
 
 Sharp pycnocline with gradual decrease below:
 
 ```julia
-setup_stratification!(grid, params, :skewed_gaussian;
-    pycnocline_depth = 0.05,   # Depth of N² maximum
-    pycnocline_width = 0.02,   # Width of pycnocline
-    deep_N2_ratio = 0.01       # N²(deep) / N²(surface)
+par = default_params(
+    Lx=500e3, Ly=500e3, Lz=4000.0,
+    stratification=:skewed_gaussian
 )
 ```
+
+Profile formula:
+```math
+N^2(z) = N_1^2 \exp\left(-\frac{(z-z_0)^2}{\sigma^2}\right) \left[1 + \text{erf}\left(\frac{\alpha(z-z_0)}{\sigma\sqrt{2}}\right)\right] + N_0^2
+```
+
+The skewed Gaussian parameters in `QGParams` are:
+- `N₀²_sg`: Background N² value
+- `N₁²_sg`: Peak N² amplitude
+- `σ_sg`: Width of pycnocline
+- `z₀_sg`: Center depth of pycnocline
+- `α_sg`: Skewness parameter
 
 Profile (schematic):
 ```
@@ -87,130 +83,139 @@ Best for:
 - Strong near-surface trapping
 - Wave focusing studies
 
-### Two-Layer
+## Setting Up with Stratification Profiles
 
-Step-like stratification:
+### Using setup_model_with_profile
+
+For non-constant stratification, use `setup_model_with_profile()` to get the N² profile:
 
 ```julia
-setup_stratification!(grid, params, :two_layer;
-    interface_depth = 0.2,     # Depth of interface
-    upper_N2 = 1.0,            # N² in upper layer
-    lower_N2 = 0.01            # N² in lower layer
+using QGYBJ
+
+# Create parameters with skewed Gaussian stratification
+par = default_params(
+    Lx=500e3, Ly=500e3, Lz=4000.0,
+    stratification=:skewed_gaussian
+)
+
+# This returns the N² profile for use in physics
+G, S, plans, a_ell, N2_profile = setup_model_with_profile(par)
+
+# N2_profile is now available for vertical velocity computation, etc.
+```
+
+### Using the High-Level API
+
+The `QGYBJSimulation` API handles stratification automatically:
+
+```julia
+using QGYBJ
+
+# Create configuration
+domain = create_domain_config(
+    nx=64, ny=64, nz=32,
+    Lx=500e3, Ly=500e3, Lz=4000.0
+)
+
+strat = create_stratification_config(
+    type=:skewed_gaussian
+)
+
+model = create_model_config(
+    inviscid=false,
+    ybj_plus=true
+)
+
+# Setup simulation - stratification is handled internally
+sim = setup_simulation(domain, strat, model=model)
+```
+
+## Advanced: Custom Profiles
+
+### StratificationProfile Types
+
+QGYBJ.jl provides several stratification profile types:
+
+```julia
+# Constant N²
+profile = ConstantN{Float64}(1.0)  # N₀ = 1.0
+
+# Tanh profile (pycnocline-like)
+profile = TanhProfile{Float64}(
+    0.01,    # N_upper
+    0.025,   # N_lower
+    2400.0,  # z_pycno (depth of pycnocline)
+    200.0    # width
+)
+
+# Exponential profile
+profile = ExponentialProfile{Float64}(
+    0.02,    # N_surface
+    1200.0,  # scale_height
+    0.001    # N_deep
+)
+
+# Piecewise profile (two-layer)
+profile = PiecewiseProfile{Float64}(
+    [0.0, 2000.0, 4000.0],  # z_interfaces
+    [0.01, 0.03]            # N values in each layer
 )
 ```
 
-Profile:
-```
-N² →
-│
-│ ────────────
-│             │
-│             │
-│             ─────────────
-│
-└────────────────────────── z
-```
-
-Best for:
-- Simple layered models
-- Mode-1 dominated dynamics
-- Pedagogical examples
-
-## Custom Profiles
-
-### From Function
+### Evaluating Profiles on the Grid
 
 ```julia
-# Define custom N² profile
-function my_N2(z; N0=1.0, z_pyc=-0.1, sigma=0.02)
-    return N0^2 * exp(-((z - z_pyc)/sigma)^2)
-end
+using QGYBJ
 
-# Evaluate on grid
-N2_profile = [my_N2(z) for z in grid.z]
+# Create a profile
+profile = TanhProfile{Float64}(0.01, 0.025, 2400.0, 200.0)
 
-# Apply to grid
-set_stratification!(grid, N2_profile)
+# Compute N² on the model grid
+par = default_params(Lx=500e3, Ly=500e3, Lz=4000.0)
+G = init_grid(par)
+N2_profile = compute_stratification_profile(profile, G)
+
+# Compute elliptic coefficient from N² profile
+a_ell = a_ell_from_N2(N2_profile, par)
 ```
 
-### From Data
+### From Data File
+
+Load stratification from a NetCDF file:
 
 ```julia
-using DelimitedFiles
+using QGYBJ, NCDatasets
 
-# Load from file (depth, N2 columns)
-data = readdlm("N2_profile.txt")
-z_data = data[:, 1]
-N2_data = data[:, 2]
+# Read N² profile from file
+N2_profile = read_stratification_profile("N2_data.nc", G)
 
-# Interpolate to grid
-using Interpolations
-itp = linear_interpolation(z_data, N2_data)
-N2_profile = [itp(z) for z in grid.z]
-
-set_stratification!(grid, N2_profile)
-```
-
-### From Observations
-
-```julia
-using NCDatasets
-
-# Load from NetCDF (e.g., Argo profile)
-ds = NCDataset("argo_profile.nc")
-depth = ds["depth"][:]
-temp = ds["temperature"][:]
-salt = ds["salinity"][:]
-close(ds)
-
-# Compute N² from T, S profiles
-N2_profile = compute_N2_from_TS(depth, temp, salt)
-
-# Interpolate and apply
-# ... (similar to above)
-```
-
-## Stratification Structure
-
-### Internal Storage
-
-The grid stores stratification at cell centers and faces:
-
-```julia
-grid.N2      # N² at cell centers [nz]
-grid.N2_face # N² at cell faces [nz+1]
-grid.a       # f₀²/N² at cell centers [nz]
-grid.a_face  # f₀²/N² at cell faces [nz+1]
-```
-
-### Accessing Values
-
-```julia
-# Get N² profile
-N2 = get_stratification(grid)
-
-# Get at specific depth
-z_target = -0.5
-N2_at_z = interpolate_N2(grid, z_target)
+# Or read raw data for custom processing
+z_data, N2_data = read_stratification_raw("N2_data.nc")
 ```
 
 ## Effects on Dynamics
 
-### Vertical Modes
+### Elliptic Coefficient
 
-Stratification determines the vertical mode structure:
+The elliptic coefficient `a = f²/N²` is computed from the N² profile:
 
 ```julia
-# Compute vertical modes
-modes, eigenvalues = compute_vertical_modes(grid, params)
+# For constant N² (uses par.N²)
+a_ell = a_ell_ut(par, G)
 
-# modes[:, n] is the n-th mode shape
-# eigenvalues[n] is the corresponding Rossby radius⁻²
+# For variable N² (from profile)
+a_ell = a_ell_from_N2(N2_profile, par)
 ```
 
-Mode-1 dominates when:
-- Strong pycnocline exists
-- ``N^2`` decreases smoothly with depth
+### Deformation Radius
+
+The first baroclinic deformation radius can be computed:
+
+```julia
+using QGYBJ: compute_deformation_radius
+
+Ld = compute_deformation_radius(N2_profile, par.f₀, par.Lz)
+```
 
 ### Wave Trapping
 
@@ -228,19 +233,6 @@ near surface everywhere
   pycnocline
 ```
 
-### Deformation Radius
-
-The first baroclinic deformation radius:
-
-```math
-R_d = \frac{1}{f_0\pi}\int_0^H N(z) \, dz
-```
-
-Computed as:
-```julia
-Rd = compute_deformation_radius(grid, params)
-```
-
 ## Visualization
 
 ### Profile Plot
@@ -248,33 +240,33 @@ Rd = compute_deformation_radius(grid, params)
 ```julia
 using Plots
 
-z = grid.z
-N2 = grid.N2
+# Get grid z-coordinates
+z = G.z
 
-plot(sqrt.(N2), z,
-    xlabel = "N (s⁻¹)",
-    ylabel = "Depth",
+# Plot N² profile
+plot(N2_profile, z,
+    xlabel = "N² (s⁻²)",
+    ylabel = "Depth (m)",
     title = "Stratification Profile",
     legend = false,
-    flip = true  # Depth increases downward
+    yflip = true  # Depth increases downward
 )
 ```
 
-### With Modes
+### Plotting Different Profiles
 
 ```julia
-modes, _ = compute_vertical_modes(grid, params)
+using Plots, QGYBJ
 
-p = plot(layout=(1, 2))
+# Create standard profiles for comparison
+profiles = create_standard_profiles(4000.0)  # 4km domain
 
-# Left: N² profile
-plot!(p[1], N2, z, xlabel="N²", ylabel="z")
-
-# Right: First 3 modes
-for n in 1:3
-    plot!(p[2], modes[:, n], z, label="Mode $n")
+p = plot(title="Stratification Profiles", xlabel="N²", ylabel="z")
+for (name, profile) in profiles
+    z_vals, N2_vals, _ = plot_stratification_profile(profile, 4000.0)
+    plot!(p, N2_vals, z_vals, label=String(name))
 end
-xlabel!(p[2], "Mode amplitude")
+display(p)
 ```
 
 ## Best Practices
@@ -290,17 +282,19 @@ xlabel!(p[2], "Mode amplitude")
 
 Sharp features need higher resolution to avoid Gibbs phenomena.
 
-### Smoothness
+### Validation
 
-Ensure ``N^2(z)`` is smooth for numerical stability:
+Use `validate_stratification()` to check your profile:
 
 ```julia
-# Bad: Discontinuous
-N2[z .> -0.1] .= 1.0
-N2[z .<= -0.1] .= 0.01
+errors, warnings = validate_stratification(N2_profile)
 
-# Good: Smooth transition
-N2 = 0.505 .+ 0.495 .* tanh.((z .+ 0.1) ./ 0.02)
+for err in errors
+    @error err
+end
+for warn in warnings
+    @warn warn
+end
 ```
 
 ### Physical Constraints
@@ -312,18 +306,19 @@ N2 = 0.505 .+ 0.495 .* tanh.((z .+ 0.1) ./ 0.02)
 ```julia
 # Ensure minimum N²
 N2_min = 1e-6
-N2 = max.(N2, N2_min)
+N2_profile .= max.(N2_profile, N2_min)
 ```
 
 ## Stratification Types Reference
 
-| Type | Parameters | Best For |
-|:-----|:-----------|:---------|
-| `:constant_N` | `N0` | Idealized |
-| `:exponential` | `depth_scale` | Thermocline |
-| `:skewed_gaussian` | `pycnocline_depth`, `pycnocline_width` | Realistic ocean |
-| `:two_layer` | `interface_depth`, `upper_N2`, `lower_N2` | Layered models |
-| `:custom` | `N2_profile` | Observations |
+| Type | Symbol/Struct | Parameters |
+|:-----|:--------------|:-----------|
+| Constant | `:constant_N` | `N²` in `default_params()` |
+| Skewed Gaussian | `:skewed_gaussian` | `N₀²_sg`, `N₁²_sg`, `σ_sg`, `z₀_sg`, `α_sg` |
+| Tanh | `TanhProfile` | `N_upper`, `N_lower`, `z_pycno`, `width` |
+| Exponential | `ExponentialProfile` | `N_surface`, `scale_height`, `N_deep` |
+| Piecewise | `PiecewiseProfile` | `z_interfaces`, `N_values` |
+| From File | `FileProfile` | `filename` |
 
 ## Related Topics
 
