@@ -72,6 +72,42 @@ using ..QGYBJ: local_to_global_z, allocate_z_pencil
 const PARENT = Base.parentmodule(@__MODULE__)
 
 #=
+WORKSPACE STRUCTURE:
+-------------------
+Functions in this module accept an optional `workspace` parameter to avoid
+repeated allocations in time-stepping loops. The workspace should be a
+NamedTuple or struct with the following fields (not all are needed for
+every function):
+
+For `invert_q_to_psi!`:
+  - `q_z`: z-pencil array for q (ComplexF64)
+  - `psi_z`: z-pencil array for ψ (ComplexF64)
+
+For `invert_helmholtz!`:
+  - `work_z`: z-pencil work array (ComplexF64)
+  - `psi_z`: z-pencil array for solution (ComplexF64)
+
+For `invert_B_to_A!`:
+  - `B_z`: z-pencil array for B (ComplexF64)
+  - `A_z`: z-pencil array for A (ComplexF64)
+  - `C_z`: z-pencil array for C (A_z derivative) (ComplexF64)
+
+Example:
+```julia
+workspace = (
+    q_z = allocate_z_pencil(G, ComplexF64),
+    psi_z = allocate_z_pencil(G, ComplexF64),
+    work_z = allocate_z_pencil(G, ComplexF64),
+    B_z = allocate_z_pencil(G, ComplexF64),
+    A_z = allocate_z_pencil(G, ComplexF64),
+    C_z = allocate_z_pencil(G, ComplexF64),
+)
+```
+
+If workspace is `nothing`, temporary arrays are allocated internally.
+=#
+
+#=
 ================================================================================
                     STREAMFUNCTION INVERSION: q → ψ
 ================================================================================
