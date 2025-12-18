@@ -214,6 +214,10 @@ include("grid.jl")          # Grid: spatial coordinates and wavenumbers
 # FFT and spectral transforms
 include("transforms.jl")    # FFTW planning, fft_forward!, fft_backward!
 
+# MPI parallel interface (must be after transforms.jl, before physics.jl)
+# This provides transpose_to_z_pencil!, allocate_z_pencil, etc. needed by elliptic/operators
+include("parallel_mpi.jl")       # MPI parallel interface (required)
+
 # Physics and numerical operators
 include("physics.jl")       # Stratification N², a_ell coefficient
 include("elliptic.jl")      # Tridiagonal solvers for elliptic inversions
@@ -247,7 +251,6 @@ include("config.jl")            # Configuration types (DomainConfig, etc.)
 include("netcdf_io.jl")         # NetCDF I/O with legacy compatibility
 include("initialization.jl")    # Field initialization helpers
 include("stratification.jl")    # Stratification profiles
-include("parallel_mpi.jl")       # MPI parallel interface (required)
 
 # High-level user interface (depends on the above)
 include("model_interface.jl")   # QGYBJSimulation, run_simulation!, etc.
