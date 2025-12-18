@@ -15,19 +15,31 @@ using ..QGYBJ: plan_transforms!, fft_forward!, fft_backward!, compute_wavenumber
 using ..QGYBJ: local_to_global
 
 """
-    initialize_from_config(config::ModelConfig, G::Grid, S::State, plans)
+    initialize_from_config(config::ModelConfig, G::Grid, S::State, plans; params=nothing, N2_profile=nothing)
 
 Initialize model state from configuration.
+
+This function initializes the streamfunction (ψ) and wave field (B), then computes
+consistent potential vorticity (q) from ψ to ensure the first timestep doesn't
+wipe out the user-provided initial conditions.
+
+# Arguments
+- `config`: Model configuration with initial condition settings
+- `G::Grid`: Grid structure
+- `S::State`: Model state to initialize
+- `plans`: FFT plans
+- `params`: QGParams (optional). If provided, q is computed from ψ for consistency.
+- `N2_profile`: Optional N²(z) profile for variable stratification.
 """
-function initialize_from_config(config, G::Grid, S::State, plans)
+function initialize_from_config(config, G::Grid, S::State, plans; params=nothing, N2_profile=nothing)
     @info "Initializing model fields from configuration"
-    
+
     # Set random seed for reproducibility
     Random.seed!(config.initial_conditions.random_seed)
-    
+
     # Initialize stream function
     if config.initial_conditions.psi_type == :analytical
-        init_analytical_psi!(S.psi, G, config.initial_conditions.psi_amplitude)
+        init_analytical_psi!(S.psi, G, config.initial_conditions.psi_amplitude, plans)
     elseif config.initial_conditions.psi_type == :random
         init_random_psi!(S.psi, G, config.initial_conditions.psi_amplitude)
     elseif config.initial_conditions.psi_type == :from_file
@@ -36,10 +48,10 @@ function initialize_from_config(config, G::Grid, S::State, plans)
         # Zero initialization
         S.psi .= 0.0
     end
-    
-    # Initialize wave field  
+
+    # Initialize wave field
     if config.initial_conditions.wave_type == :analytical
-        init_analytical_waves!(S.B, G, config.initial_conditions.wave_amplitude)
+        init_analytical_waves!(S.B, G, config.initial_conditions.wave_amplitude, plans)
     elseif config.initial_conditions.wave_type == :random
         init_random_waves!(S.B, G, config.initial_conditions.wave_amplitude)
     elseif config.initial_conditions.wave_type == :from_file
@@ -48,7 +60,20 @@ function initialize_from_config(config, G::Grid, S::State, plans)
         # Zero initialization
         S.B .= 0.0
     end
-    
+
+    # Compute q from ψ to ensure consistency
+    # Without this, the first timestep's invert_q_to_psi! would recompute ψ from
+    # the zero q field, wiping out the user's initial streamfunction.
+    if params !== nothing && hasfield(typeof(S), :q)
+        @info "Computing potential vorticity q from initialized streamfunction"
+        add_balanced_component!(S, G, params, plans; N2_profile=N2_profile)
+    elseif config.initial_conditions.psi_type != :zero && params === nothing
+        @warn "params not provided to initialize_from_config. " *
+              "Potential vorticity q will remain zero, and the first timestep " *
+              "will recompute ψ from q=0, potentially wiping the initial ψ. " *
+              "Pass params to compute consistent q from ψ." maxlog=1
+    end
+
     @info "Model initialization complete"
 end
 

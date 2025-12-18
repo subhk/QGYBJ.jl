@@ -9,6 +9,7 @@ This module fixes several issues with the current parallelization setup:
 """
 
 using ..QGYBJ: Grid, State, QGParams
+using ..QGYBJ: init_analytical_psi!, init_analytical_waves!, add_balanced_component!
 
 """
     ParallelConfig
@@ -218,18 +219,31 @@ end
 
 Initialize fields with parallel support.
 """
-function parallel_initialize_fields!(state, grid, plans, config, pconfig)
+function parallel_initialize_fields!(state, grid, plans, config, pconfig; params=nothing, N2_profile=nothing)
     # This needs to handle distributed arrays properly
     # For now, initialize on each process locally and ensure consistency
-    
+
     if config.initial_conditions.psi_type == :random
         # Deterministic initialization across ranks
         init_parallel_random_psi!(state.psi, grid, config.initial_conditions.psi_amplitude, pconfig)
+    elseif config.initial_conditions.psi_type == :analytical
+        # Analytical initialization - needs FFT plans
+        init_analytical_psi!(state.psi, grid, config.initial_conditions.psi_amplitude, plans)
     end
-    
+
     # Similar for wave fields
     if config.initial_conditions.wave_type == :random
         init_parallel_random_waves!(state.B, grid, config.initial_conditions.wave_amplitude, pconfig)
+    elseif config.initial_conditions.wave_type == :analytical
+        init_analytical_waves!(state.B, grid, config.initial_conditions.wave_amplitude, plans)
+    end
+
+    # Compute q from ψ to ensure consistency (same logic as initialize_from_config)
+    if params !== nothing && hasfield(typeof(state), :q)
+        add_balanced_component!(state, grid, params, plans; N2_profile=N2_profile)
+    elseif config.initial_conditions.psi_type != :zero && params === nothing
+        @warn "params not provided to parallel_initialize_fields!. " *
+              "Potential vorticity q will remain zero." maxlog=1
     end
 end
 
