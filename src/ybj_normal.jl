@@ -198,7 +198,7 @@ Sigma is the solvability condition for the vertical integration.
 =#
 
 """
-    compute_sigma(par, G, nBRk, nBIk, rBRk, rBIk; Lmask=nothing, workspace=nothing) -> sigma
+    compute_sigma(par, G, nBRk, nBIk, rBRk, rBIk; Lmask=nothing, workspace=nothing, N2_profile=nothing) -> sigma
 
 Compute the sigma constraint for normal YBJ A recovery.
 
@@ -226,6 +226,8 @@ where:
 - `rBRk, rBIk`: Real/imaginary parts of refraction forcing
 - `Lmask`: Optional dealiasing mask
 - `workspace`: Optional pre-allocated workspace for 2D decomposition
+- `N2_profile`: Optional N²(z) profile for consistent stratification physics.
+  If not provided, uses N2_ut(par, G) based on par.stratification.
 
 # Returns
 2D complex array sigma(nx_local, ny_local) with the constraint values.
@@ -238,7 +240,7 @@ In MPI mode with 2D decomposition, this requires z to be fully local.
 Transpose operations are handled internally if needed.
 """
 function compute_sigma(par::QGParams, G::Grid,
-                       nBRk, nBIk, rBRk, rBIk; Lmask=nothing, workspace=nothing)
+                       nBRk, nBIk, rBRk, rBIk; Lmask=nothing, workspace=nothing, N2_profile=nothing)
     # Check if we need 2D decomposition with transposes
     need_transpose = G.decomp !== nothing && hasfield(typeof(G.decomp), :pencil_z)
 
