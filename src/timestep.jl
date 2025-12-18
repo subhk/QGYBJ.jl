@@ -68,6 +68,64 @@ The vertical dimension (z) must be fully local for proper operation.
 
 #=
 ================================================================================
+                    HELPER FUNCTIONS
+================================================================================
+=#
+
+"""
+    split_B_to_real_imag!(BRk, BIk, B)
+
+Split complex wave field B into real and imaginary parts stored as complex arrays.
+
+This is a common operation in the time stepping code. The outputs BRk and BIk
+are complex arrays where only the real part is used (imaginary part is zero).
+This format is required for compatibility with the spectral derivative operations.
+
+# Arguments
+- `BRk`: Output array for real part of B (stored as Complex with imag=0)
+- `BIk`: Output array for imaginary part of B (stored as Complex with imag=0)
+- `B`: Input complex wave field
+"""
+function split_B_to_real_imag!(BRk, BIk, B)
+    B_arr = parent(B)
+    BRk_arr = parent(BRk)
+    BIk_arr = parent(BIk)
+    nx_local, ny_local, nz_local = size(B_arr)
+
+    @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
+        BRk_arr[i,j,k] = Complex(real(B_arr[i,j,k]), 0)
+        BIk_arr[i,j,k] = Complex(imag(B_arr[i,j,k]), 0)
+    end
+    return BRk, BIk
+end
+
+"""
+    combine_real_imag_to_B!(B, BRk, BIk)
+
+Combine real and imaginary parts back into complex wave field B.
+
+The inverse of `split_B_to_real_imag!`. Takes BRk and BIk (complex arrays
+with only real parts used) and combines them into B = BR + i*BI.
+
+# Arguments
+- `B`: Output complex wave field
+- `BRk`: Real part of B (stored as Complex with imag=0)
+- `BIk`: Imaginary part of B (stored as Complex with imag=0)
+"""
+function combine_real_imag_to_B!(B, BRk, BIk)
+    B_arr = parent(B)
+    BRk_arr = parent(BRk)
+    BIk_arr = parent(BIk)
+    nx_local, ny_local, nz_local = size(B_arr)
+
+    @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
+        B_arr[i,j,k] = Complex(real(BRk_arr[i,j,k]), 0) + im*Complex(real(BIk_arr[i,j,k]), 0)
+    end
+    return B
+end
+
+#=
+================================================================================
                     FORWARD EULER (Projection Step)
 ================================================================================
 The projection step initializes the leapfrog scheme by providing values
