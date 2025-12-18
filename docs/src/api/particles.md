@@ -75,8 +75,8 @@ initialize_particles_3d!
 using QGYBJ
 
 # Setup model
-par = default_params(nx=64, ny=64, nz=32)
-G, S, plans, a = setup_model(; par)
+par = default_params(Lx=500e3, Ly=500e3, Lz=4000.0, nx=64, ny=64, nz=32)
+G, S, plans, a = setup_model(par)
 
 # Create particle configuration (100 particles in a box at z = π/2)
 pconfig = particles_in_box(π/2;
