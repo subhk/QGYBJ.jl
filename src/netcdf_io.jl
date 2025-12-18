@@ -193,10 +193,10 @@ function write_serial_state_file(manager::OutputManager, S::State, G::Grid, plan
         ds.dim["time"] = 1
         
         # Create coordinate variables
-        x_var = defVar(ds, "x", Float64, ("x",))
-        y_var = defVar(ds, "y", Float64, ("y",))
-        z_var = defVar(ds, "z", Float64, ("z",))
-        time_var = defVar(ds, "time", Float64, ("time",))
+        x_var = NCDatasets.defVar(ds, "x", Float64, ("x",))
+        y_var = NCDatasets.defVar(ds, "y", Float64, ("y",))
+        z_var = NCDatasets.defVar(ds, "z", Float64, ("z",))
+        time_var = NCDatasets.defVar(ds, "time", Float64, ("time",))
         
         # Set coordinate values using actual domain size
         dx = G.Lx / G.nx
@@ -220,7 +220,7 @@ function write_serial_state_file(manager::OutputManager, S::State, G::Grid, plan
         # Stream function
         # Note: psir is already normalized by fft_backward!, no additional division needed
         if manager.save_psi
-            psi_var = defVar(ds, "psi", Float64, ("x", "y", "z"))
+            psi_var = NCDatasets.defVar(ds, "psi", Float64, ("x", "y", "z"))
             psi_var[:,:,:] = real.(psir)
             psi_var.attrib["units"] = "m²/s"
             psi_var.attrib["long_name"] = "stream function"
@@ -229,8 +229,8 @@ function write_serial_state_file(manager::OutputManager, S::State, G::Grid, plan
         # Wave fields (L+A real and imaginary parts)
         # Extract real and imag parts of the PHYSICAL field Br (already normalized)
         if manager.save_waves
-            LAr_var = defVar(ds, "LAr", Float64, ("x", "y", "z"))
-            LAi_var = defVar(ds, "LAi", Float64, ("x", "y", "z"))
+            LAr_var = NCDatasets.defVar(ds, "LAr", Float64, ("x", "y", "z"))
+            LAi_var = NCDatasets.defVar(ds, "LAi", Float64, ("x", "y", "z"))
 
             LAr_var[:,:,:] = real.(Br)  # Real part of physical wave field
             LAi_var[:,:,:] = imag.(Br)  # Imaginary part of physical wave field
@@ -244,8 +244,8 @@ function write_serial_state_file(manager::OutputManager, S::State, G::Grid, plan
         # Horizontal velocities (if requested)
         # Note: S.u and S.v are already in physical space (real Float64 arrays)
         if manager.save_velocities && hasfield(typeof(S), :u) && hasfield(typeof(S), :v)
-            u_var = defVar(ds, "u", Float64, ("x", "y", "z"))
-            v_var = defVar(ds, "v", Float64, ("x", "y", "z"))
+            u_var = NCDatasets.defVar(ds, "u", Float64, ("x", "y", "z"))
+            v_var = NCDatasets.defVar(ds, "v", Float64, ("x", "y", "z"))
 
             # u, v are already in physical space - write directly
             u_var[:,:,:] = S.u
@@ -259,7 +259,7 @@ function write_serial_state_file(manager::OutputManager, S::State, G::Grid, plan
         
         # Vertical velocity (if requested)
         if manager.save_vertical_velocity && hasfield(typeof(S), :w)
-            w_var = defVar(ds, "w", Float64, ("x", "y", "z"))
+            w_var = NCDatasets.defVar(ds, "w", Float64, ("x", "y", "z"))
             w_var[:,:,:] = S.w  # w is already in real space
             
             w_var.attrib["units"] = "m/s"
@@ -389,10 +389,10 @@ function write_parallel_netcdf_file(filepath, S::State, G::Grid, plans, time, pa
             ds.dim["time"] = 1
 
             # Create coordinate variables
-            x_var = NCDatasets.defVar(ds, "x", Float64, ("x",))
-            y_var = NCDatasets.defVar(ds, "y", Float64, ("y",))
-            z_var = NCDatasets.defVar(ds, "z", Float64, ("z",))
-            time_var = NCDatasets.defVar(ds, "time", Float64, ("time",))
+            x_var = NCDatasets.NCDatasets.defVar(ds, "x", Float64, ("x",))
+            y_var = NCDatasets.NCDatasets.defVar(ds, "y", Float64, ("y",))
+            z_var = NCDatasets.NCDatasets.defVar(ds, "z", Float64, ("z",))
+            time_var = NCDatasets.NCDatasets.defVar(ds, "time", Float64, ("time",))
 
             # Set coordinate values using actual domain size
             dx = G.Lx / G.nx
@@ -414,9 +414,9 @@ function write_parallel_netcdf_file(filepath, S::State, G::Grid, plans, time, pa
             time_var.attrib["long_name"] = "time"
 
             # Create and write data variables (already normalized by fft_backward!)
-            psi_var = NCDatasets.defVar(ds, "psi", Float64, ("x", "y", "z"))
-            LAr_var = NCDatasets.defVar(ds, "LAr", Float64, ("x", "y", "z"))
-            LAi_var = NCDatasets.defVar(ds, "LAi", Float64, ("x", "y", "z"))
+            psi_var = NCDatasets.NCDatasets.defVar(ds, "psi", Float64, ("x", "y", "z"))
+            LAr_var = NCDatasets.NCDatasets.defVar(ds, "LAr", Float64, ("x", "y", "z"))
+            LAi_var = NCDatasets.NCDatasets.defVar(ds, "LAi", Float64, ("x", "y", "z"))
 
             psi_var[:,:,:] = real.(psir)
             LAr_var[:,:,:] = real.(Br)  # Real part of physical wave field
@@ -506,10 +506,10 @@ function write_gathered_state_file(filepath, gathered_state, G::Grid, plans, tim
         ds.dim["time"] = 1
 
         # Create coordinate variables
-        x_var = NCDatasets.defVar(ds, "x", Float64, ("x",))
-        y_var = NCDatasets.defVar(ds, "y", Float64, ("y",))
-        z_var = NCDatasets.defVar(ds, "z", Float64, ("z",))
-        time_var = NCDatasets.defVar(ds, "time", Float64, ("time",))
+        x_var = NCDatasets.NCDatasets.defVar(ds, "x", Float64, ("x",))
+        y_var = NCDatasets.NCDatasets.defVar(ds, "y", Float64, ("y",))
+        z_var = NCDatasets.NCDatasets.defVar(ds, "z", Float64, ("z",))
+        time_var = NCDatasets.NCDatasets.defVar(ds, "time", Float64, ("time",))
 
         # Set coordinate values using actual domain size
         dx = G.Lx / G.nx
@@ -532,7 +532,7 @@ function write_gathered_state_file(filepath, gathered_state, G::Grid, plans, tim
 
         # Write streamfunction (already normalized by fft_backward!)
         if gathered_psi !== nothing
-            psi_var = NCDatasets.defVar(ds, "psi", Float64, ("x", "y", "z"))
+            psi_var = NCDatasets.NCDatasets.defVar(ds, "psi", Float64, ("x", "y", "z"))
             psi_var[:,:,:] = real.(psir)
             psi_var.attrib["units"] = "m²/s"
             psi_var.attrib["long_name"] = "stream function"
@@ -541,8 +541,8 @@ function write_gathered_state_file(filepath, gathered_state, G::Grid, plans, tim
         # Write wave fields (L+A real and imaginary parts)
         # Extract real and imag parts of the PHYSICAL field (already normalized)
         if gathered_B !== nothing
-            LAr_var = NCDatasets.defVar(ds, "LAr", Float64, ("x", "y", "z"))
-            LAi_var = NCDatasets.defVar(ds, "LAi", Float64, ("x", "y", "z"))
+            LAr_var = NCDatasets.NCDatasets.defVar(ds, "LAr", Float64, ("x", "y", "z"))
+            LAi_var = NCDatasets.NCDatasets.defVar(ds, "LAi", Float64, ("x", "y", "z"))
 
             LAr_var[:,:,:] = real.(Br)  # Real part of physical wave field
             LAi_var[:,:,:] = imag.(Br)  # Imaginary part of physical wave field
@@ -584,18 +584,18 @@ function write_diagnostics_file(manager::OutputManager, diagnostics::Dict, time:
     NCDatasets.Dataset(filepath, "c") do ds
         ds.dim["time"] = 1
         
-        time_var = defVar(ds, "time", Float64, ("time",))
+        time_var = NCDatasets.defVar(ds, "time", Float64, ("time",))
         time_var[1] = time
         time_var.attrib["units"] = "model time units"
         
         # Write diagnostic quantities
         for (name, value) in diagnostics
             if isa(value, Real)
-                var = defVar(ds, string(name), Float64, ("time",))
+                var = NCDatasets.defVar(ds, string(name), Float64, ("time",))
                 var[1] = value
             elseif isa(value, AbstractArray) && ndims(value) == 1
                 ds.dim[string(name)*"_dim"] = length(value)
-                var = defVar(ds, string(name), Float64, (string(name)*"_dim",))
+                var = NCDatasets.defVar(ds, string(name), Float64, (string(name)*"_dim",))
                 var[:] = value
             end
         end
@@ -954,8 +954,8 @@ function write_stratification_profile(filename::String, z_coords, N2_profile)
     NCDatasets.Dataset(filename, "c") do ds
         ds.dim["z"] = length(z_coords)
         
-        z_var = defVar(ds, "z", Float64, ("z",))
-        N2_var = defVar(ds, "N2", Float64, ("z",))
+        z_var = NCDatasets.defVar(ds, "z", Float64, ("z",))
+        N2_var = NCDatasets.defVar(ds, "N2", Float64, ("z",))
         
         z_var[:] = z_coords
         N2_var[:] = N2_profile
@@ -984,15 +984,15 @@ function create_empty_state_file(filepath::String, G::Grid, time::Real; metadata
         ds.dim["time"] = NCDatasets.Unlimited()
         
         # Create coordinate variables
-        x_var = defVar(ds, "x", Float64, ("x",))
-        y_var = defVar(ds, "y", Float64, ("y",))
-        z_var = defVar(ds, "z", Float64, ("z",))
-        time_var = defVar(ds, "time", Float64, ("time",))
+        x_var = NCDatasets.defVar(ds, "x", Float64, ("x",))
+        y_var = NCDatasets.defVar(ds, "y", Float64, ("y",))
+        z_var = NCDatasets.defVar(ds, "z", Float64, ("z",))
+        time_var = NCDatasets.defVar(ds, "time", Float64, ("time",))
         
         # Create data variables (initially empty)
-        psi_var = defVar(ds, "psi", Float64, ("x", "y", "z", "time"))
-        LAr_var = defVar(ds, "LAr", Float64, ("x", "y", "z", "time"))
-        LAi_var = defVar(ds, "LAi", Float64, ("x", "y", "z", "time"))
+        psi_var = NCDatasets.defVar(ds, "psi", Float64, ("x", "y", "z", "time"))
+        LAr_var = NCDatasets.defVar(ds, "LAr", Float64, ("x", "y", "z", "time"))
+        LAi_var = NCDatasets.defVar(ds, "LAi", Float64, ("x", "y", "z", "time"))
         
         # Set attributes
         x_var.attrib["units"] = "radians"
@@ -1043,9 +1043,9 @@ function ncdump_psi(S::State, G::Grid, plans; path="psi.out.nc")
         ds.dim["z"] = G.nz
 
         # Create coordinate variables
-        x_var = NCDatasets.defVar(ds, "x", Float64, ("x",))
-        y_var = NCDatasets.defVar(ds, "y", Float64, ("y",))
-        z_var = NCDatasets.defVar(ds, "z", Float64, ("z",))
+        x_var = NCDatasets.NCDatasets.defVar(ds, "x", Float64, ("x",))
+        y_var = NCDatasets.NCDatasets.defVar(ds, "y", Float64, ("y",))
+        z_var = NCDatasets.NCDatasets.defVar(ds, "z", Float64, ("z",))
 
         # Set coordinate values using actual domain size
         dx = G.Lx / G.nx
@@ -1063,7 +1063,7 @@ function ncdump_psi(S::State, G::Grid, plans; path="psi.out.nc")
         z_var.attrib["long_name"] = "z coordinate (vertical depth)"
 
         # Write psi (already normalized by fft_backward!)
-        psi_var = NCDatasets.defVar(ds, "psi", Float64, ("x", "y", "z"))
+        psi_var = NCDatasets.NCDatasets.defVar(ds, "psi", Float64, ("x", "y", "z"))
         psi_var[:,:,:] = real.(psir)
         psi_var.attrib["units"] = "m²/s"
         psi_var.attrib["long_name"] = "stream function"
@@ -1096,9 +1096,9 @@ function ncdump_la(S::State, G::Grid, plans; path="la.out.nc")
         ds.dim["z"] = G.nz
 
         # Create coordinate variables
-        x_var = NCDatasets.defVar(ds, "x", Float64, ("x",))
-        y_var = NCDatasets.defVar(ds, "y", Float64, ("y",))
-        z_var = NCDatasets.defVar(ds, "z", Float64, ("z",))
+        x_var = NCDatasets.NCDatasets.defVar(ds, "x", Float64, ("x",))
+        y_var = NCDatasets.NCDatasets.defVar(ds, "y", Float64, ("y",))
+        z_var = NCDatasets.NCDatasets.defVar(ds, "z", Float64, ("z",))
 
         # Set coordinate values using actual domain size
         dx = G.Lx / G.nx
@@ -1116,8 +1116,8 @@ function ncdump_la(S::State, G::Grid, plans; path="la.out.nc")
         z_var.attrib["long_name"] = "z coordinate (vertical depth)"
 
         # Write wave field real and imaginary parts (already normalized)
-        LAr_var = NCDatasets.defVar(ds, "LAr", Float64, ("x", "y", "z"))
-        LAi_var = NCDatasets.defVar(ds, "LAi", Float64, ("x", "y", "z"))
+        LAr_var = NCDatasets.NCDatasets.defVar(ds, "LAr", Float64, ("x", "y", "z"))
+        LAi_var = NCDatasets.NCDatasets.defVar(ds, "LAi", Float64, ("x", "y", "z"))
 
         LAr_var[:,:,:] = real.(Br)  # Real part of physical wave field
         LAi_var[:,:,:] = imag.(Br)  # Imaginary part of physical wave field

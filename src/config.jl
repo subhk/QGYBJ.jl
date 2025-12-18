@@ -387,9 +387,11 @@ function validate_config(config::ModelConfig)
         end
     end
     
-    # Output directory
-    if !isdir(dirname(config.output.output_dir))
-        push!(warnings, "Output directory parent does not exist: $(dirname(config.output.output_dir))")
+    # Output directory - check if parent directory exists (for nested paths)
+    # Note: dirname("./output") returns "." which always exists, so also check for absolute paths
+    parent_dir = dirname(config.output.output_dir)
+    if !isempty(parent_dir) && parent_dir != "." && !isdir(parent_dir)
+        push!(warnings, "Output directory parent does not exist: $parent_dir")
     end
 
     # Viscosity validation (must be non-negative)
