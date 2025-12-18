@@ -29,15 +29,24 @@ module EnergyDiagnostics
 using Printf
 using Dates
 
-const HAS_NCDS = Base.find_package("NCDatasets") !== nothing
+# Check if NCDatasets is available using same approach as netcdf_io.jl
+# Uses Base.require at module load time for consistency
+const HAS_NCDS = try
+    Base.require(Base.PkgId(Base.UUID("85f8d34a-cbdd-5861-8df4-14fed0d494ab"), "NCDatasets"))
+    true
+catch
+    false
+end
+
+# Load NCDatasets at module load time if available
+if HAS_NCDS
+    import NCDatasets
+end
+
 function ensure_ncds_loaded()
-    if HAS_NCDS
-        try
-            @eval import NCDatasets
-        catch
-            # ignore, caller will error if missing
-        end
-    end
+    # No-op: NCDatasets is loaded at module initialization if available
+    # This function exists for backward compatibility
+    nothing
 end
 
 """
