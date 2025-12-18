@@ -14,166 +14,173 @@ Initial conditions must be specified for:
 
 ## Random Initialization
 
-### Random Flow
+### Random Streamfunction
+
+The most common way to initialize a simulation is with random streamfunction:
 
 ```julia
-# Random streamfunction with specified energy level
-initialize_random_flow!(state, grid;
-    energy_level = 1.0,
-    seed = 42
-)
+using QGYBJ
+
+# Create parameters and setup
+par = default_params(Lx=500e3, Ly=500e3, Lz=4000.0, nx=64, ny=64, nz=32)
+G, S, plans, a_ell = setup_model(par)
+
+# Random streamfunction
+init_random_psi!(S, G; amplitude=0.1, seed=12345)
+
+# Compute q from psi (required before time stepping)
+compute_q_from_psi!(S, G, plans, a_ell)
 ```
 
-The random flow is band-limited to resolved wavenumbers with a specified spectral slope.
+The random field is band-limited to resolved wavenumbers.
 
-### Random Waves
+## Analytical Initial Conditions
+
+### Analytical Streamfunction
 
 ```julia
-# Random wave field
-initialize_random_waves!(state, grid;
-    amplitude = 0.1,
-    vertical_mode = 1,  # Dominant vertical mode
-    seed = 123
-)
+# Initialize with analytical pattern (e.g., dipole)
+init_analytical_psi!(S, G; mode=:dipole, amplitude=1.0)
+
+# Or single mode
+init_analytical_psi!(S, G; mode=:single, kx=2, ky=2, amplitude=0.5)
+
+# Compute q from psi
+compute_q_from_psi!(S, G, plans, a_ell)
 ```
 
-## Coherent Structures
-
-### Single Vortex
+### Analytical Waves
 
 ```julia
-# Gaussian vortex at domain center
-initialize_vortex!(state, grid;
-    x0 = π,
-    y0 = π,
-    radius = 0.5,
-    intensity = 1.0,
-    sign = :cyclone  # or :anticyclone
-)
+# Initialize wave envelope with analytical pattern
+init_analytical_waves!(S, G; amplitude=0.01, vertical_mode=1)
 ```
 
-### Vortex Pair
+## Balanced Initialization
+
+To ensure the flow starts in geostrophic balance:
 
 ```julia
-# Dipole (vortex pair)
-initialize_dipole!(state, grid;
-    separation = 1.0,
-    intensity = 1.0,
-    angle = 0.0  # Orientation
-)
+# First set up streamfunction
+init_random_psi!(S, G; amplitude=0.1)
+
+# Add balanced component
+add_balanced_component!(S, G, plans, a_ell)
+
+# Compute q from the balanced psi
+compute_q_from_psi!(S, G, plans, a_ell)
 ```
 
-### Jet
+## From Configuration
+
+Using the high-level API, initial conditions can be specified in the configuration:
 
 ```julia
-# Zonal jet with specified profile
-initialize_jet!(state, grid;
-    jet_width = 0.5,
-    jet_intensity = 1.0,
-    y_center = π
+using QGYBJ
+
+# Create initial condition configuration
+init_config = create_initial_condition_config(
+    psi_type=:random,     # :analytical, :from_file, :random
+    wave_type=:random,    # :zero, :analytical, :from_file, :random
+    wave_amplitude=1e-3,
+    random_seed=1234,
 )
+
+# Use in simulation setup
+domain = create_domain_config(nx=64, ny=64, nz=32, Lx=500e3, Ly=500e3, Lz=4000.0)
+strat = create_stratification_config(type=:constant_N)
+
+sim = setup_simulation(domain, strat; initial_conditions=init_config)
 ```
 
-## Wave Packets
-
-### Plane Wave
-
-```julia
-# Plane wave with specified wavenumber
-initialize_plane_wave!(state, grid;
-    kx = 4,
-    ky = 0,
-    amplitude = 0.1,
-    vertical_mode = 1
-)
-```
-
-### Gaussian Packet
-
-```julia
-# Localized wave packet
-initialize_wave_packet!(state, grid;
-    x0 = π,
-    y0 = π,
-    sigma_x = 0.5,
-    sigma_y = 0.5,
-    k0 = 4,     # Central wavenumber
-    amplitude = 0.1
-)
-```
-
-## From Spectra
-
-### Prescribed Energy Spectrum
-
-```julia
-# Initialize with E(k) ~ k^(-3)
-initialize_from_spectrum!(state, grid;
-    spectrum_type = :power_law,
-    exponent = -3,
-    energy_level = 1.0
-)
-```
-
-### Realistic Spectrum
-
-```julia
-# ECCO-like spectrum
-initialize_from_spectrum!(state, grid;
-    spectrum_type = :ECCO,
-    energy_level = 1.0
-)
-```
-
-## From Data
+## From Data Files
 
 ### From NetCDF
 
 ```julia
-using NCDatasets
+using QGYBJ
 
-# Load from file
-NCDataset("initial_conditions.nc") do ds
-    psi_init = ds["psi"][:]
-    B_init = ds["B"][:]
-end
+par = default_params(Lx=500e3, Ly=500e3, Lz=4000.0, nx=64, ny=64, nz=32)
+G, S, plans, a_ell = setup_model(par)
 
-# Set state
-state.psi .= psi_init
-state.B .= B_init
+# Read initial streamfunction from file
+psi_init = read_initial_psi("initial_conditions.nc", G)
+S.psi .= psi_init
+
+# Read initial waves from file (optional)
+B_init = read_initial_waves("initial_conditions.nc", G)
+S.B .= B_init
 
 # Compute derived quantities
-invert_q_to_psi!(state, grid, params, a_ell)
-compute_velocities!(state, grid, plans)
+compute_q_from_psi!(S, G, plans, a_ell)
+compute_velocities!(S, G, plans)
 ```
 
-### Interpolation from Different Grid
+### Using ncread Functions
+
+For legacy compatibility:
 
 ```julia
-# Interpolate from coarse to fine grid
-psi_fine = interpolate_field(psi_coarse, grid_coarse, grid_fine)
-state.psi .= psi_fine
+# Read streamfunction
+ncread_psi!(S, G, "psi_file.nc")
+
+# Read wave envelope
+ncread_la!(S, G, "waves_file.nc")
 ```
 
-## Spin-Up
+## Direct Assignment
+
+You can directly assign values in spectral space:
+
+```julia
+using QGYBJ
+
+par = default_params(Lx=500e3, Ly=500e3, Lz=4000.0, nx=64, ny=64, nz=32)
+G, S, plans, a_ell = setup_model(par)
+
+# Direct assignment (in spectral space)
+S.psi .= 0.0  # Zero everywhere
+S.B .= 0.0    # No waves
+
+# Or set specific modes
+# S.psi[kx_idx, ky_idx, kz] = amplitude
+
+# Always compute q from psi after modifying psi
+compute_q_from_psi!(S, G, plans, a_ell)
+```
+
+## Complete Example: Spin-Up
 
 For realistic simulations, start with random initialization and spin up:
 
 ```julia
-# Initialize randomly
-initialize_random_flow!(state, grid; energy_level=0.1)
+using QGYBJ
 
-# Spin-up phase (develop turbulence)
-for step = 1:spinup_steps
-    timestep!(state, grid, params, work, plans, a_ell, dt)
+# Setup
+par = default_params(
+    Lx=500e3, Ly=500e3, Lz=4000.0,
+    nx=64, ny=64, nz=32,
+    dt=0.001, nt=10000
+)
+G, S, plans, a_ell = setup_model(par)
+
+# Initialize flow randomly
+init_random_psi!(S, G; amplitude=0.1)
+compute_q_from_psi!(S, G, plans, a_ell)
+
+# Spin-up phase (develop turbulence) - no waves
+spinup_steps = 1000
+first_projection_step!(S, G, par, plans, a_ell)
+for step = 2:spinup_steps
+    leapfrog_step!(S, G, par, plans, a_ell)
 end
 
 # Now add waves
-initialize_random_waves!(state, grid; amplitude=0.1)
+init_analytical_waves!(S, G; amplitude=0.01)
 
 # Production run
-for step = 1:nsteps
-    timestep!(...)
+for step = 1:par.nt
+    leapfrog_step!(S, G, par, plans, a_ell)
 end
 ```
 
@@ -182,11 +189,17 @@ end
 ### Check Initial Energy
 
 ```julia
-KE = flow_kinetic_energy(state.u, state.v, grid)
-WE = wave_energy(state.B, state.A, grid)[2]
+# Compute velocities first
+compute_velocities!(S, G, plans)
 
+# Check flow kinetic energy
+KE = flow_kinetic_energy(S.u, S.v)
 println("Initial KE: $KE")
-println("Initial WE: $WE")
+
+# Check wave energy
+WE_B, WE_A = wave_energy(S.B, S.A)
+println("Initial Wave Energy (B): $WE_B")
+println("Initial Wave Energy (A): $WE_A")
 ```
 
 ### Visualize
@@ -194,20 +207,27 @@ println("Initial WE: $WE")
 ```julia
 using Plots
 
-# Surface vorticity
-zeta = compute_vorticity(state.psi, grid, plans)
-heatmap(zeta[:, :, end], title="Initial Surface Vorticity")
+# Get horizontal slice
+psi_slice = slice_horizontal(S.psi, G, plans; k=G.nz)
 
-# Wave amplitude
-A2 = abs2.(state.A)
-heatmap(A2[:, :, end], title="Initial Wave Intensity")
+heatmap(real(psi_slice), title="Initial Surface ψ", aspect_ratio=1)
 ```
 
 ## API Reference
 
-Initial conditions can be set using:
-- `init_random_psi!` - Initialize random streamfunction field
-- Direct assignment to `state.q`, `state.B` in spectral space
-- Reading from NetCDF files using `ncread_psi!`, `ncread_la!`
+The following functions are available for initial conditions:
 
-See the [Grid & State API](../api/grid_state.md) for state initialization functions.
+| Function | Description |
+|:---------|:------------|
+| `init_random_psi!` | Random streamfunction field |
+| `init_analytical_psi!` | Analytical streamfunction pattern |
+| `init_analytical_waves!` | Analytical wave envelope |
+| `add_balanced_component!` | Add balanced component to flow |
+| `compute_q_from_psi!` | Compute PV from streamfunction |
+| `initialize_from_config` | Initialize from configuration object |
+| `read_initial_psi` | Read ψ from NetCDF file |
+| `read_initial_waves` | Read B from NetCDF file |
+| `ncread_psi!` | Legacy NetCDF read for ψ |
+| `ncread_la!` | Legacy NetCDF read for waves |
+
+See the [Grid & State API](../api/grid_state.md) for more details on state initialization.
