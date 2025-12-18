@@ -28,26 +28,7 @@ module EnergyDiagnostics
 
 using Printf
 using Dates
-
-# Check if NCDatasets is available using same approach as netcdf_io.jl
-# Uses Base.require at module load time for consistency
-const HAS_NCDS = try
-    Base.require(Base.PkgId(Base.UUID("85f8d34a-cbdd-5861-8df4-14fed0d494ab"), "NCDatasets"))
-    true
-catch
-    false
-end
-
-# Load NCDatasets at module load time if available
-if HAS_NCDS
-    import NCDatasets
-end
-
-function ensure_ncds_loaded()
-    # No-op: NCDatasets is loaded at module initialization if available
-    # This function exists for backward compatibility
-    nothing
-end
+using NCDatasets
 
 """
     EnergyDiagnosticsManager
@@ -163,7 +144,6 @@ function write_energy_file(filepath::String, varname::String,
     if !HAS_NCDS
         error("NCDatasets not available. Install NCDatasets.jl or skip NetCDF I/O.")
     end
-    ensure_ncds_loaded()
 
     NCDatasets.Dataset(filepath, "c") do ds
         # Define time dimension (unlimited for appending)
@@ -263,7 +243,6 @@ function write_total_energy_file!(manager::EnergyDiagnosticsManager{T}) where T
     if !HAS_NCDS
         return
     end
-    ensure_ncds_loaded()
 
     NCDatasets.Dataset(manager.total_energy_file, "c") do ds
         nt = length(manager.time_series)

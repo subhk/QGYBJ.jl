@@ -3,29 +3,12 @@ Enhanced NetCDF I/O functionality for QG-YBJ model.
 
 This module provides comprehensive NetCDF input/output capabilities including:
 - State file output with time series (state0001.nc, state0002.nc, ...)
-- Initial condition reading from NetCDF files  
+- Initial condition reading from NetCDF files
 - Stratification profile I/O
 - Flexible variable selection and metadata handling
 """
 
-# Check if NCDatasets is available (use try/catch for robustness)
-const HAS_NCDS = try
-    Base.require(Base.PkgId(Base.UUID("85f8d34a-cbdd-5861-8df4-14fed0d494ab"), "NCDatasets"))
-    true
-catch
-    false
-end
-
-# Load NCDatasets at module load time if available
-if HAS_NCDS
-    import NCDatasets
-end
-
-function ensure_ncds_loaded()
-    # No-op: NCDatasets is loaded at module initialization if available
-    # This function exists for backward compatibility
-    nothing
-end
+using NCDatasets
 using Printf
 using Dates
 using ..QGYBJ: Grid, State, QGParams
@@ -147,7 +130,6 @@ function write_state_file(manager::OutputManager, S::State, G::Grid, plans, time
     if !HAS_NCDS
         error("NCDatasets not available. Install NCDatasets.jl or skip NetCDF I/O.")
     end
-    ensure_ncds_loaded()
     # Use parallel_config from manager if not provided
     if parallel_config === nothing
         parallel_config = manager.parallel_config
@@ -167,7 +149,6 @@ end
 Write state file in serial mode.
 """
 function write_serial_state_file(manager::OutputManager, S::State, G::Grid, plans, time::Real; params=nothing)
-    ensure_ncds_loaded()
     # Generate filename (printf-style pattern supported)
     io = IOBuffer()
     Printf.format(io, Printf.Format(manager.state_file_pattern), manager.psi_counter)
@@ -352,7 +333,6 @@ Uses gather-to-root approach: all data is gathered to rank 0, which writes the f
 This is simpler and more reliable than parallel NetCDF.
 """
 function write_parallel_netcdf_file(filepath, S::State, G::Grid, plans, time, parallel_config; params=nothing)
-    ensure_ncds_loaded()
 
     # Import MPI
     MPI = Base.require(Base.PkgId(Base.UUID("da04e1cc-30fd-572f-bb4f-1f8673147195"), "MPI"))
@@ -474,7 +454,6 @@ The gathered_state should be a named tuple with fields:
 - `B`: Gathered wave envelope array (spectral, nx×ny×nz)
 """
 function write_gathered_state_file(filepath, gathered_state, G::Grid, plans, time; params=nothing)
-    ensure_ncds_loaded()
 
     # Extract gathered fields
     gathered_psi = gathered_state.psi
@@ -577,7 +556,6 @@ end
 Write diagnostic quantities to NetCDF file.
 """
 function write_diagnostics_file(manager::OutputManager, diagnostics::Dict, time::Real)
-    ensure_ncds_loaded()
     filename = "diagnostics_$(lpad(manager.diagnostics_counter, 4, '0')).nc"
     filepath = joinpath(manager.output_dir, filename)
     
@@ -622,7 +600,6 @@ In parallel mode:
 - Data is scattered to all processes
 """
 function read_initial_psi(filename::String, G::Grid, plans; parallel_config=nothing)
-    ensure_ncds_loaded()
 
     # Determine if running in parallel
     is_parallel = parallel_config !== nothing && G.decomp !== nothing
@@ -707,7 +684,6 @@ In parallel mode:
 - Data is scattered to all processes
 """
 function read_initial_waves(filename::String, G::Grid, plans; parallel_config=nothing)
-    ensure_ncds_loaded()
 
     # Determine if running in parallel
     is_parallel = parallel_config !== nothing && G.decomp !== nothing
@@ -809,7 +785,6 @@ Tuple of (z_data::Vector{Float64}, N2_data::Vector{Float64})
 """
 function read_stratification_raw(filename::String)
     @info "Reading raw stratification profile from: $filename"
-    ensure_ncds_loaded()
 
     z_data = Float64[]
     N2_data = Float64[]
@@ -853,7 +828,6 @@ Performs linear interpolation if the file's vertical resolution differs from the
 """
 function read_stratification_profile(filename::String, nz::Int)
     @info "Reading stratification profile from: $filename"
-    ensure_ncds_loaded()
 
     N2_profile = zeros(Float64, nz)
 
@@ -1029,7 +1003,6 @@ Legacy compatibility wrapper for writing stream function to NetCDF.
 Directly writes psi field without using OutputManager.
 """
 function ncdump_psi(S::State, G::Grid, plans; path="psi.out.nc")
-    ensure_ncds_loaded()
     @info "Writing psi to: $path"
 
     # Convert spectral psi to real space
@@ -1082,7 +1055,6 @@ Legacy compatibility wrapper for writing L+A wave field to NetCDF.
 Directly writes wave field without using OutputManager.
 """
 function ncdump_la(S::State, G::Grid, plans; path="la.out.nc")
-    ensure_ncds_loaded()
     @info "Writing L+A to: $path"
 
     # Convert spectral B to real space (full complex IFFT)
