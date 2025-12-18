@@ -12,7 +12,7 @@ using ..QGYBJ: first_projection_step!, leapfrog_step!
 using ..QGYBJ: invert_q_to_psi!, compute_velocities!
 using ..QGYBJ: local_to_global
 using ..QGYBJ: a_ell_ut, dealias_mask
-using ..QGYBJ: OutputManager, write_state_file, OutputConfig, ParallelConfig
+using ..QGYBJ: OutputManager, write_state_file, OutputConfig, MPIConfig
 
 # Energy diagnostics module for separate file output
 using ..QGYBJ.EnergyDiagnostics: EnergyDiagnosticsManager, should_output, record_energies!
@@ -40,8 +40,8 @@ mutable struct QGYBJSimulation{T}
     # Output management
     output_manager
     
-    # Parallel configuration
-    parallel_config::ParallelConfig
+    # MPI configuration
+    parallel_config::MPIConfig
     
     # Stratification
     stratification_profile

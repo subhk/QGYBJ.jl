@@ -247,7 +247,7 @@ include("config.jl")            # Configuration types (DomainConfig, etc.)
 include("netcdf_io.jl")         # NetCDF I/O with legacy compatibility
 include("initialization.jl")    # Field initialization helpers
 include("stratification.jl")    # Stratification profiles
-include("parallel_interface.jl") # Parallel configuration types
+include("parallel_mpi.jl")       # MPI parallel interface (required)
 
 # High-level user interface (depends on the above)
 include("model_interface.jl")   # QGYBJSimulation, run_simulation!, etc.
