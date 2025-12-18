@@ -487,7 +487,7 @@ export DomainConfig, StratificationConfig, InitialConditionConfig, OutputConfig,
        create_output_config, create_model_config,
        QGYBJSimulation, setup_simulation, run_simulation!,
        create_simple_config, run_simple_simulation,
-       OutputManager, write_state_file, read_initial_psi, read_initial_waves, read_stratification_profile,
+       OutputManager, write_state_file, read_initial_psi, read_initial_waves, read_stratification_profile, read_stratification_raw,
        StratificationProfile, ConstantN, SkewedGaussian, TanhProfile,
        create_stratification_profile, compute_stratification_profile,
        # Legacy I/O compatibility functions (now implemented in netcdf_io.jl)

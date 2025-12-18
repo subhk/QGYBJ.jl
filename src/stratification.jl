@@ -10,7 +10,7 @@ Provides various stratification profiles including:
 - Custom profiles from files
 """
 
-using ..QGYBJ: Grid, QGParams
+using ..QGYBJ: Grid, QGParams, read_stratification_raw
 
 """
     StratificationProfile{T}
@@ -338,14 +338,18 @@ end
     load_stratification_from_file(filename::String)
 
 Load stratification profile from NetCDF file.
+
+Uses `read_stratification_raw` to read both z coordinates and N² values
+without interpolation. The resulting FileProfile can then be evaluated
+at any z using linear interpolation.
 """
 function load_stratification_from_file(filename::String)
     T = Float64
-    
-    # This would use the NetCDF reading functions
-    z_data, N2_data = read_stratification_profile(filename, -1)  # -1 to read all points
-    
-    return FileProfile{T}(filename, z_data, N2_data)
+
+    # Use read_stratification_raw which returns (z_data, N2_data) tuple
+    z_data, N2_data = read_stratification_raw(filename)
+
+    return FileProfile{T}(filename, Vector{T}(z_data), Vector{T}(N2_data))
 end
 
 """

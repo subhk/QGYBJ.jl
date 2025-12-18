@@ -788,6 +788,56 @@ function _read_initial_waves_parallel(filename::String, G::Grid, plans, parallel
 end
 
 """
+    read_stratification_raw(filename::String) -> (z_data, N2_data)
+
+Read raw stratification profile (N²) from NetCDF file without interpolation.
+Returns both z coordinates and N² values as vectors.
+
+# Arguments
+- `filename::String`: Path to NetCDF file containing stratification data
+
+# Returns
+Tuple of (z_data::Vector{Float64}, N2_data::Vector{Float64})
+"""
+function read_stratification_raw(filename::String)
+    @info "Reading raw stratification profile from: $filename"
+    ensure_ncds_loaded()
+
+    z_data = Float64[]
+    N2_data = Float64[]
+
+    NCDatasets.Dataset(filename, "r") do ds
+        # Read z coordinates
+        if haskey(ds, "z")
+            z_data = Array(ds["z"][:])
+        elseif haskey(ds.dim, "z")
+            # If no z variable, create uniform grid
+            nz_file = ds.dim["z"]
+            z_data = collect(range(0.0, 1.0, length=nz_file))
+            @warn "No 'z' variable found, using normalized coordinates [0, 1]"
+        else
+            error("No 'z' dimension found in $filename")
+        end
+
+        # Look for common N² variable names
+        var_names = ["N2", "N_squared", "buoyancy_frequency_squared", "brunt_vaisala_frequency_squared"]
+
+        for name in var_names
+            if haskey(ds, name)
+                N2_data = Array(ds[name][:])
+                break
+            end
+        end
+
+        if isempty(N2_data)
+            error("No recognized stratification variable found in $filename. Expected one of: $var_names")
+        end
+    end
+
+    return (z_data, N2_data)
+end
+
+"""
     read_stratification_profile(filename::String, nz::Int)
 
 Read stratification profile (N²) from NetCDF file.
