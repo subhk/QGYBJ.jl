@@ -57,6 +57,9 @@ using ..QGYBJ: local_to_global, get_local_dims
 using ..QGYBJ: transpose_to_z_pencil!, transpose_to_xy_pencil!
 using ..QGYBJ: local_to_global_z, allocate_z_pencil
 
+# Reference to parent module for physics functions
+const PARENT = Base.parentmodule(@__MODULE__)
+
 #=
 ================================================================================
                     OMEGA EQUATION RHS COMPUTATION
@@ -1063,9 +1066,6 @@ function wave_energy_spectral_global(BR, BI, AR, AI, CR, CI, G::Grid, par; Lmask
         return WKE_global, WPE_global, WCE_global
     end
 end
-
-# Reference to parent module for MPI functions
-const PARENT = Base.parentmodule(@__MODULE__)
 
 end # module
 
