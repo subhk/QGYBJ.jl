@@ -119,12 +119,14 @@ function a_ell_ut(par::QGParams, G::Grid)
     if par.stratification === :constant_N
         #= Constant N²: a = f²/N² =#
         T = eltype(a)
+        # Use consistent threshold for warning and clamping
+        N2_min = sqrt(eps(T))
         # Warn once if division guard activates (N² ≈ 0)
-        if par.N² < sqrt(eps(T))
-            @warn "N² ≈ 0 in constant_N stratification (N²=$(par.N²)), using eps for numerical stability" maxlog=1
+        if par.N² < N2_min
+            @warn "N² ≈ 0 in constant_N stratification (N²=$(par.N²)), clamping to $N2_min for numerical stability" maxlog=1
         end
         @inbounds for k in 1:nz
-            a[k] = f₀_sq / max(par.N², eps(T))
+            a[k] = f₀_sq / max(par.N², N2_min)
         end
 
     elseif par.stratification === :skewed_gaussian
@@ -448,11 +450,16 @@ only through a_ell = 1/N² in the elliptic operators.
 # Arguments
 - `par::QGParams`: Model parameters
 - `G::Grid`: Grid structure
-- `N2_profile`: Optional custom N² profile (uses N2_ut if nothing)
+- `N2_profile`: Optional custom N² profile (currently ignored, reserved for future use)
 
 # Returns
-- `rho_ut`: Density on unstaggered levels (length nz)
-- `rho_st`: Density on staggered levels (length nz)
+- `rho_ut`: Density weights on unstaggered levels (length nz)
+- `rho_st`: Density weights for staggered derivative operations (length nz)
+
+# Note
+Both return arrays have length nz for indexing convenience, even though true
+staggered values would have length nz-1. With Boussinesq (unity weights),
+this distinction doesn't matter.
 
 # Fortran Correspondence
 The Fortran test1 case also uses unity weights (Boussinesq).
@@ -464,6 +471,14 @@ function derive_density_profiles(par::QGParams, G::Grid; N2_profile=nothing)
     - No density weighting in vertical derivatives
 
     This matches the Fortran reference implementation (test1). =#
+
+    # Warn if N2_profile is provided since we currently use Boussinesq approximation
+    if N2_profile !== nothing
+        @warn "derive_density_profiles: N2_profile argument is currently ignored. " *
+              "Returning unity profiles (Boussinesq approximation). " *
+              "For variable-density effects, modify this function." maxlog=1
+    end
+
     nz = G.nz
     rho_ut = ones(eltype(G.z), nz)
     rho_st = ones(eltype(G.z), nz)
