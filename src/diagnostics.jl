@@ -814,7 +814,14 @@ In MPI mode, returns LOCAL energy. Use mpi_reduce_sum for global totals.
 function wave_energy_spectral(BR, BI, AR, AI, CR, CI, G::Grid, par; Lmask=nothing)
     nx, ny, nz = G.nx, G.ny, G.nz
     L = isnothing(Lmask) ? trues(nx, ny) : Lmask
-    a_ell_coeff = par.f₀^2 / par.N²  # Elliptic coefficient f²/N²
+
+    # Get z-dependent elliptic coefficient a(z) = f²/N²(z)
+    # This handles both constant_N and skewed_gaussian stratification correctly
+    a_ell = if isdefined(PARENT, :a_ell_ut) && par !== nothing
+        PARENT.a_ell_ut(par, G)
+    else
+        fill(par.f₀^2 / par.N², nz)  # Fallback to constant
+    end
 
     # Get local dimensions
     BR_arr = parent(BR)
@@ -825,6 +832,9 @@ function wave_energy_spectral(BR, BI, AR, AI, CR, CI, G::Grid, par; Lmask=nothin
     CI_arr = parent(CI)
 
     nx_local, ny_local, nz_local = size(BR_arr)
+
+    # Check if 2D decomposition is active (z may be distributed in xy-pencil)
+    need_z_global = G.decomp !== nothing && hasfield(typeof(G.decomp), :pencil_z)
 
     # Get density profile if available (for variable stratification)
     # r_2 corresponds to rho at staggered points for potential energy
@@ -841,8 +851,9 @@ function wave_energy_spectral(BR, BI, AR, AI, CR, CI, G::Grid, par; Lmask=nothin
     WKE_k0 = 0.0  # kh=0 mode for dealiasing correction
 
     @inbounds for k in 1:nz_local
-        # Get density at this level (use global k index if needed)
-        k_global = k  # In serial mode; for MPI would need local_to_global_z
+        # Use global z-index for correct profile lookup in 2D decomposition
+        k_global = need_z_global ? local_to_global_z(k, 3, G) : k
+        a_ell_k = k_global <= length(a_ell) ? a_ell[k_global] : a_ell[end]
         ρ₂ₖ = k_global <= length(ρ₂) ? ρ₂[k_global] : 1.0
 
         wke_k = 0.0
@@ -861,11 +872,11 @@ function wave_energy_spectral(BR, BI, AR, AI, CR, CI, G::Grid, par; Lmask=nothin
                 # WKE: |BR|² + |BI|²
                 wke_k += abs2(BR_arr[i,j,k]) + abs2(BI_arr[i,j,k])
 
-                # WPE: (0.5/(ρ₂×a_ell)) × kh² × (|CR|² + |CI|²)
-                wpe_k += (0.5 / (ρ₂ₖ * a_ell_coeff)) * kₕ² * (abs2(CR_arr[i,j,k]) + abs2(CI_arr[i,j,k]))
+                # WPE: (0.5/(ρ₂×a_ell(z))) × kh² × (|CR|² + |CI|²)
+                wpe_k += (0.5 / (ρ₂ₖ * a_ell_k)) * kₕ² * (abs2(CR_arr[i,j,k]) + abs2(CI_arr[i,j,k]))
 
-                # WCE: (1/8) × (1/a_ell²) × kh⁴ × (|AR|² + |AI|²)
-                wce_k += (1.0/8.0) * (1.0/(a_ell_coeff*a_ell_coeff)) * kₕ²*kₕ² * (abs2(AR_arr[i,j,k]) + abs2(AI_arr[i,j,k]))
+                # WCE: (1/8) × (1/a_ell(z)²) × kh⁴ × (|AR|² + |AI|²)
+                wce_k += (1.0/8.0) * (1.0/(a_ell_k*a_ell_k)) * kₕ²*kₕ² * (abs2(AR_arr[i,j,k]) + abs2(AI_arr[i,j,k]))
             end
         end
 
