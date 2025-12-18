@@ -580,8 +580,8 @@ function compute_qw!(qʷₖ, BRk, BIk, par, G::Grid, plans; Lmask=nothing)
     BIₓᵣ_arr = parent(BIₓᵣ); BIᵧᵣ_arr = parent(BIᵧᵣ)
 
     #= Compute (i/2)J(B*, B) term
-    J(B*, B) = 2(BRᵧBIₓ - BRₓBIᵧ)
-    So (i/2)J(B*, B) contributes: BRᵧBIₓ - BRₓBIᵧ =#
+    J(B*, B) = 2i(BRₓBIᵧ - BRᵧBIₓ)  [purely imaginary]
+    So (i/2)J(B*, B) = i² × (BRₓBIᵧ - BRᵧBIₓ) = -(BRₓBIᵧ - BRᵧBIₓ) = BRᵧBIₓ - BRₓBIᵧ =#
     qʷᵣ = similar(qʷₖ)
     qʷᵣ_arr = parent(qʷᵣ)
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
@@ -825,7 +825,9 @@ For efficiency, we return just λ×dt (the exponent).
 - `waves::Bool`: If true, use wave hyperdiffusion (nuh1w, ilap1w, etc.)
 
 # Returns
-    λ×dt = dt × [ν₁(|kx|^(2n₁) + |ky|^(2n₁)) + ν₂(|kx|^(2n₂) + |ky|^(2n₂))]
+    λ×dt = dt × [ν₁(kx² + ky²)^n₁ + ν₂(kx² + ky²)^n₂] = dt × [ν₁ kₕ^(2n₁) + ν₂ kₕ^(2n₂)]
+
+Note: Uses isotropic form `(kx² + ky²)^n` for proper damping of diagonal modes.
 
 # Usage in Time Stepping
 ```julia
