@@ -234,18 +234,14 @@ function write_serial_state_file(manager::OutputManager, S::State, G::Grid, plan
         end
         
         # Horizontal velocities (if requested)
+        # Note: S.u and S.v are already in physical space (real Float64 arrays)
         if manager.save_velocities && hasfield(typeof(S), :u) && hasfield(typeof(S), :v)
-            ur = similar(S.u)
-            vr = similar(S.v)
-            fft_backward!(ur, S.u, plans)
-            fft_backward!(vr, S.v, plans)
-
             u_var = defVar(ds, "u", Float64, ("x", "y", "z"))
             v_var = defVar(ds, "v", Float64, ("x", "y", "z"))
 
-            # Already normalized by fft_backward!
-            u_var[:,:,:] = real.(ur)
-            v_var[:,:,:] = real.(vr)
+            # u, v are already in physical space - write directly
+            u_var[:,:,:] = S.u
+            v_var[:,:,:] = S.v
 
             u_var.attrib["units"] = "m/s"
             u_var.attrib["long_name"] = "zonal velocity"
