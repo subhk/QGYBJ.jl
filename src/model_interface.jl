@@ -126,22 +126,29 @@ function setup_simulation(config::ModelConfig{T}; use_mpi::Bool=false) where T
         nx = config.domain.nx,
         ny = config.domain.ny,
         nz = config.domain.nz,
+
         Lx = config.domain.Lx,
         Ly = config.domain.Ly,
-        Lz = config.domain.Lz,  # Was missing!
+        Lz = config.domain.Lz,
+
         dt = config.dt,
         nt = ceil(Int, config.total_time / config.dt),
         f₀ = config.f0,
         νₕ = config.nu_h,
         νᵥ = config.nu_v,
+
         linear_vert_structure = 0,
         stratification = config.stratification.type,
+
         W2F = T(1e-6),  # Default wave-to-flow energy ratio
         N² = N²_value,  # From config.stratification.N0 for constant_N
         γ = T(1e-3),    # Robert-Asselin filter
-        νₕ₁ = T(config.nu_h1), νₕ₂ = T(config.nu_h2), ilap1 = config.ilap1, ilap2 = config.ilap2,
-        νₕ₁ʷ = T(config.nu_h1_wave), νₕ₂ʷ = T(config.nu_h2_wave), ilap1w = config.ilap1_wave, ilap2w = config.ilap2_wave,
+        νₕ₁ = T(config.nu_h1), νₕ₂ = T(config.nu_h2), 
+        ilap1 = config.ilap1, ilap2 = config.ilap2,
+        νₕ₁ʷ = T(config.nu_h1_wave), νₕ₂ʷ = T(config.nu_h2_wave), 
+        ilap1w = config.ilap1_wave, ilap2w = config.ilap2_wave,
         νz = T(config.nu_v),  # Vertical diffusion coefficient for q
+
         inviscid = config.inviscid,
         linear = config.linear,
         no_dispersion = config.no_dispersion,
@@ -150,6 +157,7 @@ function setup_simulation(config::ModelConfig{T}; use_mpi::Bool=false) where T
         no_feedback = config.no_wave_feedback || config.no_feedback,  # Handle both flags
         fixed_flow = config.fixed_mean_flow,
         no_wave_feedback = config.no_wave_feedback,
+        
         # Skewed Gaussian parameters (from config)
         N₀²_sg = config.stratification.N02_sg,
         N₁²_sg = config.stratification.N12_sg,
