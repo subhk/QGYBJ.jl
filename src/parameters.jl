@@ -51,6 +51,10 @@ Container for all physical and numerical parameters of the QG-YBJ+ model.
 
 # Physical Parameters
 - `f₀`: Coriolis parameter (typically 1.0 for nondimensional)
+- `N²`: Buoyancy frequency squared (default 1.0)
+- `W2F`: DEPRECATED - no longer used (kept for backward compatibility)
+- `γ`: Robert-Asselin filter coefficient (typically 10⁻³)
+- `linear_vert_structure`: Legacy Fortran flag (0 or 1), typically 0
 
 # Viscosity/Hyperviscosity
 The model uses two hyperdiffusion operators for stability:
@@ -62,12 +66,6 @@ The model uses two hyperdiffusion operators for stability:
 - `νz`: Vertical diffusion coefficient
 
 The hyperdiffusion term is: ν₁(-∇²)^ilap1 + ν₂(-∇²)^ilap2
-
-# Physical Parameters
-- `N²`: Buoyancy frequency squared (default 1.0)
-- `W2F`: DEPRECATED - no longer used (kept for backward compatibility)
-- `γ`: Robert-Asselin filter coefficient (typically 10⁻³)
-- `linear_vert_structure`: Legacy Fortran flag (0 or 1), typically 0
 
 # Physics Switches
 These boolean flags control different physics modes:
@@ -118,8 +116,18 @@ Base.@kwdef mutable struct QGParams{T}
 
     #= ====================================================================
                             PHYSICAL PARAMETERS
+    ====================================================================
+    Key physical parameters that control the wave-mean flow dynamics:
+    - f₀: Coriolis parameter (default 1.0)
+    - N²: Buoyancy frequency squared (default 1.0 for constant_N)
+
+    The wave dispersion coefficient is: N²/(2f)
+    The elliptic coefficient is: a = f²/N² (= 1/N² when f=1)
     ==================================================================== =#
     f₀::T                      # Coriolis parameter (1.0 for nondimensional)
+    N²::T                      # Buoyancy frequency squared (default 1.0)
+    W2F::T                     # DEPRECATED: not used (dimensional equations have B with actual amplitude)
+    γ::T                       # Robert-Asselin filter parameter (typ. 10⁻³)
 
     #= ====================================================================
                         VISCOSITY / HYPERVISCOSITY
@@ -149,20 +157,6 @@ Base.@kwdef mutable struct QGParams{T}
 
     # Vertical diffusion
     νz::T                      # Vertical diffusion coefficient for q
-
-    #= ====================================================================
-                        PHYSICAL PARAMETERS
-    ====================================================================
-    These are the key physical parameters that control the wave dynamics:
-    - f₀: Coriolis parameter (default 1.0)
-    - N²: Buoyancy frequency squared (default 1.0 for constant_N)
-
-    The wave dispersion coefficient is: N²/(2f)
-    The elliptic coefficient is: a = f²/N² (= 1/N² when f=1)
-    ==================================================================== =#
-    N²::T                      # Buoyancy frequency squared (default 1.0)
-    W2F::T                     # DEPRECATED: not used (dimensional equations have B with actual amplitude)
-    γ::T                       # Robert-Asselin filter parameter (typ. 10⁻³)
 
     #= ====================================================================
                             FLAGS AND SWITCHES

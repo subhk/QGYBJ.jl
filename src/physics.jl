@@ -139,16 +139,18 @@ function a_ell_ut(par::QGParams, G::Grid)
         - Background N₀² in deep ocean =#
         T = eltype(a)
         N02 = par.N₀²_sg; N12 = par.N₁²_sg; σ = par.σ_sg; z0 = par.z₀_sg; α = par.α_sg
+        # Use consistent threshold for warning and clamping
+        N2_min = sqrt(eps(T))
         division_guard_warned = false
         @inbounds for k in 1:nz
             z = G.z[k]
             N2_z = N12*exp(-((z - z0)^2)/(σ^2))*(1 + erf(α*(z - z0)/(σ*sqrt(2.0)))) + N02
             # Warn once if division guard activates at any level
-            if N2_z < sqrt(eps(T)) && !division_guard_warned
-                @warn "N²(z) ≈ 0 at z=$(z) in skewed_gaussian stratification, using eps for numerical stability" maxlog=1
+            if N2_z < N2_min && !division_guard_warned
+                @warn "N²(z) ≈ 0 at z=$(z) in skewed_gaussian stratification, clamping to $N2_min for numerical stability" maxlog=1
                 division_guard_warned = true
             end
-            a[k] = f₀_sq / max(N2_z, eps(T))  # a = f²/N²(z), protected against N²≈0
+            a[k] = f₀_sq / max(N2_z, N2_min)  # a = f²/N²(z), protected against N²≈0
         end
 
     else
@@ -196,15 +198,17 @@ function a_ell_from_N2(N2_profile::AbstractVector, par::QGParams)
     a = similar(N2_profile)
     f₀_sq = par.f₀^2
 
+    # Use consistent threshold for warning and clamping
+    N2_min = sqrt(eps(T))
     division_guard_warned = false
     @inbounds for k in 1:nz
         N2_z = N2_profile[k]
         # Warn once if division guard activates (N² ≈ 0)
-        if N2_z < sqrt(eps(T)) && !division_guard_warned
-            @warn "N²(z) ≈ 0 at level k=$k in custom N² profile, using eps for numerical stability" maxlog=1
+        if N2_z < N2_min && !division_guard_warned
+            @warn "N²(z) ≈ 0 at level k=$k in custom N² profile, clamping to $N2_min for numerical stability" maxlog=1
             division_guard_warned = true
         end
-        a[k] = f₀_sq / max(N2_z, eps(T))  # a = f²/N²(z), protected against N²≈0
+        a[k] = f₀_sq / max(N2_z, N2_min)  # a = f²/N²(z), protected against N²≈0
     end
     return a
 end
