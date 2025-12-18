@@ -293,12 +293,15 @@ end
 Write state file using parallel NetCDF I/O.
 """
 function write_parallel_state_file(manager::OutputManager, S::State, G::Grid, plans, time::Real, parallel_config; params=nothing)
+    # Import MPI
+    MPI = Base.require(Base.PkgId(Base.UUID("da04e1cc-30fd-572f-bb4f-1f8673147195"), "MPI"))
+
     # Generate filename
     io = IOBuffer()
     Printf.format(io, Printf.Format(manager.state_file_pattern), manager.psi_counter)
     filename = String(take!(io))
     filepath = joinpath(manager.output_dir, filename)
-    
+
     if parallel_config.use_mpi && G.decomp !== nothing
         rank = MPI.Comm_rank(parallel_config.comm)
         
