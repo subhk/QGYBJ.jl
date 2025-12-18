@@ -58,9 +58,8 @@ using .HaloExchange
 include("interpolation_schemes.jl")
 using .InterpolationSchemes
 
-# Include 3D particle configuration
-include("particle_config.jl")
-using .EnhancedParticleConfig
+# NOTE: particle_config.jl is included AFTER ParticleConfig struct definition below
+# because it needs to access ParticleConfig from this module
 
 """
 Configuration for particle initialization and advection.
@@ -164,6 +163,11 @@ end
 
 # Legacy alias for backwards compatibility
 create_particle_config(::Type{T}=Float64; kwargs...) where T = ParticleConfig{T}(; kwargs...)
+
+# Include 3D particle configuration AFTER ParticleConfig is defined
+# (particle_config.jl needs to access ParticleConfig from this module)
+include("particle_config.jl")
+using .EnhancedParticleConfig
 
 """
 Particle state including positions, velocities, and trajectory history.
