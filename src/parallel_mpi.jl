@@ -49,6 +49,9 @@ import PencilFFTs: PencilFFTPlan
 # Note: Grid, State, QGParams, Plans are already in scope since we're included in QGYBJ
 # init_analytical_psi!, init_analytical_waves!, add_balanced_component! also already available
 
+# Import fft_forward! and fft_backward! to extend with MPI methods
+import QGYBJ: fft_forward!, fft_backward!
+
 #=
 ================================================================================
                         MPI CONFIGURATION
