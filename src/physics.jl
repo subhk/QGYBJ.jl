@@ -181,9 +181,12 @@ invert_q_to_psi!(S, G; a=a_ell)
 ```
 
 # Note
-If `N2_profile` is `nothing` or empty, falls back to `a_ell_ut(par, G)`.
-This function ensures that custom stratification profiles provided by the user
-are actually used in the main dynamics, not just in vertical velocity calculations.
+This function requires a valid N² profile vector. For constant stratification
+or default behavior, use `a_ell_ut(par, G)` instead. Empty profiles will
+result in an empty output vector.
+
+This ensures custom stratification profiles provided by the user are actually
+used in the main dynamics, not just in vertical velocity calculations.
 """
 function a_ell_from_N2(N2_profile::AbstractVector, par::QGParams)
     nz = length(N2_profile)

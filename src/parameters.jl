@@ -76,9 +76,11 @@ These boolean flags control different physics modes:
 - `no_dispersion`: If true, disable wave dispersion (A=0)
 - `passive_scalar`: If true, waves are passive (no dispersion, no refraction)
 - `ybj_plus`: If true, use YBJ+ formulation; if false, use normal YBJ
-- `no_feedback`: If true, disable wave feedback on mean flow
+- `no_feedback`: If true, disable ALL wave-mean flow coupling (master switch)
 - `fixed_flow`: If true, mean flow doesn't evolve (ψ constant in time)
-- `no_wave_feedback`: If true, waves don't affect mean flow (qʷ = 0)
+- `no_wave_feedback`: If true, disable qʷ term specifically (waves don't modify PV)
+
+Note: Wave feedback is enabled only when BOTH `no_feedback=false` AND `no_wave_feedback=false`.
 
 # Stratification Parameters (Skewed Gaussian profile)
 For the skewed Gaussian N²(z) profile:
@@ -184,9 +186,9 @@ Base.@kwdef mutable struct QGParams{T}
     ybj_plus::Bool             # true = use YBJ+ formulation; false = normal YBJ
 
     # Wave-mean flow interaction control
-    no_feedback::Bool          # true = disable wave feedback completely
+    no_feedback::Bool          # true = disable ALL wave-mean flow coupling (master switch)
     fixed_flow::Bool           # true = mean flow ψ doesn't evolve in time
-    no_wave_feedback::Bool     # true = waves don't affect mean flow (qʷ = 0)
+    no_wave_feedback::Bool     # true = disable qʷ term specifically (waves don't modify PV)
 
     #= ====================================================================
                     SKEWED GAUSSIAN STRATIFICATION PARAMETERS
@@ -291,11 +293,14 @@ With f₀=1, N²=1 (constant_N stratification):
 **Physics Switches:**
 - `ybj_plus`: Use YBJ+ formulation (default: true)
 - `fixed_flow`: Keep mean flow constant (default: false)
-- `no_wave_feedback`: Disable wave feedback on flow (default: true)
+- `no_feedback`: Master switch to disable all wave-mean coupling (default: true)
+- `no_wave_feedback`: Disable qʷ term specifically (default: true)
 - `inviscid`: Disable dissipation (default: false)
 - `linear`: Disable nonlinear advection (default: false)
 - `no_dispersion`: Disable wave dispersion (default: false)
 - `passive_scalar`: Waves as passive tracers (default: false)
+
+Note: Wave feedback is enabled only when BOTH `no_feedback=false` AND `no_wave_feedback=false`.
 
 # Example
 ```julia
