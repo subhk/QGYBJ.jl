@@ -9,19 +9,24 @@ Provides a simple random-phase ring in k-space with optional vertical structure.
 Populate real-space ψ with a random-phase Gaussian ring at |k|≈initial_k, then
 apply optional vertical structure: 0=QG-consistent kz~kh, 1=linear in z,
 2=constant kz=1. Returns S with ψ set in spectral space.
+
+Note: FFT plans are created internally for each call. For efficiency in repeated
+initialization, consider using the initialization routines in initialization.jl
+which accept pre-computed plans.
 """
 function init_random_psi!(S::State, G::Grid; initial_k=5, amp_width=2.0, linear_vert_structure=0)
     nx, ny, nz = G.nx, G.ny, G.nz
     # Build ψ in real space then FFT to spectral
-    ψᵣ = zeros(Float64, nx, ny, nz)
+    # Use element type from State for type consistency
+    T = real(eltype(S.psi))
+    ψᵣ = zeros(T, nx, ny, nz)
     # Deterministic pseudo-random phases based on integer hash (no Random dependency)
-    phase_for(ikₓ::Int, ikᵧ::Int) = 2π * ((hash((ikₓ, ikᵧ)) % 1_000_000) / 1_000_000)
+    phase_for(ikₓ::Int, ikᵧ::Int) = T(2π) * ((hash((ikₓ, ikᵧ)) % 1_000_000) / 1_000_000)
     for ikₓ in -2*initial_k:2*initial_k, ikᵧ in -2*initial_k:2*initial_k
         kₕ² = ikₓ^2 + ikᵧ^2
-        kₕ = sqrt(kₕ²)
         kₕ² == 0 && continue
-        κ = sqrt(kₕ²)
-        amp = exp( - (κ - initial_k)^2 / (2*amp_width) )
+        kₕ = sqrt(T(kₕ²))  # Use kₕ consistently (removed redundant κ)
+        amp = exp(-(kₕ - initial_k)^2 / (2*amp_width))
         for k in 1:nz, i in 1:nx, j in 1:ny
             z = G.z[k]
             phase = phase_for(ikₓ, ikᵧ)

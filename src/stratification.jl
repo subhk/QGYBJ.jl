@@ -10,7 +10,8 @@ Provides various stratification profiles including:
 - Custom profiles from files
 """
 
-using ..QGYBJ: Grid, QGParams, read_stratification_raw
+using SpecialFunctions: erf
+using ..QGYBJ: Grid, read_stratification_raw
 
 """
     StratificationProfile{T}
@@ -225,8 +226,10 @@ function evaluate_N2(profile::FileProfile{T}, z::Real) where T
             end
         end
     end
-    
-    return T(0)  # Fallback
+
+    # Should never reach here - indicates a logic error or malformed profile data
+    error("evaluate_N2: Failed to interpolate N² at z=$z. " *
+          "z_data range: [$(profile.z_data[1]), $(profile.z_data[end])]")
 end
 
 """
