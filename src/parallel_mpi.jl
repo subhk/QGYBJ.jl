@@ -44,7 +44,7 @@ using PencilFFTs
 # Explicit imports from PencilArrays for clarity
 import PencilArrays: Pencil, PencilArray, MPITopology
 import PencilArrays: range_local, range_remote, transpose!, gather
-import PencilFFTs: PencilFFTPlan
+import PencilFFTs: PencilFFTPlan, allocate_input, allocate_output
 
 # Note: Grid, State, QGParams, Plans are already in scope since we're included in QGYBJ
 # init_analytical_psi!, init_analytical_waves!, add_balanced_component! also already available
@@ -479,17 +479,18 @@ function plan_mpi_transforms(grid::Grid, mpi_config::MPIConfig)
 
     plan = PencilFFTPlan(pencil_xy, transform)
 
-    input_pencil = first_pencil(plan)
-    output_pencil = last_pencil(plan)
+    # Allocate work arrays and get their pencil configurations
+    work_in = allocate_input(plan)
+    work_out = allocate_output(plan)
+
+    input_pencil = PencilArrays.pencil(work_in)
+    output_pencil = PencilArrays.pencil(work_out)
 
     pencils_match = _check_pencil_compatibility(input_pencil, output_pencil, pencil_xy)
 
     if !pencils_match && mpi_config.is_root
         @warn "PencilFFTs input/output pencils have different decompositions."
     end
-
-    work_in = PencilArray{Complex{Float64}}(undef, input_pencil)
-    work_out = PencilArray{Complex{Float64}}(undef, output_pencil)
 
     return MPIPlans(
         plan, input_pencil, output_pencil,
