@@ -8,7 +8,7 @@ stratification, initial conditions, and output.
 ```julia
 domain = create_domain_config(
     nx=128, ny=128, nz=64,
-    Lx=4π, Ly=4π, Lz=2π,
+    Lx=500e3, Ly=500e3, Lz=4000.0,  # Domain size in meters (REQUIRED)
 )
 ```
 
