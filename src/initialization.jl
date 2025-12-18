@@ -569,15 +569,17 @@ function compute_q_from_psi!(q, psi, G::Grid, params, a_ell, r_ut, r_st, dz)
             q_arr[i_local, j_local, k] = -kh2 * psi_arr[i_local, j_local, k] + vert_term / dz2
         end
 
-        # Bottom boundary (k=1): Neumann BC ψ_z = 0 ⟹ ψ[0] = ψ[1]
-        if nz >= 1
+        # Handle boundary conditions based on nz
+        if nz == 1
+            # Single-layer case: No vertical derivatives, q = -kh² ψ (2D barotropic mode)
+            q_arr[i_local, j_local, 1] = -kh2 * psi_arr[i_local, j_local, 1]
+        else
+            # Bottom boundary (k=1): Neumann BC ψ_z = 0 ⟹ ψ[0] = ψ[1]
             coeff_up = (r_ut[1] * a_ell[1]) / r_st[1]
             vert_term = coeff_up * (psi_arr[i_local, j_local, 2] - psi_arr[i_local, j_local, 1])
             q_arr[i_local, j_local, 1] = -kh2 * psi_arr[i_local, j_local, 1] + vert_term / dz2
-        end
 
-        # Top boundary (k=nz): Neumann BC ψ_z = 0 ⟹ ψ[nz+1] = ψ[nz]
-        if nz >= 2
+            # Top boundary (k=nz): Neumann BC ψ_z = 0 ⟹ ψ[nz+1] = ψ[nz]
             coeff_down = (r_ut[nz-1] * a_ell[nz-1]) / r_st[nz]
             vert_term = coeff_down * (psi_arr[i_local, j_local, nz-1] - psi_arr[i_local, j_local, nz])
             q_arr[i_local, j_local, nz] = -kh2 * psi_arr[i_local, j_local, nz] + vert_term / dz2
