@@ -342,6 +342,22 @@ function _compute_vertical_velocity_direct!(S::State, G::Grid, plans, params, N2
     Δz = nz > 1 ? (G.z[2] - G.z[1]) : 1.0
     f² = f^2
 
+    # Pre-allocate work arrays outside loop to reduce GC pressure
+    n_interior = nz - 2  # Interior points (constant for all wavenumbers)
+    if n_interior > 0
+        d = zeros(Float64, n_interior)
+        dₗ = zeros(Float64, n_interior-1)
+        dᵤ = zeros(Float64, n_interior-1)
+        rhs = zeros(eltype(S.psi), n_interior)
+        dₗ_work = zeros(Float64, n_interior-1)
+        d_work = zeros(Float64, n_interior)
+        dᵤ_work = zeros(Float64, n_interior-1)
+        rhsᵣ = zeros(Float64, n_interior)
+        rhsᵢ = zeros(Float64, n_interior)
+        solᵣ = zeros(Float64, n_interior)
+        solᵢ = zeros(Float64, n_interior)
+    end
+
     # For each LOCAL horizontal wavenumber (kₓ, kᵧ), solve tridiagonal system
     @inbounds for j_local in 1:ny_local, i_local in 1:nx_local
         i_global = local_to_global(i_local, 1, G)
@@ -351,18 +367,11 @@ function _compute_vertical_velocity_direct!(S::State, G::Grid, plans, params, N2
         kₕ² = kₓ^2 + kᵧ^2
 
         if kₕ² > 0 && nz > 2  # Need at least 3 levels for tridiagonal
-            n_interior = nz - 2  # Interior points
-
             if n_interior > 0
-                # Tridiagonal matrix coefficients (real-valued)
-                d = zeros(Float64, n_interior)      # diagonal
-                dₗ = zeros(Float64, n_interior-1)   # lower diagonal
-                dᵤ = zeros(Float64, n_interior-1)   # upper diagonal
-                rhs = zeros(eltype(S.psi), n_interior)  # RHS vector
-
-                # Fill tridiagonal system for ∇²w + (N²/f²)(∂²w/∂z²) = RHS
+                # Fill tridiagonal system (reusing pre-allocated arrays)
+                # ∇²w + (N²/f²)(∂²w/∂z²) = RHS
                 # Centered second derivative: ∂²w/∂z² ≈ (w[k+1] - 2w[k] + w[k-1])/Δz²
-                # So diagonal gets factor of 2 from the -2w[k] term
+                fill!(dₗ, 0.0); fill!(dᵤ, 0.0)
                 for iz in 1:n_interior
                     k = iz + 1  # Actual z-level (2 to nz-1)
                     coeff_z = (N2_profile[k]/f²)/(Δz*Δz)
@@ -377,13 +386,14 @@ function _compute_vertical_velocity_direct!(S::State, G::Grid, plans, params, N2
                 end
 
                 # Solve tridiagonal system - real and imaginary parts separately
-                dₗ_work = copy(dₗ)
-                d_work = copy(d)
-                dᵤ_work = copy(dᵤ)
-                rhsᵣ = real.(rhs)
-                rhsᵢ = imag.(rhs)
+                dₗ_work .= dₗ
+                d_work .= d
+                dᵤ_work .= dᵤ
+                @inbounds for iz in 1:n_interior
+                    rhsᵣ[iz] = real(rhs[iz])
+                    rhsᵢ[iz] = imag(rhs[iz])
+                end
 
-                solᵣ = zeros(Float64, n_interior)
                 try
                     LinearAlgebra.LAPACK.gtsv!(dₗ_work, d_work, dᵤ_work, rhsᵣ)
                     solᵣ .= rhsᵣ
@@ -392,10 +402,9 @@ function _compute_vertical_velocity_direct!(S::State, G::Grid, plans, params, N2
                           "This may indicate singular matrix due to N²≈0 or ill-conditioned system.")
                 end
 
-                dₗ_work = copy(dₗ)
-                d_work = copy(d)
-                dᵤ_work = copy(dᵤ)
-                solᵢ = zeros(Float64, n_interior)
+                dₗ_work .= dₗ
+                d_work .= d
+                dᵤ_work .= dᵤ
                 try
                     LinearAlgebra.LAPACK.gtsv!(dₗ_work, d_work, dᵤ_work, rhsᵢ)
                     solᵢ .= rhsᵢ
@@ -404,10 +413,9 @@ function _compute_vertical_velocity_direct!(S::State, G::Grid, plans, params, N2
                           "This may indicate singular matrix due to N²≈0 or ill-conditioned system.")
                 end
 
-                solution = solᵣ .+ im .* solᵢ
                 for iz in 1:n_interior
                     k = iz + 1
-                    wk_arr[i_local, j_local, k] = solution[iz]
+                    wk_arr[i_local, j_local, k] = solᵣ[iz] + im * solᵢ[iz]
                 end
             end
 
