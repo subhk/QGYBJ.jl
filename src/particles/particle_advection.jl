@@ -335,9 +335,9 @@ function detect_parallel_environment()
     rank = 0
     nprocs = 1
     is_parallel = false
-    
+
     try
-        M = Base.require(:MPI)
+        M = Base.require(Base.PkgId(Base.UUID("da04e1cc-30fd-572f-bb4f-1f8673147195"), "MPI"))
         if M.Initialized()
             comm = M.COMM_WORLD
             rank = M.Comm_rank(comm)
@@ -347,7 +347,7 @@ function detect_parallel_environment()
     catch
         # MPI not available
     end
-    
+
     return comm, rank, nprocs, is_parallel
 end
 
@@ -979,7 +979,7 @@ function migrate_particles!(tracker::ParticleTracker{T}) where T
         return tracker
     end
     try
-        M = Base.require(:MPI)
+        M = Base.require(Base.PkgId(Base.UUID("da04e1cc-30fd-572f-bb4f-1f8673147195"), "MPI"))
         particles = tracker.particles
         local_domain = tracker.local_domain
         
@@ -1431,4 +1431,6 @@ function finalize_trajectory_files!(tracker::ParticleTracker; final_metadata::Di
     return tracker
 end
 
-end # m
+end # module UnifiedParticleAdvection
+
+using .UnifiedParticleAdvection
