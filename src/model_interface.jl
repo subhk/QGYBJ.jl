@@ -959,14 +959,12 @@ function run_simulation!(S::State, G::Grid, par::QGParams, plans;
     end
 
     # Setup parallel config if not provided (for I/O)
-    if parallel_config === nothing && is_mpi
-        parallel_config = ParallelConfig(
-            use_mpi = true,
-            comm = mpi_config.comm,
-            parallel_io = false
-        )
+    # MPI is required, so use the mpi_config directly
+    if parallel_config === nothing && mpi_config !== nothing
+        parallel_config = mpi_config
     elseif parallel_config === nothing
-        parallel_config = ParallelConfig(use_mpi = false)
+        # If no config provided at all, setup MPI environment
+        parallel_config = setup_mpi_environment()
     end
 
     # Compute coefficients
