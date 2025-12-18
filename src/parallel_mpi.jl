@@ -44,11 +44,10 @@ using PencilFFTs
 # Explicit imports from PencilArrays for clarity
 import PencilArrays: Pencil, PencilArray, MPITopology
 import PencilArrays: range_local, range_remote, transpose!, gather
-import PencilFFTs: PencilFFTPlan, first_pencil, last_pencil
+import PencilFFTs: PencilFFTPlan
 
-# Import types from parent module
-using ..QGYBJ: Grid, State, QGParams, Plans
-using ..QGYBJ: init_analytical_psi!, init_analytical_waves!, add_balanced_component!
+# Note: Grid, State, QGParams, Plans are already in scope since we're included in QGYBJ
+# init_analytical_psi!, init_analytical_waves!, add_balanced_component! also already available
 
 #=
 ================================================================================
