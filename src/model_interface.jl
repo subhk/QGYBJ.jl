@@ -189,11 +189,8 @@ function setup_simulation(config::ModelConfig{T}; topology=nothing) where T
         @info "Initializing model fields"
     end
     
-    if parallel_config.use_mpi
-        parallel_initialize_fields!(state, grid, plans, config, parallel_config; params=params, N2_profile=N2_profile)
-    else
-        initialize_from_config(config, grid, state, plans; params=params, N2_profile=N2_profile)
-    end
+    # Initialize fields (MPI-aware)
+    parallel_initialize_fields!(state, grid, plans, config, parallel_config; params=params, N2_profile=N2_profile)
     
     # Check initial conditions (only on rank 0 to avoid spam)
     ic_diagnostics = if should_print
