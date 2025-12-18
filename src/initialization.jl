@@ -585,20 +585,37 @@ function compute_q_from_psi!(q, psi, G::Grid, params, a_ell, r_ut, r_st, dz)
 end
 
 """
-    compute_geostrophic_velocities!(u, v, psi, G)
+    compute_geostrophic_velocities!(u, v, psi, G, plans)
 
 Compute geostrophically balanced velocities from streamfunction.
+
+This function computes velocities in spectral space using geostrophic balance,
+then transforms them to physical space.
 
 Geostrophic balance:
     u = -∂ψ/∂y = -i*ky*ψ  (in spectral space)
     v =  ∂ψ/∂x =  i*kx*ψ  (in spectral space)
-"""
-function compute_geostrophic_velocities!(u, v, psi, G::Grid)
-    u_arr = parent(u)
-    v_arr = parent(v)
-    psi_arr = parent(psi)
 
+# Arguments
+- `u`: Zonal velocity output (real-space, real array)
+- `v`: Meridional velocity output (real-space, real array)
+- `psi`: Streamfunction (spectral space, complex array)
+- `G::Grid`: Grid structure
+- `plans`: FFT plans for inverse transform
+
+# Note
+For typical use, velocities are computed by `compute_velocities!` in the main
+timestepping loop. This function is provided for initialization or diagnostics.
+"""
+function compute_geostrophic_velocities!(u, v, psi, G::Grid, plans)
+    psi_arr = parent(psi)
     nx_local, ny_local, nz_local = size(psi_arr)
+
+    # Allocate temporary spectral arrays for velocity derivatives
+    uk_temp = similar(psi)
+    vk_temp = similar(psi)
+    uk_arr = parent(uk_temp)
+    vk_arr = parent(vk_temp)
 
     for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
         # Get global wavenumber indices
@@ -611,9 +628,13 @@ function compute_geostrophic_velocities!(u, v, psi, G::Grid)
         ky_val = G.ky[min(j_global, length(G.ky))]
 
         # Geostrophic velocities in spectral space
-        u_arr[i_local, j_local, k] = -im * ky_val * psi_arr[i_local, j_local, k]
-        v_arr[i_local, j_local, k] =  im * kx_val * psi_arr[i_local, j_local, k]
+        uk_arr[i_local, j_local, k] = -im * ky_val * psi_arr[i_local, j_local, k]
+        vk_arr[i_local, j_local, k] =  im * kx_val * psi_arr[i_local, j_local, k]
     end
+
+    # Transform to physical space
+    fft_backward!(u, uk_temp, plans)
+    fft_backward!(v, vk_temp, plans)
 end
 
 """
