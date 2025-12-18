@@ -508,7 +508,7 @@ function initialize_particles_parallel!(tracker::ParticleTracker{T},
 end
 
 """
-    advect_particles!(tracker, state, grid, dt, current_time=nothing)
+    advect_particles!(tracker, state, grid, dt, current_time=nothing; params=nothing, N2_profile=nothing)
 
 Advect particles using unified serial/parallel interface.
 Respects the particle_advec_time setting - particles remain stationary until this time.
@@ -516,12 +516,22 @@ Respects the particle_advec_time setting - particles remain stationary until thi
 Parameters:
 - tracker: ParticleTracker instance
 - state: Current fluid state
-- grid: Grid information  
+- grid: Grid information
 - dt: Time step
 - current_time: Current simulation time (if not provided, uses tracker's internal time)
+- params: Model parameters (QGParams). Required for YBJ vertical velocity to get correct f₀, N².
+- N2_profile: Optional N²(z) profile for nonuniform stratification. If not provided and
+  `use_ybj_w=true`, will use constant N² from params, which may be inconsistent with the
+  simulation's actual stratification.
+
+# Important
+When using YBJ vertical velocity (`use_ybj_w=true`) with variable stratification, you MUST
+pass the same `N2_profile` used in the simulation. Otherwise, `compute_ybj_vertical_velocity!`
+will re-invert B→A with constant N², giving inconsistent particle velocities.
 """
-function advect_particles!(tracker::ParticleTracker{T}, 
-                          state::State, grid::Grid, dt::T, current_time=nothing) where T
+function advect_particles!(tracker::ParticleTracker{T},
+                          state::State, grid::Grid, dt::T, current_time=nothing;
+                          params=nothing, N2_profile=nothing) where T
     
     # Use simulation time if provided, otherwise use tracker's internal time
     if current_time !== nothing
@@ -552,8 +562,8 @@ function advect_particles!(tracker::ParticleTracker{T},
     end
     
     # Normal advection process starts here
-    # Update velocity fields
-    update_velocity_fields!(tracker, state, grid)
+    # Update velocity fields (pass params and N2_profile for consistent YBJ vertical velocity)
+    update_velocity_fields!(tracker, state, grid; params=params, N2_profile=N2_profile)
     
     # Advect particles using chosen integration method
     if tracker.config.integration_method == :euler
