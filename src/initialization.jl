@@ -507,13 +507,10 @@ function add_balanced_component!(S::State, G::Grid, params::QGParams, plans; N2_
         @info "Computed potential vorticity q from streamfunction"
     end
 
-    # Compute geostrophically balanced velocities
-    # u = -∂ψ/∂y = -i*ky*ψ
-    # v =  ∂ψ/∂x =  i*kx*ψ
-    if hasfield(typeof(S), :u) && hasfield(typeof(S), :v)
-        compute_geostrophic_velocities!(S.u, S.v, S.psi, G)
-        @info "Computed geostrophic velocities u, v from streamfunction"
-    end
+    # Note: Geostrophic velocities (u, v) are NOT computed here.
+    # The State struct has u, v as real-space arrays, and proper velocity computation
+    # requires FFT plans and workspace. Velocities will be computed consistently by
+    # compute_velocities! during the first projection step (first_projection_step!).
 
     # Compute buoyancy from thermal wind balance
     # b = ∂ψ/∂z (in QG approximation with constant N²)
