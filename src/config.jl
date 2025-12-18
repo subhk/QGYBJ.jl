@@ -136,9 +136,21 @@ Base.@kwdef struct ModelConfig{T}
     dt::T = 1e-3
     total_time::T = 10.0
 
-    # Numerical parameters
-    nu_h::T = 0.0      # Horizontal viscosity
+    # Numerical parameters - basic viscosity
+    nu_h::T = 0.0      # Horizontal viscosity (legacy, prefer hyperdiffusion)
     nu_v::T = 0.0      # Vertical viscosity
+
+    # Hyperdiffusion for mean flow: ν₁(-∇²)^ilap1 + ν₂(-∇²)^ilap2
+    nu_h1::T = 0.01    # First hyperviscosity coefficient for mean flow
+    nu_h2::T = 10.0    # Second hyperviscosity coefficient for mean flow
+    ilap1::Int = 2     # First Laplacian power (2 = biharmonic)
+    ilap2::Int = 6     # Second Laplacian power (6 = hyper-6)
+
+    # Hyperdiffusion for waves
+    nu_h1_wave::T = 0.0   # First hyperviscosity coefficient for waves
+    nu_h2_wave::T = 10.0  # Second hyperviscosity coefficient for waves
+    ilap1_wave::Int = 2   # First Laplacian power for waves
+    ilap2_wave::Int = 6   # Second Laplacian power for waves
 
     # Model switches
     # NOTE: These defaults differ from default_params() for historical reasons:

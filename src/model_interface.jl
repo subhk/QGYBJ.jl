@@ -138,8 +138,8 @@ function setup_simulation(config::ModelConfig{T}; use_mpi::Bool=false) where T
         W2F = T(1e-6),  # Default wave-to-flow energy ratio
         N² = N²_value,  # From config.stratification.N0 for constant_N
         γ = T(1e-3),    # Robert-Asselin filter
-        νₕ₁ = T(0.01), νₕ₂ = T(10.0), ilap1 = 2, ilap2 = 6,
-        νₕ₁ʷ = T(0.0), νₕ₂ʷ = T(10.0), ilap1w = 2, ilap2w = 6,
+        νₕ₁ = T(config.nu_h1), νₕ₂ = T(config.nu_h2), ilap1 = config.ilap1, ilap2 = config.ilap2,
+        νₕ₁ʷ = T(config.nu_h1_wave), νₕ₂ʷ = T(config.nu_h2_wave), ilap1w = config.ilap1_wave, ilap2w = config.ilap2_wave,
         νz = T(0.0),
         inviscid = config.inviscid,
         linear = config.linear,
