@@ -281,6 +281,14 @@ w = 0 at z = 0 and z = Lz (rigid lid and bottom).
 Matches omega equation solver in the Fortran implementation.
 """
 function compute_vertical_velocity!(S::State, G::Grid, plans, params; N2_profile=nothing, workspace=nothing, dealias_mask=nothing)
+    # Warn about potential aliasing in omega equation RHS
+    # The omega equation involves a quadratic Jacobian J(ψ, ∇²ψ) which can alias without proper dealiasing
+    if dealias_mask === nothing
+        @warn "compute_vertical_velocity!: No dealias_mask provided. The omega equation RHS " *
+              "contains a quadratic Jacobian that may include aliased energy. " *
+              "For accurate results, pass dealias_mask=QGYBJ.dealias_mask(grid)." maxlog=1
+    end
+
     # Check if we need 2D decomposition with transposes
     need_transpose = G.decomp !== nothing && hasfield(typeof(G.decomp), :pencil_z)
 
