@@ -854,7 +854,6 @@ function wave_energy_spectral(BR, BI, AR, AI, CR, CI, G::Grid, par; Lmask=nothin
     WKE_local = 0.0
     WPE_local = 0.0
     WCE_local = 0.0
-    WKE_k0 = 0.0  # kh=0 mode for dealiasing correction
 
     @inbounds for k in 1:nz_local
         # Use global z-index for correct profile lookup in 2D decomposition
@@ -890,9 +889,7 @@ function wave_energy_spectral(BR, BI, AR, AI, CR, CI, G::Grid, par; Lmask=nothin
         # The kh=0 mode is at global index (1,1)
         if local_to_global(1, 1, G) == 1 && local_to_global(1, 2, G) == 1
             # This process owns the (1,1) mode
-            wke_k0_contrib = 0.5 * (abs2(BR_arr[1,1,k]) + abs2(BI_arr[1,1,k]))
-            wke_k -= wke_k0_contrib
-            WKE_k0 += wke_k0_contrib
+            wke_k -= 0.5 * (abs2(BR_arr[1,1,k]) + abs2(BI_arr[1,1,k]))
         end
 
         WKE_local += wke_k
