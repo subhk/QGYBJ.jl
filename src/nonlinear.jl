@@ -661,7 +661,7 @@ with Neumann boundary conditions (∂q/∂z = 0 at top/bottom).
 =#
 
 """
-    dissipation_q_nv!(dqk, qok, par, G)
+    dissipation_q_nv!(dqk, qok, par, G; workspace=nothing)
 
 Compute vertical diffusion of q with Neumann boundary conditions.
 
@@ -683,6 +683,7 @@ Boundary points (Neumann):
 - `qok`: Input q field at time n-1 (for leapfrog)
 - `par`: QGParams (for nuz coefficient)
 - `G::Grid`: Grid struct
+- `workspace`: Optional pre-allocated workspace for 2D decomposition
 
 # Note
 This operates on spectral q but the vertical derivative is in physical space,
