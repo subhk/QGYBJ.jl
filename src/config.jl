@@ -318,10 +318,10 @@ function validate_config(config::ModelConfig)
     
     # Check if grid resolution is reasonable for domain size
     dx = config.domain.Lx / config.domain.nx
-    dy = config.domain.Ly / config.domain.ny  
+    dy = config.domain.Ly / config.domain.ny
     dz = config.domain.Lz / config.domain.nz
-    
-    if dx > config.domain.Lx / 8
+
+    if dx > config.domain.Lx / 8 || dy > config.domain.Ly / 8
         push!(warnings, "Horizontal resolution may be too coarse (< 8 points per domain)")
     end
     
