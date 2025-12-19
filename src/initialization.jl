@@ -150,11 +150,12 @@ end
 Initialize stream function with random field having specified spectral slope.
 
 The streamfunction ψ is real-valued, so its Fourier transform must satisfy
-Hermitian symmetry: ψ̂(-k) = conj(ψ̂(k)). For the rfft representation used here
-(only kx ≥ 0 stored), this requires:
+Hermitian symmetry: ψ̂(-k) = conj(ψ̂(k)). For complex-to-complex FFT (used by QGYBJ),
+this requires explicitly setting conjugate pairs:
 - For kx = 0: ψ̂(0, ky) = conj(ψ̂(0, -ky))
 - For kx = nx/2 (if nx even): ψ̂(nx/2, ky) = conj(ψ̂(nx/2, -ky))
-- ψ̂(0, 0) and ψ̂(0, ny/2) must be real
+- For 0 < kx < nx/2: ψ̂(kx, ky) and ψ̂(-kx, -ky) = conj(ψ̂(kx, ky))
+- ψ̂(0, 0), ψ̂(0, ny/2), ψ̂(nx/2, 0), ψ̂(nx/2, ny/2) must be real
 
 This function enforces these constraints to ensure IFFT produces real output.
 """
@@ -186,34 +187,61 @@ function init_random_psi!(psik, G::Grid, amplitude::Real; slope::Real=-3.0)
                     # Energy spectrum E(k) ∝ k^slope
                     energy = amplitude * k_total^slope
 
-                    # For Hermitian symmetry at kx=0 and kx=nx/2:
-                    # Only set modes with ky >= 0, then set conjugate for ky < 0
-                    if kx == 0 || (kx == kx_max && iseven(nx))
-                        # These columns need Hermitian symmetry in ky
+                    # Handle Hermitian symmetry for real-valued output
+                    if kx == 0
+                        # kx = 0 column: need ψ̂(0, ky) = conj(ψ̂(0, -ky))
                         if ky > 0
                             # Set this mode with random phase
                             amp = sqrt(2 * energy) * randn()
                             phase = 2π * rand()
                             psik[i, j, k] = amp * cis(phase)
-                            # Set conjugate at -ky (j_conj = ny - j + 2 for j > 1)
+                            # Set conjugate at -ky
                             j_conj = ny - j + 2
                             psik[i, j_conj, k] = conj(psik[i, j, k])
                         elseif ky == 0
-                            # ky=0 mode must be real
-                            amp = sqrt(2 * energy) * randn()
-                            psik[i, j, k] = amp  # Real value
+                            # ky=0 mode must be real (already skipped above)
+                            continue
                         elseif ky == -ky_max && iseven(ny)
-                            # Nyquist mode in y (ky = -ny/2 = ny/2) must be real
+                            # Nyquist mode in y must be real
                             amp = sqrt(2 * energy) * randn()
-                            psik[i, j, k] = amp  # Real value
+                            psik[i, j, k] = amp
                         end
-                        # ky < 0 modes are set as conjugates above, skip them here
+                        # ky < 0 modes (except Nyquist) are set as conjugates above
+
+                    elseif kx == kx_max && iseven(nx)
+                        # kx = nx/2 column (Nyquist in x): similar treatment
+                        if ky > 0
+                            amp = sqrt(2 * energy) * randn()
+                            phase = 2π * rand()
+                            psik[i, j, k] = amp * cis(phase)
+                            # Set conjugate at -ky
+                            j_conj = ny - j + 2
+                            psik[i, j_conj, k] = conj(psik[i, j, k])
+                        elseif ky == 0
+                            # (kx=nx/2, ky=0) must be real
+                            amp = sqrt(2 * energy) * randn()
+                            psik[i, j, k] = amp
+                        elseif ky == -ky_max && iseven(ny)
+                            # (kx=nx/2, ky=ny/2) must be real
+                            amp = sqrt(2 * energy) * randn()
+                            psik[i, j, k] = amp
+                        end
+                        # ky < 0 modes (except Nyquist) are set as conjugates above
+
                     else
-                        # kx > 0 and kx < kx_max: no special symmetry needed
-                        # (the kx < 0 modes are implicitly conjugates in rfft)
+                        # 0 < kx < kx_max: set mode and its conjugate at (-kx, -ky)
                         amp = sqrt(2 * energy) * randn()
                         phase = 2π * rand()
                         psik[i, j, k] = amp * cis(phase)
+
+                        # Set conjugate at (-kx, -ky)
+                        # For wavenumber kx at index i, -kx is at index nx - i + 2
+                        # For wavenumber ky at index j, -ky is at index:
+                        #   - j=1 (ky=0): j_conj=1 (ky=0)
+                        #   - j>1: j_conj = ny - j + 2
+                        i_conj = nx - i + 2
+                        j_conj = j == 1 ? 1 : ny - j + 2
+                        psik[i_conj, j_conj, k] = conj(psik[i, j, k])
                     end
                 end
             end
