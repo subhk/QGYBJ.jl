@@ -420,7 +420,7 @@ function apply_dealiasing_mask!(field, G::Grid)
                 # Get global i index for wavenumber lookup
                 i_global = hasfield(typeof(G), :decomp) && G.decomp !== nothing ?
                            local_to_global(i_local, 1, G) : i_local
-                kx = i_global - 1
+                kx = i_global <= G.nx÷2 ? i_global-1 : i_global-1-G.nx
 
                 if abs(kx) > kx_max || abs(ky) > ky_max
                     field_arr[i_local, j_local, k] = zero(eltype(field_arr))
