@@ -71,5 +71,3 @@ function setup_model_with_profile(par::QGParams)
 
     return G, S, plans, a, N2_profile
 end
-
-"""
