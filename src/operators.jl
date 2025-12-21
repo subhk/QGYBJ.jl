@@ -88,6 +88,29 @@ const PARENT = Base.parentmodule(@__MODULE__)
 # (Direct import via `using ..QGYBJ: invert_B_to_A!` can fail in some loading contexts)
 # @inline invert_B_to_A!(args...; kwargs...) = PARENT.Elliptic.invert_B_to_A!(args...; kwargs...)
 
+function _coerce_N2_profile(N2_profile, N2_const, nz, G::Grid)
+    N2_type = float(promote_type(eltype(G.z), typeof(N2_const)))
+    N2_const_T = N2_type(N2_const)
+
+    if N2_profile === nothing
+        return fill(N2_const_T, nz)
+    end
+
+    if length(N2_profile) != nz
+        @warn "N2_profile length ($(length(N2_profile))) != nz ($nz), using constant N²=$(N2_const)"
+        return fill(N2_const_T, nz)
+    end
+
+    if !(eltype(N2_profile) <: Real)
+        N2_profile = real.(N2_profile)
+    end
+    if eltype(N2_profile) != N2_type
+        N2_profile = N2_type.(N2_profile)
+    end
+
+    return N2_profile
+end
+
 #=
 ================================================================================
                     GEOSTROPHIC VELOCITY COMPUTATION
@@ -328,16 +351,7 @@ function _compute_vertical_velocity_direct!(S::State, G::Grid, plans, params, N2
     end
 
     # Get N² profile - use provided profile, or create constant profile from params.N²
-    if N2_profile === nothing
-        # Use params.N² as constant profile (not hardcoded 1.0)
-        N2_profile = fill(eltype(S.psi)(N2_const), nz)
-    else
-        # Ensure N2_profile has correct length and type
-        if length(N2_profile) != nz
-            @warn "N2_profile length ($(length(N2_profile))) != nz ($nz), using constant N²=$(N2_const)"
-            N2_profile = fill(eltype(S.psi)(N2_const), nz)
-        end
-    end
+    N2_profile = _coerce_N2_profile(N2_profile, N2_const, nz, G)
 
     # Solve the full omega equation: ∇²w + (N²/f²)(∂²w/∂z²) = RHS
     wk = similar(S.psi)
@@ -465,12 +479,7 @@ function _compute_vertical_velocity_2d!(S::State, G::Grid, plans, params, N2_pro
     end
 
     # Get N² profile - use provided profile, or create constant profile from params.N²
-    if N2_profile === nothing
-        N2_profile = fill(N2_const, nz)
-    elseif length(N2_profile) != nz
-        @warn "N2_profile length mismatch, using constant N²=$(N2_const)"
-        N2_profile = fill(N2_const, nz)
-    end
+    N2_profile = _coerce_N2_profile(N2_profile, N2_const, nz, G)
 
     # Allocate z-pencil workspace
     work_z = workspace !== nothing && hasfield(typeof(workspace), :work_z) ? workspace.work_z : allocate_z_pencil(G, ComplexF64)
@@ -715,14 +724,7 @@ function _compute_ybj_vertical_velocity_direct!(S::State, G::Grid, plans, params
     end
 
     # Get N² profile - use provided profile, or create constant profile from params.N²
-    if N2_profile === nothing
-        N2_profile = fill(eltype(S.psi)(N2_const), nz)
-    else
-        if length(N2_profile) != nz
-            @warn "N2_profile length ($(length(N2_profile))) != nz ($nz), using constant N²=$(N2_const)"
-            N2_profile = fill(eltype(S.psi)(N2_const), nz)
-        end
-    end
+    N2_profile = _coerce_N2_profile(N2_profile, N2_const, nz, G)
 
     Δz = nz > 1 ? (G.z[2] - G.z[1]) : 1.0
 
@@ -837,12 +839,7 @@ function _compute_ybj_vertical_velocity_2d!(S::State, G::Grid, plans, params, N2
     end
 
     # Get N² profile - use provided profile, or create constant profile from params.N²
-    if N2_profile === nothing
-        N2_profile = fill(N2_const, nz)
-    elseif length(N2_profile) != nz
-        @warn "N2_profile length mismatch, using constant N²=$(N2_const)"
-        N2_profile = fill(N2_const, nz)
-    end
+    N2_profile = _coerce_N2_profile(N2_profile, N2_const, nz, G)
 
     Δz = nz > 1 ? (G.z[2] - G.z[1]) : 1.0
 
