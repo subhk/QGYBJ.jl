@@ -5,7 +5,7 @@ This module provides a user-friendly interface for setting up domains,
 initial conditions, stratification, and output configurations.
 """
 
-using ..QGYBJ: QGParams, Grid, State
+using ..QGYBJplus: QGParams, Grid, State
 
 """
     DomainConfig

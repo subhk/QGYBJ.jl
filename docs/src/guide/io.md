@@ -1,14 +1,14 @@
 # [I/O and Output](@id io-output)
 
 ```@meta
-CurrentModule = QGYBJ
+CurrentModule = QGYBJplus
 ```
 
-This page explains how to save and load simulation data in QGYBJ.jl.
+This page explains how to save and load simulation data in QGYBJplus.jl.
 
 ## Output Formats
 
-QGYBJ.jl supports multiple output formats:
+QGYBJplus.jl supports multiple output formats:
 
 | Format | Extension | Use Case | Parallel Support |
 |:-------|:----------|:---------|:-----------------|
@@ -244,19 +244,19 @@ step,time,KE,PE,WE
 
 ## MPI Parallel I/O with 2D Decomposition
 
-QGYBJ.jl provides seamless I/O support for 2D pencil decomposition. The I/O functions automatically handle distributed arrays.
+QGYBJplus.jl provides seamless I/O support for 2D pencil decomposition. The I/O functions automatically handle distributed arrays.
 
 ### Writing State Files
 
 ```julia
-using MPI, PencilArrays, PencilFFTs, QGYBJ
+using MPI, PencilArrays, PencilFFTs, QGYBJplus
 
 MPI.Init()
-mpi_config = QGYBJ.setup_mpi_environment()
+mpi_config = QGYBJplus.setup_mpi_environment()
 
 # Setup distributed grid and state
-grid = QGYBJ.init_mpi_grid(params, mpi_config)
-state = QGYBJ.init_mpi_state(grid, mpi_config)
+grid = QGYBJplus.init_mpi_grid(params, mpi_config)
+state = QGYBJplus.init_mpi_state(grid, mpi_config)
 
 # Create output manager with parallel config
 output_config = OutputConfig(
@@ -288,7 +288,7 @@ ncread_la!(state, grid, plans; path="la.nc", parallel_config=mpi_config)
 
 ### I/O Strategy for 2D Decomposition
 
-QGYBJ.jl uses a **gather-to-root** strategy for parallel I/O:
+QGYBJplus.jl uses a **gather-to-root** strategy for parallel I/O:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -346,11 +346,11 @@ end
 
 ```julia
 # Gather distributed array to rank 0
-global_psi = QGYBJ.gather_to_root(state.psi, grid, mpi_config)
+global_psi = QGYBJplus.gather_to_root(state.psi, grid, mpi_config)
 # Returns full array on rank 0, nothing on other ranks
 
 # Scatter from rank 0 to all processes
-local_psi = QGYBJ.scatter_from_root(global_psi, grid, mpi_config)
+local_psi = QGYBJplus.scatter_from_root(global_psi, grid, mpi_config)
 # Each rank receives its local portion
 ```
 
@@ -405,7 +405,7 @@ defVar(ds, "psi", Float64, ("x", "y", "z", "time");
 
 ```julia
 # Add attributes
-ds.attrib["title"] = "QGYBJ.jl simulation output"
+ds.attrib["title"] = "QGYBJplus.jl simulation output"
 ds.attrib["history"] = "Created $(now())"
 ds.attrib["Conventions"] = "CF-1.8"
 

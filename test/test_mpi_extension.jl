@@ -1,6 +1,6 @@
 #=
 ================================================================================
-            MPI Extension Test Suite for QGYBJ.jl
+            MPI Extension Test Suite for QGYBJplus.jl
 ================================================================================
 
 This test suite verifies that the MPI extension works correctly with
@@ -28,42 +28,42 @@ const TEST_Ly = 500e3  # 500 km
 const TEST_Lz = 4000.0 # 4 km
 
 function run_serial_tests()
-    # Load QGYBJ using @eval to allow non-top-level loading
-    @eval using QGYBJ
-    @eval using QGYBJ: QGParams, Grid, State, Plans, plan_transforms!, fft_forward!, fft_backward!
+    # Load QGYBJplus using @eval to allow non-top-level loading
+    @eval using QGYBJplus
+    @eval using QGYBJplus: QGParams, Grid, State, Plans, plan_transforms!, fft_forward!, fft_backward!
 
     println("=" ^ 60)
-    println("QGYBJ.jl Serial Mode Test")
+    println("QGYBJplus.jl Serial Mode Test")
     println("=" ^ 60)
     println()
 
     @testset "Serial Mode Tests" begin
         @testset "Module Loading" begin
-            @test @isdefined QGYBJ
-            println("  ✓ QGYBJ module loaded")
+            @test @isdefined QGYBJplus
+            println("  ✓ QGYBJplus module loaded")
         end
 
         @testset "Basic Types" begin
-            params = QGYBJ.default_params(nx=32, ny=32, nz=16, Lx=TEST_Lx, Ly=TEST_Ly, Lz=TEST_Lz)
+            params = QGYBJplus.default_params(nx=32, ny=32, nz=16, Lx=TEST_Lx, Ly=TEST_Ly, Lz=TEST_Lz)
             @test params.nx == 32
             @test params.ny == 32
             @test params.nz == 16
             println("  ✓ QGParams created")
 
-            grid = QGYBJ.init_grid(params)
+            grid = QGYBJplus.init_grid(params)
             @test grid.nx == 32
             @test grid.decomp === nothing  # No MPI decomposition
             println("  ✓ Grid created (serial mode)")
 
-            state = QGYBJ.init_state(grid)
+            state = QGYBJplus.init_state(grid)
             @test size(state.psi) == (32, 32, 16)
             println("  ✓ State created")
         end
 
         @testset "FFT Transforms (Serial)" begin
-            params = QGYBJ.default_params(nx=32, ny=32, nz=16, Lx=TEST_Lx, Ly=TEST_Ly, Lz=TEST_Lz)
-            grid = QGYBJ.init_grid(params)
-            plans = QGYBJ.plan_transforms!(grid)
+            params = QGYBJplus.default_params(nx=32, ny=32, nz=16, Lx=TEST_Lx, Ly=TEST_Ly, Lz=TEST_Lz)
+            grid = QGYBJplus.init_grid(params)
+            plans = QGYBJplus.plan_transforms!(grid)
 
             @test plans.backend == :fftw
             println("  ✓ FFTW plans created")
@@ -73,8 +73,8 @@ function run_serial_tests()
             dst = similar(src)
             dst2 = similar(src)
 
-            QGYBJ.fft_forward!(dst, src, plans)
-            QGYBJ.fft_backward!(dst2, dst, plans)
+            QGYBJplus.fft_forward!(dst, src, plans)
+            QGYBJplus.fft_backward!(dst2, dst, plans)
 
             # FFTW.ifft is normalized (divides by N automatically)
             # So no manual normalization needed
@@ -85,8 +85,8 @@ function run_serial_tests()
 
         @testset "MPI Stubs (Without MPI)" begin
             # These should throw informative errors
-            @test_throws ErrorException QGYBJ.setup_mpi_environment()
-            @test_throws ErrorException QGYBJ.init_mpi_grid(nothing, nothing)
+            @test_throws ErrorException QGYBJplus.setup_mpi_environment()
+            @test_throws ErrorException QGYBJplus.init_mpi_grid(nothing, nothing)
             println("  ✓ MPI stubs throw appropriate errors")
         end
     end
@@ -100,7 +100,7 @@ function run_mpi_tests()
     @eval using MPI
     @eval using PencilArrays
     @eval using PencilFFTs
-    @eval using QGYBJ
+    @eval using QGYBJplus
 
     MPI.Init()
 
@@ -111,7 +111,7 @@ function run_mpi_tests()
 
         if rank == 0
             println("=" ^ 60)
-            println("QGYBJ.jl MPI Extension Test Suite")
+            println("QGYBJplus.jl MPI Extension Test Suite")
             println("=" ^ 60)
             println("Processes: $nprocs")
             println()
@@ -119,7 +119,7 @@ function run_mpi_tests()
 
         @testset "MPI Extension Tests" begin
             @testset "MPI Environment Setup" begin
-                mpi_config = QGYBJ.setup_mpi_environment()
+                mpi_config = QGYBJplus.setup_mpi_environment()
                 @test mpi_config.nprocs == nprocs
                 @test mpi_config.rank == rank
                 @test mpi_config.is_root == (rank == 0)
@@ -129,10 +129,10 @@ function run_mpi_tests()
             end
 
             @testset "Parallel Grid" begin
-                mpi_config = QGYBJ.setup_mpi_environment()
-                params = QGYBJ.default_params(nx=64, ny=64, nz=32, Lx=TEST_Lx, Ly=TEST_Ly, Lz=TEST_Lz)
+                mpi_config = QGYBJplus.setup_mpi_environment()
+                params = QGYBJplus.default_params(nx=64, ny=64, nz=32, Lx=TEST_Lx, Ly=TEST_Ly, Lz=TEST_Lz)
 
-                grid = QGYBJ.init_mpi_grid(params, mpi_config)
+                grid = QGYBJplus.init_mpi_grid(params, mpi_config)
                 @test grid.nx == 64
                 @test grid.ny == 64
                 @test grid.nz == 32
@@ -144,11 +144,11 @@ function run_mpi_tests()
             end
 
             @testset "Parallel State" begin
-                mpi_config = QGYBJ.setup_mpi_environment()
-                params = QGYBJ.default_params(nx=64, ny=64, nz=32, Lx=TEST_Lx, Ly=TEST_Ly, Lz=TEST_Lz)
-                grid = QGYBJ.init_mpi_grid(params, mpi_config)
+                mpi_config = QGYBJplus.setup_mpi_environment()
+                params = QGYBJplus.default_params(nx=64, ny=64, nz=32, Lx=TEST_Lx, Ly=TEST_Ly, Lz=TEST_Lz)
+                grid = QGYBJplus.init_mpi_grid(params, mpi_config)
 
-                state = QGYBJ.init_mpi_state(grid, mpi_config)
+                state = QGYBJplus.init_mpi_state(grid, mpi_config)
 
                 # Check that arrays are PencilArrays
                 @test typeof(state.psi) <: PencilArray
@@ -161,11 +161,11 @@ function run_mpi_tests()
             end
 
             @testset "Parallel FFT Plans" begin
-                mpi_config = QGYBJ.setup_mpi_environment()
-                params = QGYBJ.default_params(nx=64, ny=64, nz=32, Lx=TEST_Lx, Ly=TEST_Ly, Lz=TEST_Lz)
-                grid = QGYBJ.init_mpi_grid(params, mpi_config)
+                mpi_config = QGYBJplus.setup_mpi_environment()
+                params = QGYBJplus.default_params(nx=64, ny=64, nz=32, Lx=TEST_Lx, Ly=TEST_Ly, Lz=TEST_Lz)
+                grid = QGYBJplus.init_mpi_grid(params, mpi_config)
 
-                plans = QGYBJ.plan_mpi_transforms(grid, mpi_config)
+                plans = QGYBJplus.plan_mpi_transforms(grid, mpi_config)
 
                 # Note: MPIPlans uses ldiv!(dst, forward, src) for inverse FFT
                 # so there's no separate 'backward' field
@@ -178,21 +178,21 @@ function run_mpi_tests()
             end
 
             @testset "Parallel FFT Execution" begin
-                mpi_config = QGYBJ.setup_mpi_environment()
-                params = QGYBJ.default_params(nx=64, ny=64, nz=32, Lx=TEST_Lx, Ly=TEST_Ly, Lz=TEST_Lz)
-                grid = QGYBJ.init_mpi_grid(params, mpi_config)
-                state = QGYBJ.init_mpi_state(grid, mpi_config)
-                plans = QGYBJ.plan_mpi_transforms(grid, mpi_config)
+                mpi_config = QGYBJplus.setup_mpi_environment()
+                params = QGYBJplus.default_params(nx=64, ny=64, nz=32, Lx=TEST_Lx, Ly=TEST_Ly, Lz=TEST_Lz)
+                grid = QGYBJplus.init_mpi_grid(params, mpi_config)
+                state = QGYBJplus.init_mpi_state(grid, mpi_config)
+                plans = QGYBJplus.plan_mpi_transforms(grid, mpi_config)
 
                 # Initialize with random data
-                QGYBJ.init_mpi_random_field!(state.psi, grid, 1.0, 0)
+                QGYBJplus.init_mpi_random_field!(state.psi, grid, 1.0, 0)
 
                 # Perform FFT roundtrip
                 work_k = similar(state.psi)
                 work = similar(state.psi)
 
-                QGYBJ.fft_forward!(work_k, state.psi, plans)
-                QGYBJ.fft_backward!(work, work_k, plans)
+                QGYBJplus.fft_forward!(work_k, state.psi, plans)
+                QGYBJplus.fft_backward!(work, work_k, plans)
 
                 # PencilFFTs ldiv! (used in fft_backward!) is normalized
                 # So no manual normalization needed
@@ -213,14 +213,14 @@ function run_mpi_tests()
             end
 
             @testset "MPI Communication" begin
-                mpi_config = QGYBJ.setup_mpi_environment()
+                mpi_config = QGYBJplus.setup_mpi_environment()
 
                 # Test barrier
-                QGYBJ.mpi_barrier(mpi_config)
+                QGYBJplus.mpi_barrier(mpi_config)
 
                 # Test reduce
                 local_val = Float64(rank + 1)
-                global_sum = QGYBJ.mpi_reduce_sum(local_val, mpi_config)
+                global_sum = QGYBJplus.mpi_reduce_sum(local_val, mpi_config)
                 expected_sum = nprocs * (nprocs + 1) / 2
 
                 @test global_sum ≈ expected_sum
@@ -231,20 +231,20 @@ function run_mpi_tests()
             end
 
             @testset "Transpose Operations (Two-Step)" begin
-                mpi_config = QGYBJ.setup_mpi_environment()
-                params = QGYBJ.default_params(nx=64, ny=64, nz=32, Lx=TEST_Lx, Ly=TEST_Ly, Lz=TEST_Lz)
-                grid = QGYBJ.init_mpi_grid(params, mpi_config)
-                state = QGYBJ.init_mpi_state(grid, mpi_config)
+                mpi_config = QGYBJplus.setup_mpi_environment()
+                params = QGYBJplus.default_params(nx=64, ny=64, nz=32, Lx=TEST_Lx, Ly=TEST_Ly, Lz=TEST_Lz)
+                grid = QGYBJplus.init_mpi_grid(params, mpi_config)
+                state = QGYBJplus.init_mpi_state(grid, mpi_config)
 
                 # Initialize with deterministic data for roundtrip test
-                QGYBJ.init_mpi_random_field!(state.psi, grid, 1.0, 123)
+                QGYBJplus.init_mpi_random_field!(state.psi, grid, 1.0, 123)
 
                 # Allocate z-pencil array
-                psi_z = QGYBJ.allocate_z_pencil(grid, ComplexF64)
+                psi_z = QGYBJplus.allocate_z_pencil(grid, ComplexF64)
 
                 # Test transpose to z-pencil (xy→z)
                 # This uses the two-step transpose: xy(2,3) → xz(1,3) → z(1,2)
-                QGYBJ.transpose_to_z_pencil!(psi_z, state.psi, grid)
+                QGYBJplus.transpose_to_z_pencil!(psi_z, state.psi, grid)
 
                 # Verify z is fully local after transpose
                 psi_z_arr = parent(psi_z)
@@ -253,7 +253,7 @@ function run_mpi_tests()
                 # Test roundtrip: transpose back to xy-pencil (z→xy)
                 # This uses the two-step transpose: z(1,2) → xz(1,3) → xy(2,3)
                 psi_roundtrip = similar(state.psi)
-                QGYBJ.transpose_to_xy_pencil!(psi_roundtrip, psi_z, grid)
+                QGYBJplus.transpose_to_xy_pencil!(psi_roundtrip, psi_z, grid)
 
                 # Check roundtrip accuracy
                 parent_psi = parent(state.psi)
@@ -284,20 +284,20 @@ function run_mpi_tests()
                     println("  ✓ Z-pencil has z fully local (required for vertical ops)")
                 end
 
-                QGYBJ.mpi_barrier(mpi_config)
+                QGYBJplus.mpi_barrier(mpi_config)
             end
 
             @testset "Gather/Scatter" begin
-                mpi_config = QGYBJ.setup_mpi_environment()
-                params = QGYBJ.default_params(nx=64, ny=64, nz=32, Lx=TEST_Lx, Ly=TEST_Ly, Lz=TEST_Lz)
-                grid = QGYBJ.init_mpi_grid(params, mpi_config)
-                state = QGYBJ.init_mpi_state(grid, mpi_config)
+                mpi_config = QGYBJplus.setup_mpi_environment()
+                params = QGYBJplus.default_params(nx=64, ny=64, nz=32, Lx=TEST_Lx, Ly=TEST_Ly, Lz=TEST_Lz)
+                grid = QGYBJplus.init_mpi_grid(params, mpi_config)
+                state = QGYBJplus.init_mpi_state(grid, mpi_config)
 
                 # Initialize with deterministic values
-                QGYBJ.init_mpi_random_field!(state.psi, grid, 1.0, 42)
+                QGYBJplus.init_mpi_random_field!(state.psi, grid, 1.0, 42)
 
                 # Gather to root
-                gathered = QGYBJ.gather_to_root(state.psi, grid, mpi_config)
+                gathered = QGYBJplus.gather_to_root(state.psi, grid, mpi_config)
 
                 if mpi_config.is_root
                     @test gathered !== nothing
@@ -307,7 +307,7 @@ function run_mpi_tests()
                     @test gathered === nothing
                 end
 
-                QGYBJ.mpi_barrier(mpi_config)
+                QGYBJplus.mpi_barrier(mpi_config)
 
                 # Test scatter_from_root
                 # Create a global array on root with known values
@@ -321,10 +321,10 @@ function run_mpi_tests()
                 end
 
                 # Scatter to all processes
-                scattered = QGYBJ.scatter_from_root(global_arr, grid, mpi_config)
+                scattered = QGYBJplus.scatter_from_root(global_arr, grid, mpi_config)
 
                 # Verify each process received correct data
-                local_range = QGYBJ.get_local_range_xy(grid)
+                local_range = QGYBJplus.get_local_range_xy(grid)
                 parent_arr = parent(scattered)
 
                 all_correct = true
@@ -354,11 +354,11 @@ function run_mpi_tests()
                     println("  ✓ Scatter from root successful")
                 end
 
-                QGYBJ.mpi_barrier(mpi_config)
+                QGYBJplus.mpi_barrier(mpi_config)
             end
         end
 
-        QGYBJ.mpi_barrier(QGYBJ.setup_mpi_environment())
+        QGYBJplus.mpi_barrier(QGYBJplus.setup_mpi_environment())
 
         if rank == 0
             println()

@@ -1,10 +1,10 @@
 # [Installation & Getting Started](@id getting_started)
 
 ```@meta
-CurrentModule = QGYBJ
+CurrentModule = QGYBJplus
 ```
 
-This page walks you through installing QGYBJ.jl, running a quick example, and understanding the core concepts.
+This page walks you through installing QGYBJplus.jl, running a quick example, and understanding the core concepts.
 
 ## Installation
 
@@ -12,14 +12,14 @@ This page walks you through installing QGYBJ.jl, running a quick example, and un
 
 ```julia
 using Pkg
-Pkg.add(url="https://github.com/subhk/QGYBJ.jl")
+Pkg.add(url="https://github.com/subhk/QGYBJplus.jl")
 ```
 
 Or clone and develop locally:
 
 ```bash
-git clone https://github.com/subhk/QGYBJ.jl
-cd QGYBJ.jl
+git clone https://github.com/subhk/QGYBJplus.jl
+cd QGYBJplus.jl
 julia --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
 ```
 
@@ -47,7 +47,7 @@ The MPI extension is automatically loaded when these packages are imported.
 ### Serial Mode
 
 ```julia
-using QGYBJ
+using QGYBJplus
 
 # Create configuration (Lx, Ly, Lz are REQUIRED)
 config = create_simple_config(
@@ -69,20 +69,20 @@ println("Final KE: ", flow_kinetic_energy(result.state.u, result.state.v))
 
 ```julia
 # run_parallel.jl
-using MPI, PencilArrays, PencilFFTs, QGYBJ
+using MPI, PencilArrays, PencilFFTs, QGYBJplus
 
 MPI.Init()
-mpi_config = QGYBJ.setup_mpi_environment()
+mpi_config = QGYBJplus.setup_mpi_environment()
 
 # Setup distributed simulation (Lx, Ly, Lz are REQUIRED)
 params = default_params(
     nx=256, ny=256, nz=128,
     Lx=1000e3, Ly=1000e3, Lz=5000.0  # 1000km × 1000km × 5km
 )
-grid = QGYBJ.init_mpi_grid(params, mpi_config)
-state = QGYBJ.init_mpi_state(grid, mpi_config)
-workspace = QGYBJ.init_mpi_workspace(grid, mpi_config)
-plans = QGYBJ.plan_mpi_transforms(grid, mpi_config)
+grid = QGYBJplus.init_mpi_grid(params, mpi_config)
+state = QGYBJplus.init_mpi_state(grid, mpi_config)
+workspace = QGYBJplus.init_mpi_workspace(grid, mpi_config)
+plans = QGYBJplus.plan_mpi_transforms(grid, mpi_config)
 
 # Run time stepping...
 
@@ -163,7 +163,7 @@ fft_forward!(dst, src, plans)   # Physical → Spectral
 fft_backward!(dst, src, plans)  # Spectral → Physical
 
 # Parallel mode (automatic with PencilFFTs)
-plans = QGYBJ.plan_mpi_transforms(grid, mpi_config)
+plans = QGYBJplus.plan_mpi_transforms(grid, mpi_config)
 ```
 
 ## What's Next?

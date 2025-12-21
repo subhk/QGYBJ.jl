@@ -1,14 +1,14 @@
-# QGYBJ.jl
+# QGYBJplus.jl
 
 ```@meta
-CurrentModule = QGYBJ
+CurrentModule = QGYBJplus
 ```
 
 ## A Julia Model for Wave-Eddy Interactions in the Ocean
 
-**QGYBJ.jl** is a high-performance Julia implementation of the Quasi-Geostrophic Young-Ben Jelloul Plus (QG-YBJ+) model for simulating the interaction between near-inertial waves and mesoscale ocean eddies.
+**QGYBJplus.jl** is a high-performance Julia implementation of the Quasi-Geostrophic Young-Ben Jelloul Plus (QG-YBJ+) model for simulating the interaction between near-inertial waves and mesoscale ocean eddies.
 
-!!! tip "New to QGYBJ.jl?"
+!!! tip "New to QGYBJplus.jl?"
     Start with the [Quick Start Tutorial](@ref quickstart) for a hands-on introduction.
 
 ## What This Model Does
@@ -18,7 +18,7 @@ The ocean contains two important types of motion at different scales:
 1. **Mesoscale eddies** (~100 km): Long-lived rotating vortices that dominate ocean kinetic energy
 2. **Near-inertial waves** (~10 km): Wind-generated internal waves oscillating near the Coriolis frequency
 
-These two types of motion **interact strongly**: eddies refract and focus waves, while waves can feed energy back into the mean flow. QGYBJ.jl simulates this coupled system using:
+These two types of motion **interact strongly**: eddies refract and focus waves, while waves can feed energy back into the mean flow. QGYBJplus.jl simulates this coupled system using:
 
 - **Quasi-geostrophic (QG) dynamics** for the balanced eddy flow
 - **YBJ+ equations** for the near-inertial wave envelope
@@ -39,7 +39,7 @@ These two types of motion **interact strongly**: eddies refract and focus waves,
 ## Quick Example
 
 ```julia
-using QGYBJ
+using QGYBJplus
 
 # Create configuration (Lx, Ly, Lz are REQUIRED)
 config = create_simple_config(
@@ -61,7 +61,7 @@ B = result.state.B       # Wave envelope
 ## Documentation Sections
 
 ### Getting Started
-- [Installation](@ref getting_started) - How to install QGYBJ.jl
+- [Installation](@ref getting_started) - How to install QGYBJplus.jl
 - [Quick Start Tutorial](@ref quickstart) - Your first simulation in 5 minutes
 - [Worked Example](@ref worked_example) - Detailed walkthrough with explanations
 
@@ -93,7 +93,7 @@ B = result.state.B       # Wave envelope
 
 ```julia
 using Pkg
-Pkg.add(url="https://github.com/subhk/QGYBJ.jl")
+Pkg.add(url="https://github.com/subhk/QGYBJplus.jl")
 ```
 
 ### With MPI Support
@@ -108,14 +108,14 @@ NCDatasets.jl is included as a dependency for NetCDF I/O functionality. No addit
 
 ## Citation
 
-If you use QGYBJ.jl in your research, please cite:
+If you use QGYBJplus.jl in your research, please cite:
 
 ```bibtex
 @software{qgybj_jl,
   author = {Kar, Subhajit},
-  title = {QGYBJ.jl: A Julia Implementation of the QG-YBJ+ Model},
+  title = {QGYBJplus.jl: A Julia Implementation of the QG-YBJ+ Model},
   year = {2024},
-  url = {https://github.com/subhk/QGYBJ.jl}
+  url = {https://github.com/subhk/QGYBJplus.jl}
 }
 ```
 
@@ -127,9 +127,9 @@ If you use QGYBJ.jl in your research, please cite:
 
 ## Getting Help
 
-- **Issues**: [GitHub Issues](https://github.com/subhk/QGYBJ.jl/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/subhk/QGYBJ.jl/discussions)
+- **Issues**: [GitHub Issues](https://github.com/subhk/QGYBJplus.jl/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/subhk/QGYBJplus.jl/discussions)
 
 ## License
 
-QGYBJ.jl is released under the MIT License.
+QGYBJplus.jl is released under the MIT License.

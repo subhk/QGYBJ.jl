@@ -1,14 +1,14 @@
 # [Configuration](@id configuration)
 
 ```@meta
-CurrentModule = QGYBJ
+CurrentModule = QGYBJplus
 ```
 
-This page explains how to configure QGYBJ.jl simulations.
+This page explains how to configure QGYBJplus.jl simulations.
 
 ## Configuration Approaches
 
-QGYBJ.jl offers two ways to configure simulations:
+QGYBJplus.jl offers two ways to configure simulations:
 
 1. **Simple API**: Use `create_simple_config()` for quick setup
 2. **Full Control**: Create `QGParams` directly via `default_params()`
@@ -204,7 +204,7 @@ end
 ### Complete Low-Level Example
 
 ```julia
-using QGYBJ
+using QGYBJplus
 
 # Create parameters
 par = default_params(
@@ -385,7 +385,7 @@ result = run_simple_simulation(config)
 ### Using QGYBJSimulation API
 
 ```julia
-using QGYBJ
+using QGYBJplus
 
 # Create configuration components
 domain = create_domain_config(

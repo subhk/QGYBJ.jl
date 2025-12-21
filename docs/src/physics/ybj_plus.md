@@ -1,7 +1,7 @@
 # [YBJ+ Wave Model](@id ybj-plus)
 
 ```@meta
-CurrentModule = QGYBJ
+CurrentModule = QGYBJplus
 ```
 
 This page describes the Young-Ben Jelloul Plus (YBJ+) formulation for near-inertial wave evolution.

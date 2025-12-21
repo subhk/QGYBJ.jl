@@ -32,7 +32,7 @@ Time synchronization:
 
 module UnifiedParticleAdvection
 
-# Bind names from parent module (QGYBJ) without using/import
+# Bind names from parent module (QGYBJplus) without using/import
 const _PARENT = Base.parentmodule(@__MODULE__)
 const Grid = _PARENT.Grid
 const State = _PARENT.State

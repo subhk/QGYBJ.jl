@@ -1,17 +1,17 @@
 # [Running Simulations](@id running)
 
 ```@meta
-CurrentModule = QGYBJ
+CurrentModule = QGYBJplus
 ```
 
-This page explains how to run and monitor QGYBJ.jl simulations.
+This page explains how to run and monitor QGYBJplus.jl simulations.
 
 ## Quick Start
 
 ### Simple Interface
 
 ```julia
-using QGYBJ
+using QGYBJplus
 
 config = create_simple_config(
     Lx=500e3, Ly=500e3, Lz=4000.0,  # Domain size (REQUIRED)
@@ -26,7 +26,7 @@ result = run_simple_simulation(config)
 ### Manual Control
 
 ```julia
-using QGYBJ
+using QGYBJplus
 
 # Setup with domain size (REQUIRED)
 par = default_params(
@@ -196,7 +196,7 @@ end
 ### Snapshots with NetCDF
 
 ```julia
-using QGYBJ
+using QGYBJplus
 
 output_interval = 100
 
@@ -237,7 +237,7 @@ end
 ### QGYBJSimulation
 
 ```julia
-using QGYBJ
+using QGYBJplus
 
 # Create configuration
 domain = create_domain_config(
@@ -279,20 +279,20 @@ println("Using $(Threads.nthreads()) threads")
 ### MPI with 2D Pencil Decomposition
 
 ```julia
-using MPI, PencilArrays, PencilFFTs, QGYBJ
+using MPI, PencilArrays, PencilFFTs, QGYBJplus
 
 MPI.Init()
-mpi_config = QGYBJ.setup_mpi_environment()
+mpi_config = QGYBJplus.setup_mpi_environment()
 
 # Setup distributed simulation
 params = default_params(
     Lx=1000e3, Ly=1000e3, Lz=5000.0,
     nx=256, ny=256, nz=128
 )
-grid = QGYBJ.init_mpi_grid(params, mpi_config)
-state = QGYBJ.init_mpi_state(grid, mpi_config)
-workspace = QGYBJ.init_mpi_workspace(grid, mpi_config)
-plans = QGYBJ.plan_mpi_transforms(grid, mpi_config)
+grid = QGYBJplus.init_mpi_grid(params, mpi_config)
+state = QGYBJplus.init_mpi_state(grid, mpi_config)
+workspace = QGYBJplus.init_mpi_workspace(grid, mpi_config)
+plans = QGYBJplus.plan_mpi_transforms(grid, mpi_config)
 
 # Run with: mpiexec -n 16 julia simulation.jl
 
@@ -306,7 +306,7 @@ See [MPI Parallelization](@ref parallel) for details.
 ### Production Run Template
 
 ```julia
-using QGYBJ
+using QGYBJplus
 using JLD2
 
 function run_production(;

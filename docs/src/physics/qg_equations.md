@@ -1,10 +1,10 @@
 # [QG Equations](@id qg-equations)
 
 ```@meta
-CurrentModule = QGYBJ
+CurrentModule = QGYBJplus
 ```
 
-This page details the quasi-geostrophic (QG) equations implemented in QGYBJ.jl.
+This page details the quasi-geostrophic (QG) equations implemented in QGYBJplus.jl.
 
 ## Potential Vorticity Evolution
 

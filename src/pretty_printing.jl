@@ -3,7 +3,7 @@
                     pretty_printing.jl - Pretty Display Utilities
 ================================================================================
 
-Custom show methods for QGYBJ types, inspired by Oceananigans.jl style.
+Custom show methods for QGYBJplus types, inspired by Oceananigans.jl style.
 Provides nicely formatted output with Unicode box characters.
 
 ================================================================================
@@ -12,10 +12,10 @@ Provides nicely formatted output with Unicode box characters.
 using Printf
 
 # Import types from parent module
-using ..QGYBJ: QGParams, Grid, State, OutputConfig, Plans, MPIConfig,
+using ..QGYBJplus: QGParams, Grid, State, OutputConfig, Plans, MPIConfig,
                DomainConfig, StratificationConfig, InitialConditionConfig, ModelConfig
-using ..QGYBJ.UnifiedParticleAdvection: ParticleConfig, ParticleTracker
-using ..QGYBJ.UnifiedParticleAdvection.EnhancedParticleConfig: ParticleConfig3D
+using ..QGYBJplus.UnifiedParticleAdvection: ParticleConfig, ParticleTracker
+using ..QGYBJplus.UnifiedParticleAdvection.EnhancedParticleConfig: ParticleConfig3D
 
 # ============================================================================
 #                       FORMATTING UTILITIES

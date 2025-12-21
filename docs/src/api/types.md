@@ -1,10 +1,10 @@
 # [Core Types](@id api-types)
 
 ```@meta
-CurrentModule = QGYBJ
+CurrentModule = QGYBJplus
 ```
 
-This page documents the core data types in QGYBJ.jl.
+This page documents the core data types in QGYBJplus.jl.
 
 ## QGParams
 

@@ -1,10 +1,10 @@
 # [Particle Advection](@id particles)
 
 ```@meta
-CurrentModule = QGYBJ
+CurrentModule = QGYBJplus
 ```
 
-This page describes Lagrangian particle tracking in QGYBJ.jl, including the physics, numerical algorithms, and parallel implementation.
+This page describes Lagrangian particle tracking in QGYBJplus.jl, including the physics, numerical algorithms, and parallel implementation.
 
 ## Overview
 
@@ -69,7 +69,7 @@ This includes both horizontal and **vertical Stokes drift**, ensuring particles 
 ### Basic Setup
 
 ```julia
-using QGYBJ
+using QGYBJplus
 
 # Create simulation configuration
 config = SimulationConfig(
@@ -197,7 +197,7 @@ config = particles_in_box(π/2; interpolation_method=ADAPTIVE)
 
 ## Particle Initialization
 
-QGYBJ.jl provides simple, intuitive constructors for initializing particles:
+QGYBJplus.jl provides simple, intuitive constructors for initializing particles:
 
 | Constructor | Description |
 |:------------|:------------|
@@ -469,7 +469,7 @@ When particles cross domain boundaries, they are transferred:
 
 ```julia
 using MPI
-using QGYBJ
+using QGYBJplus
 
 MPI.Init()
 

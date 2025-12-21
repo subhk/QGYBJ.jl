@@ -66,9 +66,9 @@ FORTRAN CORRESPONDENCE:
 
 module Elliptic
 
-using ..QGYBJ: Grid, State, local_to_global
-using ..QGYBJ: transpose_to_z_pencil!, transpose_to_xy_pencil!
-using ..QGYBJ: local_to_global_z, allocate_z_pencil
+using ..QGYBJplus: Grid, State, local_to_global
+using ..QGYBJplus: transpose_to_z_pencil!, transpose_to_xy_pencil!
+using ..QGYBJplus: local_to_global_z, allocate_z_pencil
 const PARENT = Base.parentmodule(@__MODULE__)
 
 #=
@@ -1107,5 +1107,5 @@ end
 
 end # module
 
-# Export elliptic solvers to main QGYBJ module
+# Export elliptic solvers to main QGYBJplus module
 using .Elliptic: invert_q_to_psi!, invert_helmholtz!, invert_B_to_A!

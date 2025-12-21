@@ -6,7 +6,7 @@ extracting slices.
 ### Examples
 
 ```julia
-using QGYBJ
+using QGYBJplus
 
 # Create parameters with domain size (REQUIRED)
 par = default_params(Lx=500e3, Ly=500e3, Lz=4000.0)  # 500km × 500km × 4km

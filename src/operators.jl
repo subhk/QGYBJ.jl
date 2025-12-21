@@ -77,15 +77,15 @@ Vertical derivatives use second-order finite differences.
 module Operators
 
 using LinearAlgebra
-using ..QGYBJ: Grid, State, local_to_global
-using ..QGYBJ: fft_backward!, plan_transforms!
-using ..QGYBJ: transpose_to_z_pencil!, transpose_to_xy_pencil!
-using ..QGYBJ: local_to_global_z, allocate_z_pencil
-using ..QGYBJ: invert_B_to_A!
+using ..QGYBJplus: Grid, State, local_to_global
+using ..QGYBJplus: fft_backward!, plan_transforms!
+using ..QGYBJplus: transpose_to_z_pencil!, transpose_to_xy_pencil!
+using ..QGYBJplus: local_to_global_z, allocate_z_pencil
+using ..QGYBJplus: invert_B_to_A!
 const PARENT = Base.parentmodule(@__MODULE__)
 
 # Access invert_B_to_A! through the Elliptic submodule via PARENT
-# (Direct import via `using ..QGYBJ: invert_B_to_A!` can fail in some loading contexts)
+# (Direct import via `using ..QGYBJplus: invert_B_to_A!` can fail in some loading contexts)
 # @inline invert_B_to_A!(args...; kwargs...) = PARENT.Elliptic.invert_B_to_A!(args...; kwargs...)
 
 function _coerce_N2_profile(N2_profile, N2_const, nz, G::Grid)

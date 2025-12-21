@@ -1,7 +1,7 @@
 # [Wave-Mean Interaction](@id wave-mean)
 
 ```@meta
-CurrentModule = QGYBJ
+CurrentModule = QGYBJplus
 ```
 
 This page describes the two-way coupling between near-inertial waves and the balanced mean flow.

@@ -1,10 +1,10 @@
 # [Stratification](@id stratification)
 
 ```@meta
-CurrentModule = QGYBJ
+CurrentModule = QGYBJplus
 ```
 
-This page explains how to configure ocean stratification profiles in QGYBJ.jl.
+This page explains how to configure ocean stratification profiles in QGYBJplus.jl.
 
 ## Why Stratification Matters
 
@@ -17,7 +17,7 @@ The buoyancy frequency ``N(z)`` affects:
 
 ## Built-in Stratification Types
 
-QGYBJ.jl supports two stratification modes through the `default_params()` function:
+QGYBJplus.jl supports two stratification modes through the `default_params()` function:
 
 ### Constant N
 
@@ -90,7 +90,7 @@ Best for:
 For non-constant stratification, use `setup_model_with_profile()` to get the N² profile:
 
 ```julia
-using QGYBJ
+using QGYBJplus
 
 # Create parameters with skewed Gaussian stratification
 par = default_params(
@@ -109,7 +109,7 @@ G, S, plans, a_ell, N2_profile = setup_model_with_profile(par)
 The `QGYBJSimulation` API handles stratification automatically:
 
 ```julia
-using QGYBJ
+using QGYBJplus
 
 # Create configuration
 domain = create_domain_config(
@@ -134,7 +134,7 @@ sim = setup_simulation(domain, strat, model=model)
 
 ### StratificationProfile Types
 
-QGYBJ.jl provides several stratification profile types:
+QGYBJplus.jl provides several stratification profile types:
 
 ```julia
 # Constant N²
@@ -165,7 +165,7 @@ profile = PiecewiseProfile{Float64}(
 ### Evaluating Profiles on the Grid
 
 ```julia
-using QGYBJ
+using QGYBJplus
 
 # Create a profile
 profile = TanhProfile{Float64}(0.01, 0.025, 2400.0, 200.0)
@@ -184,7 +184,7 @@ a_ell = a_ell_from_N2(N2_profile, par)
 Load stratification from a NetCDF file:
 
 ```julia
-using QGYBJ, NCDatasets
+using QGYBJplus, NCDatasets
 
 # Read N² profile from file
 N2_profile = read_stratification_profile("N2_data.nc", G)
@@ -212,7 +212,7 @@ a_ell = a_ell_from_N2(N2_profile, par)
 The first baroclinic deformation radius can be computed:
 
 ```julia
-using QGYBJ: compute_deformation_radius
+using QGYBJplus: compute_deformation_radius
 
 Ld = compute_deformation_radius(N2_profile, par.f₀, par.Lz)
 ```
@@ -256,7 +256,7 @@ plot(N2_profile, z,
 ### Plotting Different Profiles
 
 ```julia
-using Plots, QGYBJ
+using Plots, QGYBJplus
 
 # Create standard profiles for comparison
 profiles = create_standard_profiles(4000.0)  # 4km domain

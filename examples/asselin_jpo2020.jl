@@ -20,7 +20,7 @@ USAGE:
 using MPI
 using PencilArrays
 using PencilFFTs
-using QGYBJ
+using QGYBJplus
 using Printf
 
 # ============================================================================
@@ -65,7 +65,7 @@ const save_interval_IP = 1.0  # Save every 1 inertial period
 
 function main()
     MPI.Init()
-    mpi_config = QGYBJ.setup_mpi_environment(parallel_io=false)
+    mpi_config = QGYBJplus.setup_mpi_environment(parallel_io=false)
     is_root = mpi_config.is_root
 
     # Create output directory
@@ -82,7 +82,7 @@ function main()
 
     # Parameters matching Asselin et al. (2020)
     # Fully dimensional simulation with physical domain size
-    par = QGYBJ.default_params(
+    par = QGYBJplus.default_params(
         nx = nx, ny = ny, nz = nz,
         Lx = Lx, Ly = Ly, Lz = Lz,  # Domain size [m]
         dt = dt, nt = nt,
@@ -94,12 +94,12 @@ function main()
     )
 
     # Initialize distributed grid and state
-    G = QGYBJ.init_mpi_grid(par, mpi_config)
-    S = QGYBJ.init_mpi_state(G, mpi_config)
-    workspace = QGYBJ.init_mpi_workspace(G, mpi_config)
-    plans = QGYBJ.plan_mpi_transforms(G, mpi_config)
+    G = QGYBJplus.init_mpi_grid(par, mpi_config)
+    S = QGYBJplus.init_mpi_state(G, mpi_config)
+    workspace = QGYBJplus.init_mpi_workspace(G, mpi_config)
+    plans = QGYBJplus.plan_mpi_transforms(G, mpi_config)
 
-    local_range = QGYBJ.get_local_range_xy(G)
+    local_range = QGYBJplus.get_local_range_xy(G)
 
     # Set up dipole: ψ = (U/k) sin(kx) cos(ky), k = 2π/Lx
     # This creates a barotropic dipole eddy with velocity scale U0_flow
@@ -118,7 +118,7 @@ function main()
             end
         end
     end
-    QGYBJ.fft_forward!(S.psi, psi_phys, plans)
+    QGYBJplus.fft_forward!(S.psi, psi_phys, plans)
 
     # Compute q = -kh² × ψ
     q_local = parent(S.q)
@@ -157,7 +157,7 @@ function main()
     end
 
     # Configure output
-    output_config = QGYBJ.OutputConfig(
+    output_config = QGYBJplus.OutputConfig(
         output_dir = output_dir,
         state_file_pattern = "state%04d.nc",
         psi_interval = save_interval_IP * T_inertial,
@@ -173,7 +173,7 @@ function main()
     # Run simulation - all time-stepping handled automatically
     # This handles: leapfrog state management, initial projection step,
     # output file saving, and progress reporting
-    QGYBJ.run_simulation!(S, G, par, plans;
+    QGYBJplus.run_simulation!(S, G, par, plans;
         output_config = output_config,
         mpi_config = mpi_config,
         workspace = workspace,

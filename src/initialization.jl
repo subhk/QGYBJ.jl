@@ -10,9 +10,9 @@ Provides functions for initializing fields from various sources:
 
 using Random
 using LinearAlgebra
-using ..QGYBJ: Grid, State, QGParams
-using ..QGYBJ: plan_transforms!, fft_forward!, fft_backward!, compute_wavenumbers!
-using ..QGYBJ: local_to_global
+using ..QGYBJplus: Grid, State, QGParams
+using ..QGYBJplus: plan_transforms!, fft_forward!, fft_backward!, compute_wavenumbers!
+using ..QGYBJplus: local_to_global
 
 """
     initialize_from_config(config::ModelConfig, G::Grid, S::State, plans; params=nothing, N2_profile=nothing)
@@ -150,7 +150,7 @@ end
 Initialize stream function with random field having specified spectral slope.
 
 The streamfunction ψ is real-valued, so its Fourier transform must satisfy
-Hermitian symmetry: ψ̂(-k) = conj(ψ̂(k)). For complex-to-complex FFT (used by QGYBJ),
+Hermitian symmetry: ψ̂(-k) = conj(ψ̂(k)). For complex-to-complex FFT (used by QGYBJplus),
 this requires explicitly setting conjugate pairs:
 - For kx = 0: ψ̂(0, ky) = conj(ψ̂(0, -ky))
 - For kx = nx/2 (if nx even): ψ̂(nx/2, ky) = conj(ψ̂(nx/2, -ky))

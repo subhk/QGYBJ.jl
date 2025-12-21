@@ -1,10 +1,10 @@
 # [Quick Start Tutorial](@id quickstart)
 
 ```@meta
-CurrentModule = QGYBJ
+CurrentModule = QGYBJplus
 ```
 
-This tutorial will guide you through your first QGYBJ.jl simulation in about 5 minutes.
+This tutorial will guide you through your first QGYBJplus.jl simulation in about 5 minutes.
 
 ## What We'll Build
 
@@ -17,7 +17,7 @@ A simulation of near-inertial waves interacting with a turbulent eddy field:
 ## Step 1: Load the Package
 
 ```julia
-using QGYBJ
+using QGYBJplus
 ```
 
 ## Step 2: Create a Simple Configuration
@@ -124,7 +124,7 @@ heatmap(zeta, title="Surface Vorticity", aspect_ratio=1)
 Here's the complete code:
 
 ```julia
-using QGYBJ
+using QGYBJplus
 
 # Configure (Lx, Ly, Lz are REQUIRED)
 config = create_simple_config(
@@ -201,20 +201,20 @@ For large-scale simulations, use MPI with 2D pencil decomposition:
 
 ```julia
 # run_parallel.jl
-using MPI, PencilArrays, PencilFFTs, QGYBJ
+using MPI, PencilArrays, PencilFFTs, QGYBJplus
 
 MPI.Init()
-mpi_config = QGYBJ.setup_mpi_environment()
+mpi_config = QGYBJplus.setup_mpi_environment()
 
 # Setup distributed simulation (Lx, Ly, Lz are REQUIRED)
 params = default_params(
     nx=256, ny=256, nz=128,
     Lx=1000e3, Ly=1000e3, Lz=5000.0  # 1000km × 1000km × 5km
 )
-grid = QGYBJ.init_mpi_grid(params, mpi_config)
-state = QGYBJ.init_mpi_state(grid, mpi_config)
-workspace = QGYBJ.init_mpi_workspace(grid, mpi_config)
-plans = QGYBJ.plan_mpi_transforms(grid, mpi_config)
+grid = QGYBJplus.init_mpi_grid(params, mpi_config)
+state = QGYBJplus.init_mpi_state(grid, mpi_config)
+workspace = QGYBJplus.init_mpi_workspace(grid, mpi_config)
+plans = QGYBJplus.plan_mpi_transforms(grid, mpi_config)
 
 # ... run simulation ...
 

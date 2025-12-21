@@ -1,10 +1,10 @@
 # [Parallel Particle Algorithm](@id parallel-particles)
 
 ```@meta
-CurrentModule = QGYBJ
+CurrentModule = QGYBJplus
 ```
 
-This page provides detailed technical documentation of the parallel particle advection algorithm in QGYBJ.jl.
+This page provides detailed technical documentation of the parallel particle advection algorithm in QGYBJplus.jl.
 
 ## Overview
 
@@ -488,7 +488,7 @@ end
 
 ```julia
 using MPI
-using QGYBJ
+using QGYBJplus
 
 # Initialize MPI
 MPI.Init()

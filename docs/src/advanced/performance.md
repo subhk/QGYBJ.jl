@@ -1,10 +1,10 @@
 # [Performance Tips](@id performance)
 
 ```@meta
-CurrentModule = QGYBJ
+CurrentModule = QGYBJplus
 ```
 
-This page provides guidance for optimizing QGYBJ.jl performance.
+This page provides guidance for optimizing QGYBJplus.jl performance.
 
 ## Quick Performance Wins
 

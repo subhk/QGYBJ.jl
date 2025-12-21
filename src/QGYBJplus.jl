@@ -1,6 +1,6 @@
 #=
 ================================================================================
-                            QGYBJ.jl - Main Module
+                            QGYBJplus.jl - Main Module
 ================================================================================
 
 This module implements the QG-YBJ+ (Quasi-Geostrophic Young-Ben Jelloul Plus)
@@ -83,7 +83,7 @@ CODE STRUCTURE:
 
 GETTING STARTED:
 ----------------
-    using QGYBJ
+    using QGYBJplus
 
     # Create configuration
     config = create_simple_config(
@@ -98,7 +98,7 @@ GETTING STARTED:
 ================================================================================
 =#
 
-module QGYBJ
+module QGYBJplus
 
 using LinearAlgebra
 using SpecialFunctions: erf
@@ -203,7 +203,7 @@ export DomainConfig, StratificationConfig, InitialConditionConfig, OutputConfig,
                               MODULE INCLUDES
 ================================================================================
 Files are included in dependency order. Each file is a self-contained module
-that is "used" back into the main QGYBJ namespace.
+that is "used" back into the main QGYBJplus namespace.
 ================================================================================
 =#
 

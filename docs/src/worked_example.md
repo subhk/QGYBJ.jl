@@ -6,7 +6,7 @@ and inspects some outputs.
 ### 1) Create a configuration
 
 ```julia
-using QGYBJ
+using QGYBJplus
 
 domain = create_domain_config(nx=64, ny=64, nz=32, Lx=4π, Ly=4π, Lz=2π)
 strat  = create_stratification_config(:constant_N, N0=1.0)
@@ -33,12 +33,12 @@ run_simulation!(sim)
 compute_velocities!(sim.state, sim.grid; plans=sim.plans, params=sim.params, compute_w=true)
 
 # Simple diagnostics
-using QGYBJ: wave_energy
+using QGYBJplus: wave_energy
 EB, EA = wave_energy(sim.state.B, sim.state.A)
 @info "Wave energies" EB EA
 
 # Extract a horizontal slice of ψ
-using QGYBJ: slice_horizontal
+using QGYBJplus: slice_horizontal
 ψxy = slice_horizontal(sim.state.psi, sim.grid, sim.plans; k=sim.grid.nz ÷ 2)
 @info "psi slice stats" minimum(ψxy) maximum(ψxy)
 ```

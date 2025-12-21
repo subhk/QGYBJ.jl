@@ -1,10 +1,10 @@
 # [API Reference](@id api-index)
 
 ```@meta
-CurrentModule = QGYBJ
+CurrentModule = QGYBJplus
 ```
 
-Complete API reference for QGYBJ.jl.
+Complete API reference for QGYBJplus.jl.
 
 ## Quick Links
 
@@ -17,7 +17,7 @@ Complete API reference for QGYBJ.jl.
 ## Module Structure
 
 ```
-QGYBJ
+QGYBJplus
 ├── Core Types
 │   ├── QGParams      # Model parameters
 │   ├── Grid          # Spatial grid and wavenumbers
@@ -73,7 +73,7 @@ leapfrog_step!(Snp1, Sn, Snm1, G, par, plans; a=a, dealias_mask=L)
 ### MPI Parallel Mode
 
 ```julia
-using MPI, PencilArrays, PencilFFTs, QGYBJ
+using MPI, PencilArrays, PencilFFTs, QGYBJplus
 MPI.Init()
 mpi_config = setup_mpi_environment()
 G = init_mpi_grid(par, mpi_config)

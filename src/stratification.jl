@@ -11,7 +11,7 @@ Provides various stratification profiles including:
 """
 
 using SpecialFunctions: erf
-using ..QGYBJ: Grid, read_stratification_raw
+using ..QGYBJplus: Grid, read_stratification_raw
 
 """
     StratificationProfile{T}

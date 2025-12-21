@@ -11,8 +11,8 @@ This module provides comprehensive NetCDF input/output capabilities including:
 using NCDatasets
 using Printf
 using Dates
-using ..QGYBJ: Grid, State, QGParams
-using ..QGYBJ: plan_transforms!, fft_forward!, fft_backward!
+using ..QGYBJplus: Grid, State, QGParams
+using ..QGYBJplus: plan_transforms!, fft_forward!, fft_backward!
 
 # NCDatasets is always available since it's a required dependency (using NCDatasets above)
 const HAS_NCDS = true
@@ -478,18 +478,18 @@ end
                         gather_velocities=false, gather_vertical_velocity=false)
 
 Gather distributed state to rank 0 for I/O.
-Uses QGYBJ.gather_to_root which handles 2D decomposition properly.
+Uses QGYBJplus.gather_to_root which handles 2D decomposition properly.
 """
 function gather_state_for_io(S::State, G::Grid, parallel_config;
                              gather_psi=true, gather_waves=true,
                              gather_velocities=false, gather_vertical_velocity=false)
-    # Use QGYBJ's gather function which handles 2D decomposition
-    gathered_psi = gather_psi ? QGYBJ.gather_to_root(S.psi, G, parallel_config) : nothing
-    gathered_B = gather_waves ? QGYBJ.gather_to_root(S.B, G, parallel_config) : nothing
+    # Use QGYBJplus's gather function which handles 2D decomposition
+    gathered_psi = gather_psi ? QGYBJplus.gather_to_root(S.psi, G, parallel_config) : nothing
+    gathered_B = gather_waves ? QGYBJplus.gather_to_root(S.B, G, parallel_config) : nothing
 
-    gathered_u = gather_velocities ? QGYBJ.gather_to_root(S.u, G, parallel_config) : nothing
-    gathered_v = gather_velocities ? QGYBJ.gather_to_root(S.v, G, parallel_config) : nothing
-    gathered_w = gather_vertical_velocity ? QGYBJ.gather_to_root(S.w, G, parallel_config) : nothing
+    gathered_u = gather_velocities ? QGYBJplus.gather_to_root(S.u, G, parallel_config) : nothing
+    gathered_v = gather_velocities ? QGYBJplus.gather_to_root(S.v, G, parallel_config) : nothing
+    gathered_w = gather_vertical_velocity ? QGYBJplus.gather_to_root(S.w, G, parallel_config) : nothing
 
     # Create tuple with gathered arrays (only meaningful on rank 0)
     return (psi=gathered_psi, B=gathered_B, u=gathered_u, v=gathered_v, w=gathered_w)
@@ -770,7 +770,7 @@ function _read_initial_psi_parallel(filename::String, G::Grid, plans, parallel_c
     MPI.Barrier(parallel_config.comm)
 
     # Scatter from rank 0 to all processes
-    psik_local = QGYBJ.scatter_from_root(psik_global, G, parallel_config)
+    psik_local = QGYBJplus.scatter_from_root(psik_global, G, parallel_config)
 
     return psik_local
 end
@@ -869,7 +869,7 @@ function _read_initial_waves_parallel(filename::String, G::Grid, plans, parallel
     MPI.Barrier(parallel_config.comm)
 
     # Scatter from rank 0 to all processes
-    Bk_local = QGYBJ.scatter_from_root(Bk_global, G, parallel_config)
+    Bk_local = QGYBJplus.scatter_from_root(Bk_global, G, parallel_config)
 
     return Bk_local
 end

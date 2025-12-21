@@ -248,13 +248,13 @@ For proper MPI parallelization, use the extension module instead:
 using MPI
 using PencilArrays
 using PencilFFTs
-using QGYBJ
+using QGYBJplus
 
 MPI.Init()
-mpi_config = QGYBJ.setup_mpi_environment()
-grid = QGYBJ.init_mpi_grid(params, mpi_config)  # Creates grid with decomposition
-state = QGYBJ.init_mpi_state(grid, mpi_config)
-plans = QGYBJ.plan_mpi_transforms(grid, mpi_config)
+mpi_config = QGYBJplus.setup_mpi_environment()
+grid = QGYBJplus.init_mpi_grid(params, mpi_config)  # Creates grid with decomposition
+state = QGYBJplus.init_mpi_state(grid, mpi_config)
+plans = QGYBJplus.plan_mpi_transforms(grid, mpi_config)
 ```
 
 This function now only issues a deprecation warning and returns the grid unchanged.
@@ -264,10 +264,10 @@ function init_pencil_decomposition!(G::Grid)
     init_pencil_decomposition! is deprecated and does not work correctly.
 
     For MPI parallelization, use the extension module:
-        using MPI, PencilArrays, PencilFFTs, QGYBJ
+        using MPI, PencilArrays, PencilFFTs, QGYBJplus
         MPI.Init()
-        mpi_config = QGYBJ.setup_mpi_environment()
-        grid = QGYBJ.init_mpi_grid(params, mpi_config)
+        mpi_config = QGYBJplus.setup_mpi_environment()
+        grid = QGYBJplus.init_mpi_grid(params, mpi_config)
 
     The grid will remain in serial mode (G.decomp = nothing).
     """ maxlog=1

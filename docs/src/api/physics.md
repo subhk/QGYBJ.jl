@@ -1,10 +1,10 @@
 # [Physics Functions](@id api-physics)
 
 ```@meta
-CurrentModule = QGYBJ
+CurrentModule = QGYBJplus
 ```
 
-This page documents the physics functions in QGYBJ.jl.
+This page documents the physics functions in QGYBJplus.jl.
 
 ## Elliptic Inversions
 

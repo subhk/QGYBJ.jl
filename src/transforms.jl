@@ -27,7 +27,7 @@ TRANSFORM CONVENTION:
 
 module Transforms
 
-using ..QGYBJ: Grid
+using ..QGYBJplus: Grid
 using LinearAlgebra
 import FFTW
 

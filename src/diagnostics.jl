@@ -51,11 +51,11 @@ FORTRAN CORRESPONDENCE:
 
 module Diagnostics
 
-using ..QGYBJ: Grid
-using ..QGYBJ: plan_transforms!, fft_forward!, fft_backward!
-using ..QGYBJ: local_to_global
-using ..QGYBJ: transpose_to_z_pencil!, transpose_to_xy_pencil!
-using ..QGYBJ: allocate_z_pencil
+using ..QGYBJplus: Grid
+using ..QGYBJplus: plan_transforms!, fft_forward!, fft_backward!
+using ..QGYBJplus: local_to_global
+using ..QGYBJplus: transpose_to_z_pencil!, transpose_to_xy_pencil!
+using ..QGYBJplus: allocate_z_pencil
 
 # Reference to parent module for physics functions
 const PARENT = Base.parentmodule(@__MODULE__)

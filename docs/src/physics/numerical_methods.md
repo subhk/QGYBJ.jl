@@ -1,10 +1,10 @@
 # [Numerical Methods](@id numerical-methods)
 
 ```@meta
-CurrentModule = QGYBJ
+CurrentModule = QGYBJplus
 ```
 
-This page describes the numerical algorithms used in QGYBJ.jl, including the 2D pencil decomposition strategy for parallel execution.
+This page describes the numerical algorithms used in QGYBJplus.jl, including the 2D pencil decomposition strategy for parallel execution.
 
 ## Spatial Discretization
 
@@ -201,7 +201,7 @@ For MPI parallel execution, we use PencilFFTs which handles distributed FFTs:
 
 ```julia
 # Create parallel FFT plans
-plans = QGYBJ.plan_mpi_transforms(grid, mpi_config)
+plans = QGYBJplus.plan_mpi_transforms(grid, mpi_config)
 
 # Same interface as serial
 fft_forward!(dst, src, plans)
@@ -222,7 +222,7 @@ With 2D decomposition, no single configuration has all data local.
 
 ### Solution: Dual Pencil Configurations
 
-QGYBJ.jl uses two pencil configurations:
+QGYBJplus.jl uses two pencil configurations:
 
 | Configuration | Local Dimension | Distributed Dimensions | Use |
 |:--------------|:----------------|:-----------------------|:----|
@@ -285,7 +285,7 @@ To avoid repeated allocation, pre-allocate z-pencil workspace:
 
 ```julia
 # Initialize once
-workspace = QGYBJ.init_mpi_workspace(grid, mpi_config)
+workspace = QGYBJplus.init_mpi_workspace(grid, mpi_config)
 
 # Contents:
 # workspace.q_z, workspace.psi_z, workspace.B_z,
@@ -299,7 +299,7 @@ invert_q_to_psi!(state, grid; a=a_vec, workspace=workspace)
 
 ### Divergence Form (convol_waqg)
 
-For advection terms like ``J(\psi, q)``, QGYBJ.jl uses the **divergence form**:
+For advection terms like ``J(\psi, q)``, QGYBJplusplus.jl uses the **divergence form**:
 
 ```math
 J(\psi, q) = \frac{\partial(uq)}{\partial x} + \frac{\partial(vq)}{\partial y} = ik_x \widehat{uq} + ik_y \widehat{vq}

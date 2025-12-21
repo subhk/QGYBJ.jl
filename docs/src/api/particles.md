@@ -1,7 +1,7 @@
 # [Particle API](@id api-particles)
 
 ```@meta
-CurrentModule = QGYBJ
+CurrentModule = QGYBJplus
 ```
 
 This page documents the particle advection API for Lagrangian tracking.
@@ -72,7 +72,7 @@ initialize_particles_3d!
 ## Usage Example
 
 ```julia
-using QGYBJ
+using QGYBJplus
 
 # Setup model
 par = default_params(Lx=500e3, Ly=500e3, Lz=4000.0, nx=64, ny=64, nz=32)

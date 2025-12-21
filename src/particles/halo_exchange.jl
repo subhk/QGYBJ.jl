@@ -7,9 +7,9 @@ MPI domains to enable accurate interpolation for particles near domain boundarie
 
 module HaloExchange
 
-# Access Grid from grandparent module (QGYBJ)
+# Access Grid from grandparent module (QGYBJplus)
 const _PARENT = Base.parentmodule(@__MODULE__)           # UnifiedParticleAdvection
-const _GRANDPARENT = Base.parentmodule(_PARENT)          # QGYBJ
+const _GRANDPARENT = Base.parentmodule(_PARENT)          # QGYBJplus
 const Grid = _GRANDPARENT.Grid
 
 export HaloInfo, setup_halo_exchange!, exchange_velocity_halos!,

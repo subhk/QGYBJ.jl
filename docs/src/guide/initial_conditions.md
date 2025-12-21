@@ -1,10 +1,10 @@
 # [Initial Conditions](@id initial-conditions)
 
 ```@meta
-CurrentModule = QGYBJ
+CurrentModule = QGYBJplus
 ```
 
-This page describes how to set up initial conditions for QGYBJ.jl simulations.
+This page describes how to set up initial conditions for QGYBJplus.jl simulations.
 
 ## Overview
 
@@ -19,7 +19,7 @@ Initial conditions must be specified for:
 The most common way to initialize a simulation is with random streamfunction:
 
 ```julia
-using QGYBJ
+using QGYBJplus
 
 # Create parameters and setup
 par = default_params(Lx=500e3, Ly=500e3, Lz=4000.0, nx=64, ny=64, nz=32)
@@ -76,7 +76,7 @@ compute_q_from_psi!(S, G, plans, a_ell)
 Using the high-level API, initial conditions can be specified in the configuration:
 
 ```julia
-using QGYBJ
+using QGYBJplus
 
 # Create initial condition configuration
 init_config = create_initial_condition_config(
@@ -98,7 +98,7 @@ sim = setup_simulation(domain, strat; initial_conditions=init_config)
 ### From NetCDF
 
 ```julia
-using QGYBJ
+using QGYBJplus
 
 par = default_params(Lx=500e3, Ly=500e3, Lz=4000.0, nx=64, ny=64, nz=32)
 G, S, plans, a_ell = setup_model(par)
@@ -133,7 +133,7 @@ ncread_la!(S, G, "waves_file.nc")
 You can directly assign values in spectral space:
 
 ```julia
-using QGYBJ
+using QGYBJplus
 
 par = default_params(Lx=500e3, Ly=500e3, Lz=4000.0, nx=64, ny=64, nz=32)
 G, S, plans, a_ell = setup_model(par)
@@ -154,7 +154,7 @@ compute_q_from_psi!(S, G, plans, a_ell)
 For realistic simulations, start with random initialization and spin up:
 
 ```julia
-using QGYBJ
+using QGYBJplus
 
 # Setup
 par = default_params(

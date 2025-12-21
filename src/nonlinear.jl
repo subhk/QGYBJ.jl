@@ -45,10 +45,10 @@ from quadratic nonlinearities. The Lmask array encodes which modes to keep.
 
 module Nonlinear
 
-using ..QGYBJ: Grid, local_to_global
-using ..QGYBJ: fft_forward!, fft_backward!
-using ..QGYBJ: transpose_to_z_pencil!, transpose_to_xy_pencil!
-using ..QGYBJ: allocate_z_pencil
+using ..QGYBJplus: Grid, local_to_global
+using ..QGYBJplus: fft_forward!, fft_backward!
+using ..QGYBJplus: transpose_to_z_pencil!, transpose_to_xy_pencil!
+using ..QGYBJplus: allocate_z_pencil
 
 # Reference to parent module for accessing is_dealiased
 const PARENT = Base.parentmodule(@__MODULE__)
@@ -877,5 +877,5 @@ end
 
 end # module
 
-# Export nonlinear operators to main QGYBJ module
+# Export nonlinear operators to main QGYBJplus module
 using .Nonlinear: jacobian_spectral!, convol_waqg!, refraction_waqg!, compute_qw!, dissipation_q_nv!, int_factor

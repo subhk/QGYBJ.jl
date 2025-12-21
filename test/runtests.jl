@@ -1,5 +1,5 @@
 using Test
-using QGYBJ
+using QGYBJplus
 
 # Test domain size (small for unit tests)
 const TEST_Lx = 500e3  # 500 km
@@ -53,15 +53,15 @@ end
 
 @testset "Stratification validation" begin
     # Empty N² profile should error
-    @test_throws ErrorException QGYBJ.compute_deformation_radius(Float64[], 1e-4, 4000.0)
+    @test_throws ErrorException QGYBJplus.compute_deformation_radius(Float64[], 1e-4, 4000.0)
 
     # Empty profile in compute_stratification_coefficients
     par = default_params(nx=8, ny=8, nz=8, Lx=TEST_Lx, Ly=TEST_Ly, Lz=TEST_Lz)
-    G = QGYBJ.init_grid(par)
-    @test_throws ErrorException QGYBJ.compute_stratification_coefficients(Float64[], G)
+    G = QGYBJplus.init_grid(par)
+    @test_throws ErrorException QGYBJplus.compute_stratification_coefficients(Float64[], G)
 
     # validate_stratification should return errors for empty profile
-    errors, warnings = QGYBJ.validate_stratification(Float64[])
+    errors, warnings = QGYBJplus.validate_stratification(Float64[])
     @test !isempty(errors)
     @test any(occursin("Empty", e) for e in errors)
 end
@@ -69,7 +69,7 @@ end
 @testset "Edge cases" begin
     # nz=1 should work (single vertical level)
     par_nz1 = default_params(nx=8, ny=8, nz=1, Lx=TEST_Lx, Ly=TEST_Ly, Lz=TEST_Lz)
-    G_nz1 = QGYBJ.init_grid(par_nz1)
+    G_nz1 = QGYBJplus.init_grid(par_nz1)
     @test length(G_nz1.z) == 1
     @test length(G_nz1.dz) == 1  # Should have fallback value, not empty
     @test G_nz1.dz[1] == TEST_Lz
@@ -80,7 +80,7 @@ end
     @test size(S_small.q) == (4, 4, 4)
 end
 
-@testset "QGYBJ basic API" begin
+@testset "QGYBJplus basic API" begin
     par = default_params(nx=8, ny=8, nz=8, Lx=TEST_Lx, Ly=TEST_Ly, Lz=TEST_Lz, stratification=:constant_N)
     G, S, plans, a = setup_model(par)
     @test size(S.q) == (par.nx, par.ny, par.nz)
@@ -180,7 +180,7 @@ end
     par = default_params(nx=16, ny=16, nz=8, Lx=TEST_Lx, Ly=TEST_Ly, Lz=TEST_Lz,
                         νₕ₁=1.0, ilap1=2)  # Biharmonic with ν=1
 
-    # Access the int_factor function through QGYBJ module
+    # Access the int_factor function through QGYBJplus module
     # For isotropic form: int_factor(kx, ky) = dt * ν * (kx² + ky²)^2
     # For anisotropic form: int_factor(kx, ky) = dt * ν * (|kx|^4 + |ky|^4)
 
@@ -196,16 +196,16 @@ end
     # (since sqrt(2)² = 2 > 1² = 1)
 
     # For now, just verify the integrating factor is accessible and finite
-    if isdefined(QGYBJ.Nonlinear, :int_factor)
+    if isdefined(QGYBJplus.Nonlinear, :int_factor)
         kx, ky = 1.0, 1.0
         dt = par.dt
-        int_f = QGYBJ.Nonlinear.int_factor(kx, ky, par; waves=false)
+        int_f = QGYBJplus.Nonlinear.int_factor(kx, ky, par; waves=false)
         @test isfinite(int_f)
         @test int_f > 0  # Should be positive dissipation
 
         # Verify isotropic: at (1,1) should have same factor as at (sqrt(2), 0)
-        int_f_diagonal = QGYBJ.Nonlinear.int_factor(1.0, 1.0, par; waves=false)
-        int_f_axis = QGYBJ.Nonlinear.int_factor(sqrt(2.0), 0.0, par; waves=false)
+        int_f_diagonal = QGYBJplus.Nonlinear.int_factor(1.0, 1.0, par; waves=false)
+        int_f_axis = QGYBJplus.Nonlinear.int_factor(sqrt(2.0), 0.0, par; waves=false)
         @test isapprox(int_f_diagonal, int_f_axis, rtol=1e-10)
     end
 end
@@ -257,7 +257,7 @@ end
     N2_profile = ones(par.nz)  # Constant for simplicity
 
     # Compute YBJ vertical velocity
-    QGYBJ.Operators.compute_ybj_vertical_velocity!(S, G, plans, par; N2_profile=N2_profile)
+    QGYBJplus.Operators.compute_ybj_vertical_velocity!(S, G, plans, par; N2_profile=N2_profile)
 
     # Check w is finite (main verification that the code path works)
     @test all(isfinite, S.w)

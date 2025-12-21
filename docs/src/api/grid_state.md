@@ -1,7 +1,7 @@
 # [Grid & State](@id api-grid-state)
 
 ```@meta
-CurrentModule = QGYBJ
+CurrentModule = QGYBJplus
 ```
 
 This page documents the core data structures: `Grid` and `State`.
@@ -56,8 +56,8 @@ grid = init_grid(params)
 # Initialize with MPI decomposition
 using MPI, PencilArrays, PencilFFTs
 MPI.Init()
-mpi_config = QGYBJ.setup_mpi_environment()
-grid = QGYBJ.init_mpi_grid(params, mpi_config)
+mpi_config = QGYBJplus.setup_mpi_environment()
+grid = QGYBJplus.init_mpi_grid(params, mpi_config)
 ```
 
 ### Grid Properties
@@ -182,7 +182,7 @@ end
 state = init_state(grid)
 
 # Initialize with MPI (parallel mode)
-state = QGYBJ.init_mpi_state(grid, mpi_config)
+state = QGYBJplus.init_mpi_state(grid, mpi_config)
 ```
 
 ### Field Access
@@ -261,7 +261,7 @@ end
 
 ```julia
 # Initialize workspace (parallel mode only)
-workspace = QGYBJ.init_mpi_workspace(grid, mpi_config)
+workspace = QGYBJplus.init_mpi_workspace(grid, mpi_config)
 ```
 
 ### Usage
@@ -287,10 +287,10 @@ u = allocate_field(Float64, grid; complex=false)  # Real physical
 
 ```julia
 # Allocate in xy-pencil (for FFTs, horizontal operations)
-arr_xy = QGYBJ.allocate_xy_pencil(grid, ComplexF64)
+arr_xy = QGYBJplus.allocate_xy_pencil(grid, ComplexF64)
 
 # Allocate in z-pencil (for vertical operations)
-arr_z = QGYBJ.allocate_z_pencil(grid, ComplexF64)
+arr_z = QGYBJplus.allocate_z_pencil(grid, ComplexF64)
 ```
 
 ## Utility Functions

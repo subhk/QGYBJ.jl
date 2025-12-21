@@ -1,9 +1,9 @@
 QG-YBJ+ Model
 ==============
 
-[![CI](https://github.com/subhk/QGYBJ.jl/actions/workflows/ci.yml/badge.svg)](https://github.com/subhk/QGYBJ.jl/actions/workflows/ci.yml)
-[![Documentation (stable)](https://img.shields.io/badge/docs-stable-blue.svg)](https://subhk.github.io/QGYBJ.jl/stable/)
-[![Documentation (dev)](https://img.shields.io/badge/docs-dev-blue.svg)](https://subhk.github.io/QGYBJ.jl/dev/)
+[![CI](https://github.com/subhk/QGYBJplus.jl/actions/workflows/ci.yml/badge.svg)](https://github.com/subhk/QGYBJplus.jl/actions/workflows/ci.yml)
+[![Documentation (stable)](https://img.shields.io/badge/docs-stable-blue.svg)](https://subhk.github.io/QGYBJplus.jl/stable/)
+[![Documentation (dev)](https://img.shields.io/badge/docs-dev-blue.svg)](https://subhk.github.io/QGYBJplus.jl/dev/)
 
 This numerical model simulates the coupling between near-inertial waves and (Lagrangian-mean) balanced eddies. Wave dynamics follow the YBJ+ equation (Asselin & Young 2019), while potential vorticity evolution is governed by the quasigeostrophic equation, incorporating the wave feedback formulation of Xie & Vanneste (2015). The model employs pseudo-spectral methods horizontally and second-order finite differencing for vertical and temporal derivatives.
 

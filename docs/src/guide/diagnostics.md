@@ -1,10 +1,10 @@
 # [Diagnostics](@id diagnostics)
 
 ```@meta
-CurrentModule = QGYBJ
+CurrentModule = QGYBJplus
 ```
 
-This page describes diagnostic quantities and analysis tools in QGYBJ.jl.
+This page describes diagnostic quantities and analysis tools in QGYBJplus.jl.
 
 ## Energy Diagnostics
 
@@ -55,7 +55,7 @@ E_B, E_A = wave_energy(state.B, state.A, grid)
 
 ## Energy Diagnostics Output Files
 
-QGYBJ.jl automatically saves energy diagnostics to separate files in a dedicated `diagnostic/` folder, following the structure used in the Fortran QG_YBJp code.
+QGYBJplus.jl automatically saves energy diagnostics to separate files in a dedicated `diagnostic/` folder, following the structure used in the Fortran QG_YBJp code.
 
 ### Output Folder Structure
 
@@ -175,7 +175,7 @@ run_simulation!(sim)
 For manual control:
 
 ```julia
-using QGYBJ
+using QGYBJplus
 
 # Create manager manually
 energy_manager = EnergyDiagnosticsManager(

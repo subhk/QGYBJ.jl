@@ -5,14 +5,14 @@ Pkg.develop(PackageSpec(path=dirname(@__DIR__)))
 Pkg.instantiate()
 
 using Documenter
-using QGYBJ
+using QGYBJplus
 
 makedocs(
-    sitename = "QGYBJ.jl",
-    modules = [QGYBJ],
+    sitename = "QGYBJplus.jl",
+    modules = [QGYBJplus],
     format = Documenter.HTML(;
         prettyurls = get(ENV, "CI", "") == "true",
-        canonical = "https://subhk.github.io/QGYBJ.jl/stable/",
+        canonical = "https://subhk.github.io/QGYBJplus.jl/stable/",
         assets = String[],
         sidebar_sitename = true,
         collapselevel = 2,
@@ -63,7 +63,7 @@ makedocs(
 )
 
 deploydocs(
-    repo = "github.com/subhk/QGYBJ.jl.git",
+    repo = "github.com/subhk/QGYBJplus.jl.git",
     devbranch = "main",
     push_preview = true,
 )

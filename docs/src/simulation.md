@@ -3,7 +3,7 @@
 ### High‑Level API
 
 ```julia
-using QGYBJ
+using QGYBJplus
 
 config = create_simple_config(dt=1e-3, total_time=2.0)
 sim = setup_simulation(config)

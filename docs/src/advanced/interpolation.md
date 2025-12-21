@@ -1,10 +1,10 @@
 # [Interpolation Methods](@id interpolation)
 
 ```@meta
-CurrentModule = QGYBJ
+CurrentModule = QGYBJplus
 ```
 
-This page describes interpolation methods available in QGYBJ.jl.
+This page describes interpolation methods available in QGYBJplus.jl.
 
 ## Overview
 

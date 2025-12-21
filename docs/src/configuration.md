@@ -1,6 +1,6 @@
 ## Configuration
 
-QGYBJ.jl provides a high‑level configuration system for domains,
+QGYBJplus.jl provides a high‑level configuration system for domains,
 stratification, initial conditions, and output.
 
 ### Domain

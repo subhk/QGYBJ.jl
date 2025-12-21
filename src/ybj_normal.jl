@@ -58,11 +58,11 @@ FORTRAN CORRESPONDENCE:
 
 module YBJNormal
 
-using ..QGYBJ: Grid, QGParams
-using ..QGYBJ: N2_ut
-using ..QGYBJ: local_to_global, get_local_dims
-using ..QGYBJ: transpose_to_z_pencil!, transpose_to_xy_pencil!
-using ..QGYBJ: local_to_global_z, allocate_z_pencil
+using ..QGYBJplus: Grid, QGParams
+using ..QGYBJplus: N2_ut
+using ..QGYBJplus: local_to_global, get_local_dims
+using ..QGYBJplus: transpose_to_z_pencil!, transpose_to_xy_pencil!
+using ..QGYBJplus: local_to_global_z, allocate_z_pencil
 
 #=
 ================================================================================

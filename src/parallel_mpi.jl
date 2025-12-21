@@ -28,13 +28,13 @@ This approach allows scaling to O(N²) processes for an N³ grid.
 
 USAGE:
 ------
-    using QGYBJ
+    using QGYBJplus
 
     MPI.Init()
-    mpi_config = QGYBJ.setup_mpi_environment()
-    grid = QGYBJ.init_mpi_grid(params, mpi_config)
-    state = QGYBJ.init_mpi_state(grid, mpi_config)
-    plans = QGYBJ.plan_mpi_transforms(grid, mpi_config)
+    mpi_config = QGYBJplus.setup_mpi_environment()
+    grid = QGYBJplus.init_mpi_grid(params, mpi_config)
+    state = QGYBJplus.init_mpi_state(grid, mpi_config)
+    plans = QGYBJplus.plan_mpi_transforms(grid, mpi_config)
 """
 
 using MPI
@@ -46,11 +46,11 @@ import PencilArrays: Pencil, PencilArray, MPITopology
 import PencilArrays: range_local, range_remote, transpose!, gather
 import PencilFFTs: PencilFFTPlan, allocate_input, allocate_output
 
-# Note: Grid, State, QGParams, Plans are already in scope since we're included in QGYBJ
+# Note: Grid, State, QGParams, Plans are already in scope since we're included in QGYBJplus
 # init_analytical_psi!, init_analytical_waves!, add_balanced_component! also already available
 
 # Import fft_forward! and fft_backward! from Transforms submodule to extend with MPI methods
-# Must import from the defining module (Transforms), not from QGYBJ which re-exports them
+# Must import from the defining module (Transforms), not from QGYBJplus which re-exports them
 import .Transforms: fft_forward!, fft_backward!
 
 #=
@@ -118,11 +118,11 @@ can be specified manually or computed automatically.
 
 # Example
 ```julia
-using QGYBJ
+using QGYBJplus
 MPI.Init()
-mpi_config = QGYBJ.setup_mpi_environment()
+mpi_config = QGYBJplus.setup_mpi_environment()
 # or with explicit topology
-mpi_config = QGYBJ.setup_mpi_environment(topology=(4, 4))
+mpi_config = QGYBJplus.setup_mpi_environment(topology=(4, 4))
 ```
 """
 function setup_mpi_environment(; topology=nothing, parallel_io=true)
