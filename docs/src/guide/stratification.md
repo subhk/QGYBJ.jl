@@ -144,8 +144,8 @@ profile = ConstantN{Float64}(1.0)  # N₀ = 1.0
 profile = TanhProfile{Float64}(
     0.01,    # N_upper
     0.025,   # N_lower
-    2400.0,  # z_pycno (depth of pycnocline)
-    200.0    # width
+    2400.0,  # z_pycno (same units as Lz)
+    200.0    # width (same units as Lz)
 )
 
 # Exponential profile
