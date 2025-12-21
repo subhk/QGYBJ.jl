@@ -18,7 +18,7 @@ The nonlinear terms represent:
    - Waves are refracted by gradients in relative vorticity ζ = ∇²ψ
    - This causes wave focusing in anticyclones, defocusing in cyclones
 
-3. WAVE FEEDBACK: qʷ = (i/2)J(B*, B) - (1/4)∇²|B|²
+3. WAVE FEEDBACK: qʷ = (i/2)J(B*, B) + (1/4)∇²|B|²
    - Waves can modify the mean flow through nonlinear wave-wave interactions
    - This is the Xie & Vanneste (2015) wave feedback term
 
@@ -102,8 +102,8 @@ In vector form: J(φ, χ) = ẑ · (∇φ × ∇χ)
 
 # Important
 This function assumes φ and χ are **real-valued fields** in physical space. For real
-fields, IFFT of spectral derivatives (im*k*φ̂) yields purely imaginary results, so
-the physical derivatives are extracted via `imag()`.
+fields, IFFT of spectral derivatives (im*k*φ̂) yields real results (up to roundoff),
+so the physical derivatives are extracted via `real()`.
 
 # Example
 ```julia
@@ -160,14 +160,14 @@ function jacobian_spectral!(dstk, φₖ, χₖ, G::Grid, plans; Lmask=nothing)
     #= Step 3: Compute Jacobian in physical space (pointwise multiplication)
     J = φₓχᵧ - φᵧχₓ
 
-    For real fields: IFFT(im*k*φ̂) is purely imaginary, so the physical
-    derivative is in the imaginary part. We use imag() to extract it. =#
+    For real fields: IFFT(im*k*φ̂) is real (up to roundoff), so we use real()
+    to extract the physical derivative. =#
     J = similar(φₖ)
     J_arr = parent(J)
 
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
-        J_arr[i_local, j_local, k] = (imag(φₓᵣ[i_local, j_local, k])*imag(χᵧᵣ[i_local, j_local, k]) -
-                                      imag(φᵧᵣ[i_local, j_local, k])*imag(χₓᵣ[i_local, j_local, k]))
+        J_arr[i_local, j_local, k] = (real(φₓᵣ[i_local, j_local, k])*real(χᵧᵣ[i_local, j_local, k]) -
+                                      real(φᵧᵣ[i_local, j_local, k])*real(χₓᵣ[i_local, j_local, k]))
     end
 
     #= Step 4: Transform back to spectral space and apply dealiasing =#
@@ -486,7 +486,7 @@ This represents the averaged effect of nonlinear wave-wave interactions
 on the balanced flow (Xie & Vanneste 2015).
 
 For dimensional equations where B has actual velocity units:
-    qʷ = (i/2)J(B*, B) - (1/4)∇²|B|²
+    qʷ = (i/2)J(B*, B) + (1/4)∇²|B|²
 
 No additional scaling is needed since B already contains the wave amplitude.
 ================================================================================
@@ -505,7 +505,7 @@ interaction in the QG-YBJ+ model.
 # Mathematical Form (Xie & Vanneste 2015)
 For dimensional equations where B has velocity units [m/s]:
 
-    qʷ = (i/2)J(B*, B) - (1/4)∇²|B|²
+    qʷ = (i/2)J(B*, B) + (1/4)∇²|B|²
 
 where:
 - B* is the complex conjugate of B
@@ -610,7 +610,7 @@ function compute_qw!(qʷₖ, BRk, BIk, par, G::Grid, plans; Lmask=nothing)
     tempₖ_arr = parent(tempₖ)
 
     #= Assemble qʷ in spectral space
-    qʷ = J_term - (1/4)∇²|B|²
+    qʷ = J_term + (1/4)∇²|B|²
     where ∇² → -kₕ² in spectral space =#
     fft_forward!(qʷₖ, qʷᵣ, plans)
     qʷₖ_arr = parent(qʷₖ)
@@ -627,9 +627,9 @@ function compute_qw!(qʷₖ, BRk, BIk, par, G::Grid, plans; Lmask=nothing)
         kₕ² = kₓ^2 + kᵧ^2
       
         if should_keep(i_global, j_global)
-            # qʷ = (i/2)J(B*, B) - (1/4)∇²|B|²
+            # qʷ = (i/2)J(B*, B) + (1/4)∇²|B|²
             # For dimensional equations, B has actual amplitude - no W2F scaling needed
-            qʷₖ_arr[i_local, j_local, k] = qʷₖ_arr[i_local, j_local, k] + 0.25*kₕ²*tempₖ_arr[i_local, j_local, k]
+            qʷₖ_arr[i_local, j_local, k] = qʷₖ_arr[i_local, j_local, k] - 0.25*kₕ²*tempₖ_arr[i_local, j_local, k]
         else
             qʷₖ_arr[i_local, j_local, k] = 0
         end

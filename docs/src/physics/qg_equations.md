@@ -156,7 +156,7 @@ When waves are present, the QG equation includes a feedback term through a modif
 The wave-induced PV ``q^w`` is computed from the wave envelope ``B``:
 
 ```math
-q^w = \frac{i}{2} J(B^*, B) - \frac{1}{4} \nabla_h^2 |B|^2
+q^w = \frac{i}{2} J(B^*, B) + \frac{1}{4} \nabla_h^2 |B|^2
 ```
 
 where ``B = B_R + i B_I`` is the complex wave envelope with units of velocity (m/s).
