@@ -4,17 +4,17 @@
 ================================================================================
 
 This module provides FFT transforms for the QG-YBJ+ model. It uses FFTW.jl
-for serial execution and supports MPI-parallel execution via the QGYBJMPIExt
-extension with PencilFFTs.jl.
+for serial execution and supports MPI-parallel execution via the built-in
+`parallel_mpi.jl` support with PencilFFTs.jl.
 
 SERIAL MODE (default):
 - Uses FFTW.jl for efficient FFT computation
 - FFTW.jl is a required dependency
 
-PARALLEL MODE (with extension):
+PARALLEL MODE:
 - Uses PencilFFTs.jl for distributed FFTs
-- Automatically enabled when MPI, PencilArrays, PencilFFTs are loaded
-- See ext/QGYBJMPIExt.jl for parallel implementation
+- Enabled when MPI, PencilArrays, PencilFFTs are loaded and a parallel config is passed
+- See parallel_mpi.jl for MPI plan setup
 
 TRANSFORM CONVENTION:
 - Horizontal 2D FFTs (x,y dimensions) for each vertical level
@@ -42,7 +42,7 @@ import FFTW
 
 Container for FFT plans. Used for serial FFTW execution.
 
-For parallel execution with PencilFFTs, the extension module (QGYBJMPIExt)
+For parallel execution with PencilFFTs, the MPI path
 provides `MPIPlans` which wraps `PencilFFTPlan` and uses `ldiv!` for the
 normalized inverse transform.
 
@@ -61,7 +61,7 @@ are kept for potential future optimization with explicit FFTW plan objects.
 
 # Note
 When MPI/PencilArrays/PencilFFTs are loaded, use `plan_mpi_transforms()` instead,
-which returns `MPIPlans` from the extension module.
+which returns `MPIPlans`.
 """
 Base.@kwdef mutable struct Plans
     backend::Symbol = :fftw          # :fftw for serial mode
@@ -89,7 +89,7 @@ Returns Plans with `:fftw` backend for per-slice FFT execution.
 
 # Parallel Mode
 If `parallel_config` indicates MPI is active and the grid has decomposition,
-attempts to use PencilFFTs via the extension module.
+attempts to use PencilFFTs via the MPI support.
 
 # Arguments
 - `G::Grid`: Grid structure (determines array sizes)
@@ -108,7 +108,7 @@ function plan_transforms!(G::Grid, parallel_config=nothing)
     # If parallel_config indicates MPI is active, try parallel setup
     if parallel_config !== nothing
         if hasproperty(parallel_config, :use_mpi) && parallel_config.use_mpi && G.decomp !== nothing
-            # Parallel mode requested - try extension
+            # Parallel mode requested
             return setup_parallel_transforms(G, parallel_config)
         end
     end
@@ -123,16 +123,15 @@ end
 
 Set up FFT plans for parallel execution.
 
-This is a stub that returns FFTW plans. The actual parallel implementation
-is provided by the QGYBJMPIExt extension when PencilFFTs is loaded.
-
-For true parallel FFTs, ensure MPI, PencilArrays, and PencilFFTs are loaded
-before using QGYBJ, then use `plan_mpi_transforms()` from the extension.
+This delegates to `plan_mpi_transforms` from the MPI support when available,
+and falls back to FFTW plans otherwise.
 """
 function setup_parallel_transforms(grid::Grid, pconfig)
-    # This stub returns FFTW plans as fallback
-    # The extension overrides this with PencilFFTs
-    @warn "Parallel transforms requested but PencilFFTs extension not loaded. Falling back to FFTW."
+    PARENT = Base.parentmodule(@__MODULE__)
+    if isdefined(PARENT, :plan_mpi_transforms)
+        return PARENT.plan_mpi_transforms(grid, pconfig)
+    end
+    @warn "Parallel transforms requested but MPI plan setup not available. Falling back to FFTW."
     return Plans(backend=:fftw)
 end
 
@@ -159,7 +158,7 @@ Serial FFTW backend: Loops over z-slices and applies 2D FFT to each (x,y) plane.
 Modified dst array.
 
 # Note
-For parallel execution with PencilArrays, the extension module (QGYBJMPIExt)
+For parallel execution with PencilArrays, the MPI support
 provides a separate `fft_forward!(dst::PencilArray, src::PencilArray, plans::MPIPlans)`
 method that handles distributed transforms automatically.
 """
@@ -189,7 +188,7 @@ FFTW.ifft is NORMALIZED (divides by N automatically).
 Modified dst array.
 
 # Note
-For parallel execution with PencilArrays, the extension module (QGYBJMPIExt)
+For parallel execution with PencilArrays, the MPI support
 provides a separate `fft_backward!(dst::PencilArray, src::PencilArray, plans::MPIPlans)`
 method that uses `ldiv!` for normalized inverse transforms.
 """
