@@ -528,15 +528,45 @@ function _invert_helmholtz_direct!(dstk, rhs, G::Grid, par, a, b, scale_kh2, bot
     @assert length(a) == nz "a must have length nz=$nz"
     @assert length(b) == nz "b must have length nz=$nz"
 
+    bot_bc_arr = bot_bc !== nothing ? parent(bot_bc) : nothing
+    top_bc_arr = top_bc !== nothing ? parent(top_bc) : nothing
+
+    if nz == 1
+        if bot_bc_arr !== nothing || top_bc_arr !== nothing
+            @warn "Helmholtz solve with nz=1 ignores boundary conditions" maxlog=1
+        end
+
+        tol = sqrt(eps(real(one(eltype(rhs_arr)))))
+        singular_warned = false
+        for j_local in 1:ny_local, i_local in 1:nx_local
+            i_global = local_to_global(i_local, 1, G)
+            j_global = local_to_global(j_local, 2, G)
+
+            kₓ = G.kx[i_global]
+            kᵧ = G.ky[j_global]
+            kₕ² = kₓ^2 + kᵧ^2
+            denom = scale_kh2 * kₕ²
+
+            rhs_val = rhs_arr[i_local, j_local, 1]
+            if abs(denom) < tol
+                if !singular_warned && abs(rhs_val) > tol
+                    @warn "Helmholtz solve with nz=1 has kₕ²≈0 and nonzero RHS; setting φ=0 for the mean mode." maxlog=1
+                    singular_warned = true
+                end
+                dst_arr[i_local, j_local, 1] = 0
+            else
+                dst_arr[i_local, j_local, 1] = -rhs_val / denom
+            end
+        end
+        return dstk
+    end
+
     Δz = nz > 1 ? (G.z[2]-G.z[1]) : 1.0
     Δz² = Δz^2
 
     dₗ = zeros(eltype(a), nz)
     d  = zeros(eltype(a), nz)
     dᵤ = zeros(eltype(a), nz)
-
-    bot_bc_arr = bot_bc !== nothing ? parent(bot_bc) : nothing
-    top_bc_arr = top_bc !== nothing ? parent(top_bc) : nothing
 
     # Pre-allocate work arrays outside loop to reduce GC pressure
     rhsᵣ = zeros(eltype(a), nz)
@@ -626,6 +656,8 @@ function _invert_helmholtz_2d!(dstk, rhs, G::Grid, par, a, b, scale_kh2, bot_bc,
     if bot_bc !== nothing || top_bc !== nothing
         @warn "Boundary conditions not yet supported in 2D decomposition Helmholtz solve" maxlog=1
     end
+    @assert length(a) == nz "a must have length nz=$nz"
+    @assert length(b) == nz "b must have length nz=$nz"
 
     # Use z-pencil workspace arrays to avoid repeated allocations
     # work_z is used for input (rhs), psi_z is used for output (dst)
@@ -640,6 +672,35 @@ function _invert_helmholtz_2d!(dstk, rhs, G::Grid, par, a, b, scale_kh2, bot_bc,
 
     nx_local, ny_local, nz_local = size(rhs_z_arr)
     @assert nz_local == nz "After transpose, z must be fully local"
+
+    if nz == 1
+        tol = sqrt(eps(real(one(eltype(rhs_z_arr)))))
+        singular_warned = false
+
+        for j_local in 1:ny_local, i_local in 1:nx_local
+            i_global = local_to_global_z(i_local, 1, G)
+            j_global = local_to_global_z(j_local, 2, G)
+
+            kₓ = G.kx[i_global]
+            kᵧ = G.ky[j_global]
+            kₕ² = kₓ^2 + kᵧ^2
+            denom = scale_kh2 * kₕ²
+
+            rhs_val = rhs_z_arr[i_local, j_local, 1]
+            if abs(denom) < tol
+                if !singular_warned && abs(rhs_val) > tol
+                    @warn "Helmholtz solve with nz=1 has kₕ²≈0 and nonzero RHS; setting φ=0 for the mean mode." maxlog=1
+                    singular_warned = true
+                end
+                dst_z_arr[i_local, j_local, 1] = 0
+            else
+                dst_z_arr[i_local, j_local, 1] = -rhs_val / denom
+            end
+        end
+
+        transpose_to_xy_pencil!(dstk, dst_z, G)
+        return dstk
+    end
 
     Δz = nz > 1 ? (G.z[2]-G.z[1]) : 1.0
     Δz² = Δz^2
