@@ -14,6 +14,15 @@ Stratification enters via N²(z) and the vertical operator coefficient
 strat = create_stratification_config(:constant_N, N0=1.0)
 ```
 
+You can also pass the type as a keyword:
+
+```julia
+strat = create_stratification_config(type=:constant_N, N0=1.0)
+```
+
+For `:tanh_profile`, `z_pycno` and `width` are specified in the same units as
+the vertical coordinate `z` (e.g., meters when `Lz` is in meters).
+
 ### Using the Profile
 
 During setup, the stratification profile is computed on the grid and used to
@@ -28,4 +37,3 @@ par = default_params(Lx=500e3, Ly=500e3, Lz=4000.0, nx=64, ny=64, nz=32)
 rho_ut = ones(par.nz); rho_st = ones(par.nz)   # or custom profiles
 par = with_density_profiles(par; rho_ut=rho_ut, rho_st=rho_st)
 ```
-
