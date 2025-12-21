@@ -490,6 +490,10 @@ Compute detailed wave energy components following the Fortran wave_energy routin
 - WCE: Wave correction energy from |A|² (YBJ+ higher-order term)
 
 Matches the Fortran `wave_energy` subroutine in QG_YBJp/diagnostics.f90.
+
+# Keyword Arguments
+- `N2_profile`: Optional N²(z) profile for variable stratification. When provided,
+  uses `a_ell(z) = f₀²/N²(z)` per vertical level.
 """
 function compute_detailed_wave_energy(state::State, grid::Grid, params::QGParams{T}; N2_profile=nothing) where T
     nz = grid.nz
@@ -677,6 +681,7 @@ This matches the standard QG APE formula: PE = (1/2) ∫ (f²/N²) (∂ψ/∂z)�
 - `plans`: FFT plans
 - `N2_profile::Vector`: Buoyancy frequency squared N²(z)
 - `a_ell::Real`: Scaling factor (default 1.0). For physical PE, use `f₀²` (Coriolis squared).
+- `workspace`: Optional MPI workspace with `psi_z` for z-pencil operations.
 
 # Returns
 Domain-integrated potential energy (scalar).
