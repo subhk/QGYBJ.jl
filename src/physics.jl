@@ -25,7 +25,7 @@ N² controls:
 
 STRATIFICATION PROFILES:
 ------------------------
-Two profiles are implemented (matching Fortran):
+Two analytic profiles are implemented (matching Fortran):
 
 1. CONSTANT N (constant_N):
    - Uniform stratification: N² = 1 (nondimensional)
@@ -40,6 +40,10 @@ Two profiles are implemented (matching Fortran):
      * z₀  = pycnocline center depth
      * σ   = pycnocline width
      * α   = asymmetry (skewness) parameter
+
+Profile-based types (`:tanh_profile`, `:from_file`) are supported elsewhere in
+the stack via explicit N² profiles; these functions fall back to constant N²
+if no profile is provided.
 
 DERIVED COEFFICIENTS:
 ---------------------
@@ -95,6 +99,8 @@ the wave envelope B to wave amplitude A.
 # Stratification Options
 - `:constant_N`: Returns a(z) = f₀²/N² everywhere (uniform stratification with user-specified N²)
 - `:skewed_gaussian`: Returns a(z) = f₀²/N²(z) with skewed Gaussian N² profile
+- `:tanh_profile`, `:from_file`: Require an external N² profile; if none is provided
+  to the caller, this falls back to constant N² with a warning.
 
 # Arguments
 - `par::QGParams`: Parameters including stratification choice and coefficients
@@ -151,6 +157,18 @@ function a_ell_ut(par::QGParams, G::Grid)
                 division_guard_warned = true
             end
             a[k] = f₀_sq / max(N2_z, N2_min)  # a = f²/N²(z), protected against N²≈0
+        end
+
+    elseif par.stratification === :tanh_profile || par.stratification === :from_file
+        @warn "a_ell_ut: stratification=$(par.stratification) requires an external N² profile. " *
+              "Falling back to constant N²=$(par.N²). Pass N2_profile and use a_ell_from_N2 for consistency." maxlog=1
+        T = eltype(a)
+        N2_min = sqrt(eps(T))
+        if par.N² < N2_min
+            @warn "N² ≈ 0 in constant_N fallback (N²=$(par.N²)), clamping to $N2_min for numerical stability" maxlog=1
+        end
+        @inbounds for k in 1:nz
+            a[k] = f₀_sq / max(par.N², N2_min)
         end
 
     else
@@ -382,6 +400,9 @@ where ρ is the background density profile. N² controls:
    - Enhanced stratification at pycnocline depth z₀
    - Asymmetry parameter α creates realistic upper-ocean structure
 
+3. `:tanh_profile`, `:from_file`: Require an external N² profile
+   - If no profile is provided to the caller, this falls back to constant N² with a warning.
+
 # Arguments
 - `par::QGParams`: Stratification type and coefficients
 - `G::Grid`: Grid with vertical levels
@@ -419,6 +440,11 @@ function N2_ut(par::QGParams, G::Grid)
             z = G.z[k]
             N2[k] = N12*exp(-((z - z0)^2)/(σ^2))*(1 + erf(α*(z - z0)/(σ*sqrt(2.0)))) + N02
         end
+
+    elseif par.stratification === :tanh_profile || par.stratification === :from_file
+        @warn "N2_ut: stratification=$(par.stratification) requires an external N² profile. " *
+              "Falling back to constant N²=$(par.N²). Use compute_stratification_profile or load a profile instead." maxlog=1
+        @inbounds fill!(N2, par.N²)
 
     else
         error("Unsupported stratification: $(par.stratification)")
