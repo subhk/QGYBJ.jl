@@ -166,7 +166,7 @@ Base.@kwdef mutable struct QGParams{T}
     ==================================================================== =#
     linear_vert_structure::Int # Mapping from Fortran (0 or 1)
 
-    stratification::Symbol     # :constant_N or :skewed_gaussian
+    stratification::Symbol     # :constant_N, :skewed_gaussian, or profile-based (:tanh_profile/:from_file)
 
     # Dissipation control
     inviscid::Bool             # true = disable ALL dissipation
@@ -276,7 +276,8 @@ With f₀=1, N²=1 (constant_N stratification):
 **Physical Parameters:**
 - `f₀`: Coriolis parameter f (default: 1.0)
 - `N²`: Buoyancy frequency squared (default: 1.0)
-- `stratification`: :constant_N or :skewed_gaussian (default: :constant_N)
+- `stratification`: :constant_N, :skewed_gaussian, :tanh_profile, or :from_file (default: :constant_N)
+  - Note: :tanh_profile and :from_file require a supplied N² profile at runtime.
 
 **Hyperdiffusion:**
 - `νₕ₁, νₕ₂`: Flow hyperviscosity coefficients (default: 0.01, 10.0)
@@ -377,8 +378,13 @@ function default_params(; nx=64, ny=64, nz=64,
     ilap2w > 0 || throw(ArgumentError("ilap2w must be positive (got ilap2w=$ilap2w)"))
 
     # Stratification type
-    stratification in (:constant_N, :skewed_gaussian) ||
-        throw(ArgumentError("stratification must be :constant_N or :skewed_gaussian (got :$stratification)"))
+    stratification in (:constant_N, :skewed_gaussian, :tanh_profile, :from_file) ||
+        throw(ArgumentError("stratification must be :constant_N, :skewed_gaussian, :tanh_profile, or :from_file (got :$stratification)"))
+
+    if stratification in (:tanh_profile, :from_file)
+        @warn "default_params uses only constant or skewed_gaussian profiles. For stratification=$stratification, " *
+              "provide N2_profile at runtime or use ModelConfig/StratificationConfig." maxlog=1
+    end
 
     # Warnings for non-optimal settings
     if !ispow2(nx) || !ispow2(ny)
