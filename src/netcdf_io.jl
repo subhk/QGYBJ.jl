@@ -124,12 +124,17 @@ function should_output_diagnostics(manager::OutputManager, time::Real)
 end
 
 """
-    write_state_file(manager::OutputManager, S::State, G::Grid, plans, time::Real, parallel_config=nothing; params=nothing)
+    write_state_file(manager::OutputManager, S::State, G::Grid, plans, time::Real, parallel_config=nothing; params=nothing, write_psi=nothing, write_waves=nothing)
 
 Write complete state to NetCDF file with standardized naming.
 Unified interface for both serial and parallel I/O.
+
+# Keyword Arguments
+- `write_psi`: Override whether to write ψ for this call (defaults to config save flag).
+- `write_waves`: Override whether to write L+A for this call (defaults to config save flag).
 """
-function write_state_file(manager::OutputManager, S::State, G::Grid, plans, time::Real, parallel_config=nothing; params=nothing)
+function write_state_file(manager::OutputManager, S::State, G::Grid, plans, time::Real, parallel_config=nothing;
+                          params=nothing, write_psi=nothing, write_waves=nothing)
     if !HAS_NCDS
         error("NCDatasets not available. Install NCDatasets.jl or skip NetCDF I/O.")
     end
@@ -138,36 +143,83 @@ function write_state_file(manager::OutputManager, S::State, G::Grid, plans, time
         parallel_config = manager.parallel_config
     end
     
+    write_psi = isnothing(write_psi) ? manager.save_psi : write_psi
+    write_waves = isnothing(write_waves) ? manager.save_waves : write_waves
+
+    if !write_psi && !write_waves
+        @warn "write_state_file called with no variables to write (psi and waves disabled)"
+        return nothing
+    end
+
+    write_velocities = manager.save_velocities && write_psi
+    write_vertical_velocity = manager.save_vertical_velocity && write_psi
+    write_vorticity = manager.save_vorticity && write_psi
+
     # Route to appropriate I/O method
     if parallel_config !== nothing && parallel_config.use_mpi && G.decomp !== nothing
-        return write_parallel_state_file(manager, S, G, plans, time, parallel_config; params=params)
+        return write_parallel_state_file(manager, S, G, plans, time, parallel_config;
+                                         params=params,
+                                         write_psi=write_psi,
+                                         write_waves=write_waves,
+                                         write_velocities=write_velocities,
+                                         write_vertical_velocity=write_vertical_velocity,
+                                         write_vorticity=write_vorticity)
     else
-        return write_serial_state_file(manager, S, G, plans, time; params=params)
+        return write_serial_state_file(manager, S, G, plans, time;
+                                       params=params,
+                                       write_psi=write_psi,
+                                       write_waves=write_waves,
+                                       write_velocities=write_velocities,
+                                       write_vertical_velocity=write_vertical_velocity,
+                                       write_vorticity=write_vorticity)
     end
 end
 
 """
-    write_serial_state_file(manager::OutputManager, S::State, G::Grid, plans, time::Real; params=nothing)
+    write_serial_state_file(manager::OutputManager, S::State, G::Grid, plans, time::Real;
+                            params=nothing, write_psi=true, write_waves=true,
+                            write_velocities=false, write_vertical_velocity=false, write_vorticity=false)
 
 Write state file in serial mode.
 """
-function write_serial_state_file(manager::OutputManager, S::State, G::Grid, plans, time::Real; params=nothing)
+function write_serial_state_file(manager::OutputManager, S::State, G::Grid, plans, time::Real;
+                                 params=nothing, write_psi=true, write_waves=true,
+                                 write_velocities=false, write_vertical_velocity=false,
+                                 write_vorticity=false)
     # Generate filename (printf-style pattern supported)
     io = IOBuffer()
     Printf.format(io, Printf.Format(manager.state_file_pattern), manager.psi_counter)
     filename = String(take!(io))
     filepath = joinpath(manager.output_dir, filename)
     
-    # Convert spectral fields to real space
+    # Convert spectral fields to real space (only as needed)
     # Note: fft_backward! uses FFTW.ifft which is already normalized (divides by nx*ny)
-    psir = similar(S.psi)
-    fft_backward!(psir, S.psi, plans)
+    psir = nothing
+    if write_psi
+        psir = similar(S.psi)
+        fft_backward!(psir, S.psi, plans)
+    end
 
-    # For wave field B: first transform full complex B to physical space,
-    # then extract real and imaginary parts of the PHYSICAL field
+    # For wave field B: transform full complex B to physical space as needed
     # B = BR + i*BI where BR, BI are real fields in physical space
-    Br = similar(S.B)
-    fft_backward!(Br, S.B, plans)  # Full complex IFFT
+    Br = nothing
+    if write_waves
+        Br = similar(S.B)
+        fft_backward!(Br, S.B, plans)  # Full complex IFFT
+    end
+
+    # Optional vorticity field (computed from spectral psi)
+    zeta_r = nothing
+    if write_vorticity
+        zeta_k = similar(S.psi)
+        zeta_k_arr = parent(zeta_k)
+        psi_k_arr = parent(S.psi)
+        @inbounds for k in 1:G.nz, j in 1:G.ny, i in 1:G.nx
+            zeta_k_arr[i, j, k] = -G.kh2[i, j] * psi_k_arr[i, j, k]
+        end
+        zeta_r = similar(S.psi)
+        fft_backward!(zeta_r, zeta_k, plans)
+    end
     
     NCDatasets.Dataset(filepath, "c") do ds
         # Define dimensions
@@ -203,7 +255,7 @@ function write_serial_state_file(manager::OutputManager, S::State, G::Grid, plan
 
         # Stream function
         # Note: psir is already normalized by fft_backward!, no additional division needed
-        if manager.save_psi
+        if write_psi
             psi_var = NCDatasets.defVar(ds, "psi", Float64, ("x", "y", "z"))
             psi_var[:,:,:] = real.(psir)
             psi_var.attrib["units"] = "m²/s"
@@ -212,7 +264,7 @@ function write_serial_state_file(manager::OutputManager, S::State, G::Grid, plan
 
         # Wave fields (L+A real and imaginary parts)
         # Extract real and imag parts of the PHYSICAL field Br (already normalized)
-        if manager.save_waves
+        if write_waves
             LAr_var = NCDatasets.defVar(ds, "LAr", Float64, ("x", "y", "z"))
             LAi_var = NCDatasets.defVar(ds, "LAi", Float64, ("x", "y", "z"))
 
@@ -227,7 +279,7 @@ function write_serial_state_file(manager::OutputManager, S::State, G::Grid, plan
         
         # Horizontal velocities (if requested)
         # Note: S.u and S.v are already in physical space (real Float64 arrays)
-        if manager.save_velocities && hasfield(typeof(S), :u) && hasfield(typeof(S), :v)
+        if write_velocities && hasfield(typeof(S), :u) && hasfield(typeof(S), :v)
             u_var = NCDatasets.defVar(ds, "u", Float64, ("x", "y", "z"))
             v_var = NCDatasets.defVar(ds, "v", Float64, ("x", "y", "z"))
 
@@ -242,13 +294,22 @@ function write_serial_state_file(manager::OutputManager, S::State, G::Grid, plan
         end
         
         # Vertical velocity (if requested)
-        if manager.save_vertical_velocity && hasfield(typeof(S), :w)
+        if write_vertical_velocity && hasfield(typeof(S), :w)
             w_var = NCDatasets.defVar(ds, "w", Float64, ("x", "y", "z"))
             w_var[:,:,:] = S.w  # w is already in real space
             
             w_var.attrib["units"] = "m/s"
             w_var.attrib["long_name"] = "vertical velocity (QG ageostrophic)"
             w_var.attrib["description"] = "Diagnostic vertical velocity from omega equation"
+        end
+
+        # Relative vorticity (if requested)
+        if write_vorticity && zeta_r !== nothing
+            zeta_var = NCDatasets.defVar(ds, "vorticity", Float64, ("x", "y", "z"))
+            zeta_var[:,:,:] = real.(zeta_r)
+            zeta_var.attrib["units"] = "1/s"
+            zeta_var.attrib["long_name"] = "relative vorticity"
+            zeta_var.attrib["description"] = "ζ = ∇²ψ computed in spectral space"
         end
         
         # Global attributes
@@ -274,10 +335,10 @@ function write_serial_state_file(manager::OutputManager, S::State, G::Grid, plan
     
     @info "Wrote state file: $filename (t=$time)"
     manager.psi_counter += 1
-    manager.last_psi_output = time
-
-    # Also update wave counters when waves are saved (fixes runaway output bug)
-    if manager.save_waves
+    if write_psi
+        manager.last_psi_output = time
+    end
+    if write_waves
         manager.wave_counter += 1
         manager.last_wave_output = time
     end
@@ -286,11 +347,15 @@ function write_serial_state_file(manager::OutputManager, S::State, G::Grid, plan
 end
 
 """
-    write_parallel_state_file(manager::OutputManager, S::State, G::Grid, plans, time::Real, parallel_config; params=nothing)
+    write_parallel_state_file(manager::OutputManager, S::State, G::Grid, plans, time::Real, parallel_config;
+                              params=nothing, write_psi=true, write_waves=true,
+                              write_velocities=false, write_vertical_velocity=false, write_vorticity=false)
 
 Write state file using parallel NetCDF I/O.
 """
-function write_parallel_state_file(manager::OutputManager, S::State, G::Grid, plans, time::Real, parallel_config; params=nothing)
+function write_parallel_state_file(manager::OutputManager, S::State, G::Grid, plans, time::Real, parallel_config;
+                                   params=nothing, write_psi=true, write_waves=true,
+                                   write_velocities=false, write_vertical_velocity=false, write_vorticity=false)
     # Import MPI
     MPI = Base.require(Base.PkgId(Base.UUID("da04e1cc-30fd-572f-bb4f-1f8673147195"), "MPI"))
 
@@ -304,30 +369,54 @@ function write_parallel_state_file(manager::OutputManager, S::State, G::Grid, pl
         rank = MPI.Comm_rank(parallel_config.comm)
 
         if parallel_config.parallel_io
-            # Use parallel NetCDF I/O
-            write_parallel_netcdf_file(filepath, S, G, plans, time, parallel_config; params=params)
+            # Use parallel NetCDF I/O (gather-to-root in current implementation)
+            write_parallel_netcdf_file(filepath, S, G, plans, time, parallel_config;
+                                       params=params,
+                                       write_psi=write_psi,
+                                       write_waves=write_waves,
+                                       write_velocities=write_velocities,
+                                       write_vertical_velocity=write_vertical_velocity,
+                                       write_vorticity=write_vorticity)
         else
             # Gather to rank 0 and write
             # IMPORTANT: gather_state_for_io calls gather_to_root which is a collective
             # operation - ALL ranks must participate, not just rank 0
-            gathered_state = gather_state_for_io(S, G, parallel_config)
+            gathered_state = gather_state_for_io(
+                S, G, parallel_config;
+                gather_psi=write_psi,
+                gather_waves=write_waves,
+                gather_velocities=write_velocities,
+                gather_vertical_velocity=write_vertical_velocity
+            )
 
             # Only rank 0 writes the file
             if rank == 0
-                write_gathered_state_file(filepath, gathered_state, G, plans, time; params=params)
+                write_gathered_state_file(filepath, gathered_state, G, plans, time;
+                                          params=params,
+                                          write_psi=write_psi,
+                                          write_waves=write_waves,
+                                          write_velocities=write_velocities,
+                                          write_vertical_velocity=write_vertical_velocity,
+                                          write_vorticity=write_vorticity)
             end
             MPI.Barrier(parallel_config.comm)
         end
     else
         # Fallback to serial
-        return write_serial_state_file(manager, S, G, plans, time; params=params)
+        return write_serial_state_file(manager, S, G, plans, time;
+                                       params=params,
+                                       write_psi=write_psi,
+                                       write_waves=write_waves,
+                                       write_velocities=write_velocities,
+                                       write_vertical_velocity=write_vertical_velocity,
+                                       write_vorticity=write_vorticity)
     end
     
     manager.psi_counter += 1
-    manager.last_psi_output = time
-
-    # Also update wave counters when waves are saved (fixes runaway output bug)
-    if manager.save_waves
+    if write_psi
+        manager.last_psi_output = time
+    end
+    if write_waves
         manager.wave_counter += 1
         manager.last_wave_output = time
     end
@@ -345,126 +434,71 @@ function write_parallel_state_file(manager::OutputManager, S::State, G::Grid, pl
 end
 
 """
-    write_parallel_netcdf_file(filepath, S::State, G::Grid, plans, time, parallel_config; params=nothing)
+    write_parallel_netcdf_file(filepath, S::State, G::Grid, plans, time, parallel_config;
+                               params=nothing, write_psi=true, write_waves=true,
+                               write_velocities=false, write_vertical_velocity=false, write_vorticity=false)
 
 Write NetCDF file with 2D decomposition support.
 Uses gather-to-root approach: all data is gathered to rank 0, which writes the file.
 This is simpler and more reliable than parallel NetCDF.
 """
-function write_parallel_netcdf_file(filepath, S::State, G::Grid, plans, time, parallel_config; params=nothing)
+function write_parallel_netcdf_file(filepath, S::State, G::Grid, plans, time, parallel_config;
+                                    params=nothing, write_psi=true, write_waves=true,
+                                    write_velocities=false, write_vertical_velocity=false, write_vorticity=false)
 
     # Import MPI
     MPI = Base.require(Base.PkgId(Base.UUID("da04e1cc-30fd-572f-bb4f-1f8673147195"), "MPI"))
 
     rank = MPI.Comm_rank(parallel_config.comm)
-    nprocs = MPI.Comm_size(parallel_config.comm)
 
-    # Gather fields to rank 0 using QGYBJ's gather function
-    gathered_psi = QGYBJ.gather_to_root(S.psi, G, parallel_config)
-    gathered_B = QGYBJ.gather_to_root(S.B, G, parallel_config)
+    gathered_state = gather_state_for_io(
+        S, G, parallel_config;
+        gather_psi=write_psi,
+        gather_waves=write_waves,
+        gather_velocities=write_velocities,
+        gather_vertical_velocity=write_vertical_velocity
+    )
 
-    # Only rank 0 writes
     if rank == 0
-        if gathered_psi === nothing || gathered_B === nothing
-            error("Failed to gather fields to rank 0")
-        end
-
-        # Create serial FFT plans for the full domain
-        temp_plans = plan_transforms!(G)
-
-        # Convert to real space
-        # Note: fft_backward! uses FFTW.ifft which is already normalized
-        psir = zeros(ComplexF64, G.nx, G.ny, G.nz)
-        Br = zeros(ComplexF64, G.nx, G.ny, G.nz)
-
-        fft_backward!(psir, gathered_psi, temp_plans)
-        fft_backward!(Br, gathered_B, temp_plans)  # Full complex IFFT
-
-        NCDatasets.Dataset(filepath, "c") do ds
-            # Define dimensions
-            ds.dim["x"] = G.nx
-            ds.dim["y"] = G.ny
-            ds.dim["z"] = G.nz
-            ds.dim["time"] = 1
-
-            # Create coordinate variables
-            x_var = NCDatasets.defVar(ds, "x", Float64, ("x",))
-            y_var = NCDatasets.defVar(ds, "y", Float64, ("y",))
-            z_var = NCDatasets.defVar(ds, "z", Float64, ("z",))
-            time_var = NCDatasets.defVar(ds, "time", Float64, ("time",))
-
-            # Set coordinate values using actual domain size
-            dx = G.Lx / G.nx
-            dy = G.Ly / G.ny
-
-            x_var[:] = collect(range(0, G.Lx - dx, length=G.nx))
-            y_var[:] = collect(range(0, G.Ly - dy, length=G.ny))
-            z_var[:] = G.z  # Use actual grid z-values
-            time_var[1] = time
-
-            # Add coordinate attributes (units depend on whether dimensional or not)
-            x_var.attrib["units"] = G.Lx ≈ 2π ? "radians" : "m"
-            x_var.attrib["long_name"] = "x coordinate"
-            y_var.attrib["units"] = G.Ly ≈ 2π ? "radians" : "m"
-            y_var.attrib["long_name"] = "y coordinate"
-            z_var.attrib["units"] = G.Lz ≈ 2π ? "nondimensional" : "m"
-            z_var.attrib["long_name"] = "z coordinate (vertical)"
-            time_var.attrib["units"] = "model time units"
-            time_var.attrib["long_name"] = "time"
-
-            # Create and write data variables (already normalized by fft_backward!)
-            psi_var = NCDatasets.defVar(ds, "psi", Float64, ("x", "y", "z"))
-            LAr_var = NCDatasets.defVar(ds, "LAr", Float64, ("x", "y", "z"))
-            LAi_var = NCDatasets.defVar(ds, "LAi", Float64, ("x", "y", "z"))
-
-            psi_var[:,:,:] = real.(psir)
-            LAr_var[:,:,:] = real.(Br)  # Real part of physical wave field
-            LAi_var[:,:,:] = imag.(Br)  # Imaginary part of physical wave field
-
-            # Add attributes
-            ds.attrib["title"] = "QG-YBJ Model State"
-            ds.attrib["created_at"] = string(now())
-            ds.attrib["model_time"] = time
-            ds.attrib["n_processes"] = nprocs
-
-            # Add parameter info if provided
-            if params !== nothing
-                ds.attrib["nx"] = params.nx
-                ds.attrib["ny"] = params.ny
-                ds.attrib["nz"] = params.nz
-                ds.attrib["f0"] = params.f₀
-                ds.attrib["dt"] = params.dt
-            end
-        end
-
-        @info "Rank 0 wrote state file: $filepath (t=$time)"
+        write_gathered_state_file(filepath, gathered_state, G, plans, time;
+                                  params=params,
+                                  write_psi=write_psi,
+                                  write_waves=write_waves,
+                                  write_velocities=write_velocities,
+                                  write_vertical_velocity=write_vertical_velocity,
+                                  write_vorticity=write_vorticity)
     end
 
-    # Synchronize all processes
     MPI.Barrier(parallel_config.comm)
 end
 
 """
-    gather_state_for_io(S::State, G::Grid, parallel_config)
+    gather_state_for_io(S::State, G::Grid, parallel_config;
+                        gather_psi=true, gather_waves=true,
+                        gather_velocities=false, gather_vertical_velocity=false)
 
 Gather distributed state to rank 0 for I/O.
 Uses QGYBJ.gather_to_root which handles 2D decomposition properly.
 """
-function gather_state_for_io(S::State, G::Grid, parallel_config)
-    if G.decomp === nothing
-        return S
-    end
-
+function gather_state_for_io(S::State, G::Grid, parallel_config;
+                             gather_psi=true, gather_waves=true,
+                             gather_velocities=false, gather_vertical_velocity=false)
     # Use QGYBJ's gather function which handles 2D decomposition
-    gathered_psi = QGYBJ.gather_to_root(S.psi, G, parallel_config)
-    gathered_B = QGYBJ.gather_to_root(S.B, G, parallel_config)
+    gathered_psi = gather_psi ? QGYBJ.gather_to_root(S.psi, G, parallel_config) : nothing
+    gathered_B = gather_waves ? QGYBJ.gather_to_root(S.B, G, parallel_config) : nothing
+
+    gathered_u = gather_velocities ? QGYBJ.gather_to_root(S.u, G, parallel_config) : nothing
+    gathered_v = gather_velocities ? QGYBJ.gather_to_root(S.v, G, parallel_config) : nothing
+    gathered_w = gather_vertical_velocity ? QGYBJ.gather_to_root(S.w, G, parallel_config) : nothing
 
     # Create tuple with gathered arrays (only meaningful on rank 0)
-    return (psi=gathered_psi, B=gathered_B)
+    return (psi=gathered_psi, B=gathered_B, u=gathered_u, v=gathered_v, w=gathered_w)
 end
 
 """
-    write_gathered_state_file(filepath, gathered_state, G::Grid, plans, time; params=nothing)
+    write_gathered_state_file(filepath, gathered_state, G::Grid, plans, time;
+                              params=nothing, write_psi=true, write_waves=true,
+                              write_velocities=false, write_vertical_velocity=false, write_vorticity=false)
 
 Write gathered state from rank 0.
 
@@ -472,11 +506,17 @@ The gathered_state should be a named tuple with fields:
 - `psi`: Gathered streamfunction array (spectral, nx×ny×nz)
 - `B`: Gathered wave envelope array (spectral, nx×ny×nz)
 """
-function write_gathered_state_file(filepath, gathered_state, G::Grid, plans, time; params=nothing)
+function write_gathered_state_file(filepath, gathered_state, G::Grid, plans, time;
+                                   params=nothing, write_psi=true, write_waves=true,
+                                   write_velocities=false, write_vertical_velocity=false,
+                                   write_vorticity=false)
 
     # Extract gathered fields
     gathered_psi = gathered_state.psi
     gathered_B = gathered_state.B
+    gathered_u = hasproperty(gathered_state, :u) ? gathered_state.u : nothing
+    gathered_v = hasproperty(gathered_state, :v) ? gathered_state.v : nothing
+    gathered_w = hasproperty(gathered_state, :w) ? gathered_state.w : nothing
 
     # Create serial FFT plans for the full domain if needed
     temp_plans = plan_transforms!(G)
@@ -484,16 +524,29 @@ function write_gathered_state_file(filepath, gathered_state, G::Grid, plans, tim
     # Convert spectral fields to real space
     # Note: fft_backward! uses FFTW.ifft which is already normalized
 
-    # Allocate arrays (complex for FFT output)
-    psir = zeros(ComplexF64, G.nx, G.ny, G.nz)
-    Br = zeros(ComplexF64, G.nx, G.ny, G.nz)
+    complex_type = gathered_psi !== nothing ? eltype(gathered_psi) :
+                   (gathered_B !== nothing ? eltype(gathered_B) : ComplexF64)
 
-    # Transform to real space
-    if gathered_psi !== nothing
+    psir = nothing
+    if write_psi && gathered_psi !== nothing
+        psir = zeros(complex_type, G.nx, G.ny, G.nz)
         fft_backward!(psir, gathered_psi, temp_plans)
     end
-    if gathered_B !== nothing
+
+    Br = nothing
+    if write_waves && gathered_B !== nothing
+        Br = zeros(complex_type, G.nx, G.ny, G.nz)
         fft_backward!(Br, gathered_B, temp_plans)  # Full complex IFFT
+    end
+
+    zeta_r = nothing
+    if write_vorticity && gathered_psi !== nothing
+        zeta_k = zeros(complex_type, G.nx, G.ny, G.nz)
+        @inbounds for k in 1:G.nz, j in 1:G.ny, i in 1:G.nx
+            zeta_k[i, j, k] = -G.kh2[i, j] * gathered_psi[i, j, k]
+        end
+        zeta_r = zeros(complex_type, G.nx, G.ny, G.nz)
+        fft_backward!(zeta_r, zeta_k, temp_plans)
     end
 
     NCDatasets.Dataset(filepath, "c") do ds
@@ -518,18 +571,18 @@ function write_gathered_state_file(filepath, gathered_state, G::Grid, plans, tim
         z_var[:] = G.z  # Use actual grid z-values
         time_var[1] = time
 
-        # Add coordinate attributes
-        x_var.attrib["units"] = "m"
+        # Add coordinate attributes (units depend on whether dimensional or not)
+        x_var.attrib["units"] = G.Lx ≈ 2π ? "radians" : "m"
         x_var.attrib["long_name"] = "x coordinate"
-        y_var.attrib["units"] = "m"
+        y_var.attrib["units"] = G.Ly ≈ 2π ? "radians" : "m"
         y_var.attrib["long_name"] = "y coordinate"
-        z_var.attrib["units"] = "m"
-        z_var.attrib["long_name"] = "z coordinate (vertical depth)"
+        z_var.attrib["units"] = G.Lz ≈ 2π ? "nondimensional" : "m"
+        z_var.attrib["long_name"] = "z coordinate (vertical)"
         time_var.attrib["units"] = "model time units"
         time_var.attrib["long_name"] = "time"
 
         # Write streamfunction (already normalized by fft_backward!)
-        if gathered_psi !== nothing
+        if write_psi && gathered_psi !== nothing
             psi_var = NCDatasets.defVar(ds, "psi", Float64, ("x", "y", "z"))
             psi_var[:,:,:] = real.(psir)
             psi_var.attrib["units"] = "m²/s"
@@ -538,7 +591,7 @@ function write_gathered_state_file(filepath, gathered_state, G::Grid, plans, tim
 
         # Write wave fields (L+A real and imaginary parts)
         # Extract real and imag parts of the PHYSICAL field (already normalized)
-        if gathered_B !== nothing
+        if write_waves && gathered_B !== nothing
             LAr_var = NCDatasets.defVar(ds, "LAr", Float64, ("x", "y", "z"))
             LAi_var = NCDatasets.defVar(ds, "LAi", Float64, ("x", "y", "z"))
 
@@ -549,6 +602,35 @@ function write_gathered_state_file(filepath, gathered_state, G::Grid, plans, tim
             LAr_var.attrib["long_name"] = "L+A real part"
             LAi_var.attrib["units"] = "wave amplitude"
             LAi_var.attrib["long_name"] = "L+A imaginary part"
+        end
+
+        if write_velocities && gathered_u !== nothing && gathered_v !== nothing
+            u_var = NCDatasets.defVar(ds, "u", Float64, ("x", "y", "z"))
+            v_var = NCDatasets.defVar(ds, "v", Float64, ("x", "y", "z"))
+
+            u_var[:,:,:] = gathered_u
+            v_var[:,:,:] = gathered_v
+
+            u_var.attrib["units"] = "m/s"
+            u_var.attrib["long_name"] = "zonal velocity"
+            v_var.attrib["units"] = "m/s"
+            v_var.attrib["long_name"] = "meridional velocity"
+        end
+
+        if write_vertical_velocity && gathered_w !== nothing
+            w_var = NCDatasets.defVar(ds, "w", Float64, ("x", "y", "z"))
+            w_var[:,:,:] = gathered_w
+            w_var.attrib["units"] = "m/s"
+            w_var.attrib["long_name"] = "vertical velocity (QG ageostrophic)"
+            w_var.attrib["description"] = "Diagnostic vertical velocity from omega equation"
+        end
+
+        if write_vorticity && zeta_r !== nothing
+            zeta_var = NCDatasets.defVar(ds, "vorticity", Float64, ("x", "y", "z"))
+            zeta_var[:,:,:] = real.(zeta_r)
+            zeta_var.attrib["units"] = "1/s"
+            zeta_var.attrib["long_name"] = "relative vorticity"
+            zeta_var.attrib["description"] = "ζ = ∇²ψ computed in spectral space"
         end
 
         # Global attributes
@@ -681,7 +763,8 @@ function _read_initial_psi_parallel(filename::String, G::Grid, plans, parallel_c
     psik_global = nothing
     if rank == 0
         @info "Reading initial psi from: $filename (parallel, rank 0)"
-        psik_global = _read_initial_psi_serial(filename, G, plans)
+        serial_plans = plan_transforms!(G)
+        psik_global = _read_initial_psi_serial(filename, G, serial_plans)
     end
 
     MPI.Barrier(parallel_config.comm)
@@ -779,7 +862,8 @@ function _read_initial_waves_parallel(filename::String, G::Grid, plans, parallel
     Bk_global = nothing
     if rank == 0
         @info "Reading initial waves from: $filename (parallel, rank 0)"
-        Bk_global = _read_initial_waves_serial(filename, G, plans)
+        serial_plans = plan_transforms!(G)
+        Bk_global = _read_initial_waves_serial(filename, G, serial_plans)
     end
 
     MPI.Barrier(parallel_config.comm)

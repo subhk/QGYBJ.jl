@@ -268,9 +268,12 @@ function run_simulation!(sim::QGYBJSimulation{T}; progress_callback=nothing) whe
     L_mask = dealias_mask(sim.grid)
 
     # Write initial output
-    if should_output_psi(sim.output_manager, sim.current_time)
+    write_psi = should_output_psi(sim.output_manager, sim.current_time)
+    write_waves = should_output_waves(sim.output_manager, sim.current_time)
+    if write_psi || write_waves
         write_state_file(sim.output_manager, sim.state, sim.grid, sim.plans,
-                        sim.current_time; params=sim.params)
+                        sim.current_time; params=sim.params,
+                        write_psi=write_psi, write_waves=write_waves)
     end
 
     # Leapfrog requires 3 time levels: Snm1 (n-1), Sn (n), Snp1 (n+1)
@@ -364,11 +367,12 @@ Check if output is needed and write files.
 """
 function check_and_output!(sim::QGYBJSimulation)
     # State output - unified interface handles both serial and parallel
-    if should_output_psi(sim.output_manager, sim.current_time) || 
-       should_output_waves(sim.output_manager, sim.current_time)
-        
+    write_psi = should_output_psi(sim.output_manager, sim.current_time)
+    write_waves = should_output_waves(sim.output_manager, sim.current_time)
+    if write_psi || write_waves
         write_state_file(sim.output_manager, sim.state, sim.grid, sim.plans,
-                        sim.current_time, sim.parallel_config; params=sim.params)
+                        sim.current_time, sim.parallel_config; params=sim.params,
+                        write_psi=write_psi, write_waves=write_waves)
     end
 end
 
