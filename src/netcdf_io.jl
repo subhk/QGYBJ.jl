@@ -1072,9 +1072,9 @@ function create_empty_state_file(filepath::String, G::Grid, time::Real; metadata
         LAi_var = NCDatasets.defVar(ds, "LAi", Float64, ("x", "y", "z", "time"))
         
         # Set attributes
-        x_var.attrib["units"] = "radians"
-        y_var.attrib["units"] = "radians"
-        z_var.attrib["units"] = "nondimensional"
+        x_var.attrib["units"] = G.Lx ≈ 2π ? "radians" : "m"
+        y_var.attrib["units"] = G.Ly ≈ 2π ? "radians" : "m"
+        z_var.attrib["units"] = G.Lz ≈ 2π ? "nondimensional" : "m"
         time_var.attrib["units"] = "model time units"
 
         psi_var.attrib["units"] = "m²/s"
@@ -1131,12 +1131,12 @@ function ncdump_psi(S::State, G::Grid, plans; path="psi.out.nc")
         z_var[:] = G.z
 
         # Add coordinate attributes
-        x_var.attrib["units"] = "m"
+        x_var.attrib["units"] = G.Lx ≈ 2π ? "radians" : "m"
         x_var.attrib["long_name"] = "x coordinate"
-        y_var.attrib["units"] = "m"
+        y_var.attrib["units"] = G.Ly ≈ 2π ? "radians" : "m"
         y_var.attrib["long_name"] = "y coordinate"
-        z_var.attrib["units"] = "m"
-        z_var.attrib["long_name"] = "z coordinate (vertical depth)"
+        z_var.attrib["units"] = G.Lz ≈ 2π ? "nondimensional" : "m"
+        z_var.attrib["long_name"] = "z coordinate (vertical)"
 
         # Write psi (already normalized by fft_backward!)
         psi_var = NCDatasets.defVar(ds, "psi", Float64, ("x", "y", "z"))
@@ -1183,12 +1183,12 @@ function ncdump_la(S::State, G::Grid, plans; path="la.out.nc")
         z_var[:] = G.z
 
         # Add coordinate attributes
-        x_var.attrib["units"] = "m"
+        x_var.attrib["units"] = G.Lx ≈ 2π ? "radians" : "m"
         x_var.attrib["long_name"] = "x coordinate"
-        y_var.attrib["units"] = "m"
+        y_var.attrib["units"] = G.Ly ≈ 2π ? "radians" : "m"
         y_var.attrib["long_name"] = "y coordinate"
-        z_var.attrib["units"] = "m"
-        z_var.attrib["long_name"] = "z coordinate (vertical depth)"
+        z_var.attrib["units"] = G.Lz ≈ 2π ? "nondimensional" : "m"
+        z_var.attrib["long_name"] = "z coordinate (vertical)"
 
         # Write wave field real and imaginary parts (already normalized)
         LAr_var = NCDatasets.defVar(ds, "LAr", Float64, ("x", "y", "z"))
