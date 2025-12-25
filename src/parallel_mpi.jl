@@ -799,7 +799,7 @@ function _redistribute_pencils!(dst::PencilArray, src::PencilArray, plans::MPIPl
     decomp = plans.decomp
     # Get MPI comm from the pencil's topology
     pencil_topo = topology(decomp.pencil_xy)
-    comm = MPI.Comm(pencil_topo)
+    comm = pencil_topo.comm  # Access comm field of MPITopology
     nprocs = MPI.Comm_size(comm)
     myrank = MPI.Comm_rank(comm)
     T = eltype(src)
