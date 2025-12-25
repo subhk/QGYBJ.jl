@@ -499,8 +499,8 @@ function plan_mpi_transforms(grid::Grid, mpi_config::MPIConfig)
         PencilFFTs.Transforms.NoTransform()
     )
 
-    # Use permute_dims=Val(false) to keep output dimensions matching input
-    # This ensures pencil_xy arrays can be used directly with the plan
+    # Use permute_dims=Val(false) to keep logical dimension order unchanged.
+    # Note: output pencil may still differ in decomposition (handled in wrappers).
     plan = PencilFFTPlan(pencil_xy, transform; permute_dims=Val(false))
 
     # Allocate work arrays and get their pencil configurations
@@ -684,7 +684,7 @@ function scatter_from_root(arr, grid::Grid, mpi_config::MPIConfig)
     if mpi_config.is_root
         cart_comm = PencilArrays.get_comm(pencil_xy)
         topo = PencilArrays.topology(pencil_xy)
-        for coords in CartesianIndices(topo)
+        for coords in CartesianIndices(size(topo))
             coords_tuple = Tuple(coords)
             coords_zero = collect(coords_tuple .- 1)
             rank = MPI.Cart_rank(cart_comm, coords_zero)
