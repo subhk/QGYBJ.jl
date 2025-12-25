@@ -302,6 +302,22 @@ function transpose_to_xy_pencil!(dst::PencilArray, src::PencilArray, decomp::Pen
     return dst
 end
 
+function _transpose_output_to_input!(dst::PencilArray, src::PencilArray, plans::MPIPlans)
+    T = eltype(src)
+    buffer_xz = _get_plan_transpose_buffer(plans, T)
+    transpose!(buffer_xz, src)
+    transpose!(dst, buffer_xz)
+    return dst
+end
+
+function _transpose_input_to_output!(dst::PencilArray, src::PencilArray, plans::MPIPlans)
+    T = eltype(src)
+    buffer_xz = _get_plan_transpose_buffer(plans, T)
+    transpose!(buffer_xz, src)
+    transpose!(dst, buffer_xz)
+    return dst
+end
+
 # Grid-based versions
 function transpose_to_z_pencil!(dst, src, grid::Grid)
     decomp = grid.decomp
@@ -574,14 +590,14 @@ function fft_forward!(dst::PencilArray, src::PencilArray, plans::MPIPlans)
         work_in = plans.work_arrays.input
         work_out = plans.work_arrays.output
 
-        # input_pencil == pencil_xy, so direct copy is safe
-        copyto!(parent(work_in), parent(src))
+        _copy_if_ranges_match!(work_in, src, "fft_forward! source → plan input")
 
         # Execute FFT (output goes to work_out with output_pencil decomposition)
         mul!(work_out, plans.forward, work_in)
 
-        # Transpose from output_pencil (z-pencil) back to pencil_xy
-        transpose_to_xy_pencil!(dst, work_out, plans.decomp)
+        # Transpose within the plan topology, then copy to model pencil
+        _transpose_output_to_input!(work_in, work_out, plans)
+        _copy_if_ranges_match!(dst, work_in, "fft_forward! plan input → destination")
     end
     return dst
 end
@@ -597,14 +613,13 @@ function fft_backward!(dst::PencilArray, src::PencilArray, plans::MPIPlans)
         work_in = plans.work_arrays.input
         work_out = plans.work_arrays.output
 
-        # Transpose from pencil_xy to output_pencil (z-pencil)
-        transpose_to_z_pencil!(work_out, src, plans.decomp)
+        _copy_if_ranges_match!(work_in, src, "fft_backward! source → plan input")
+        _transpose_input_to_output!(work_out, work_in, plans)
 
         # Execute inverse FFT
         ldiv!(work_in, plans.forward, work_out)
 
-        # input_pencil == pencil_xy, so direct copy is safe
-        copyto!(parent(dst), parent(work_in))
+        _copy_if_ranges_match!(dst, work_in, "fft_backward! plan input → destination")
     end
     return dst
 end
