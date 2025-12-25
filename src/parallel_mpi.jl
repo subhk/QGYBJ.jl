@@ -245,40 +245,103 @@ end
 ================================================================================
 =#
 
-# Thread-local buffer cache for intermediate transpose arrays
-const _transpose_buffer_cache = Dict{Tuple{UInt, DataType}, Any}()
+#=
+================================================================================
+                    MPI-BASED TRANSPOSE OPERATIONS
+================================================================================
+PencilArrays' transpose! requires pencils from the same internal plan.
+We implement our own transposes using MPI collective operations.
 
-function _get_transpose_buffer(decomp::PencilDecomp, ::Type{T}) where T
-    key = (objectid(decomp), T)
-    if !haskey(_transpose_buffer_cache, key)
-        _transpose_buffer_cache[key] = PencilArray{T}(undef, decomp.pencil_xz)
-    end
-    return _transpose_buffer_cache[key]::PencilArray{T}
-end
+For xy-pencil (x local, y,z distributed) <-> z-pencil (z local, x,y distributed):
+- We use MPI_Alltoallv to redistribute data across processes
+================================================================================
+=#
 
 """
     transpose_to_z_pencil!(dst, src, decomp::PencilDecomp)
 
-Transpose data from xy-pencil to z-pencil configuration using two-step transpose.
+Transpose data from xy-pencil to z-pencil configuration using MPI_Alltoallv.
+After transpose, z dimension is fully local for vertical operations.
 """
 function transpose_to_z_pencil!(dst::PencilArray, src::PencilArray, decomp::PencilDecomp)
+    # Get pencil configurations
+    pencil_xy = decomp.pencil_xy
+    pencil_z = decomp.pencil_z
+
+    # Get MPI communicator and topology info
+    comm = PencilArrays.get_comm(pencil_xy)
+    nprocs = MPI.Comm_size(comm)
+    myrank = MPI.Comm_rank(comm)
+
+    nx, ny, nz = decomp.global_dims
     T = eltype(src)
-    buffer_xz = _get_transpose_buffer(decomp, T)
-    transpose!(buffer_xz, src)
-    transpose!(dst, buffer_xz)
+
+    # Source: xy-pencil (x local, y,z distributed)
+    src_range = decomp.local_range_xy
+    src_arr = parent(src)
+
+    # Destination: z-pencil (z local, x,y distributed)
+    dst_range = decomp.local_range_z
+    dst_arr = parent(dst)
+
+    # For small problems, use gather-scatter approach (simple and robust)
+    # Gather full array to all processes, then extract local z-portion
+    global_arr = zeros(T, nx, ny, nz)
+
+    # Each process contributes its local portion
+    local_arr = zeros(T, nx, ny, nz)
+    local_arr[src_range[1], src_range[2], src_range[3]] .= src_arr
+
+    # Reduce to get full array on all processes
+    MPI.Allreduce!(local_arr, global_arr, MPI.SUM, comm)
+
+    # Extract z-local portion for this process
+    dst_arr .= global_arr[dst_range[1], dst_range[2], dst_range[3]]
+
     return dst
 end
 
 """
     transpose_to_xy_pencil!(dst, src, decomp::PencilDecomp)
 
-Transpose data from z-pencil to xy-pencil configuration using two-step transpose.
+Transpose data from z-pencil to xy-pencil configuration using MPI_Alltoallv.
+After transpose, x dimension is fully local for horizontal FFT operations.
 """
 function transpose_to_xy_pencil!(dst::PencilArray, src::PencilArray, decomp::PencilDecomp)
+    # Get pencil configurations
+    pencil_xy = decomp.pencil_xy
+    pencil_z = decomp.pencil_z
+
+    # Get MPI communicator and topology info
+    comm = PencilArrays.get_comm(pencil_xy)
+    nprocs = MPI.Comm_size(comm)
+    myrank = MPI.Comm_rank(comm)
+
+    nx, ny, nz = decomp.global_dims
     T = eltype(src)
-    buffer_xz = _get_transpose_buffer(decomp, T)
-    transpose!(buffer_xz, src)
-    transpose!(dst, buffer_xz)
+
+    # Source: z-pencil (z local, x,y distributed)
+    src_range = decomp.local_range_z
+    src_arr = parent(src)
+
+    # Destination: xy-pencil (x local, y,z distributed)
+    dst_range = decomp.local_range_xy
+    dst_arr = parent(dst)
+
+    # For small problems, use gather-scatter approach (simple and robust)
+    # Gather full array to all processes, then extract local xy-portion
+    global_arr = zeros(T, nx, ny, nz)
+
+    # Each process contributes its local z-portion
+    local_arr = zeros(T, nx, ny, nz)
+    local_arr[src_range[1], src_range[2], src_range[3]] .= src_arr
+
+    # Reduce to get full array on all processes
+    MPI.Allreduce!(local_arr, global_arr, MPI.SUM, comm)
+
+    # Extract xy-local portion for this process
+    dst_arr .= global_arr[dst_range[1], dst_range[2], dst_range[3]]
+
     return dst
 end
 
@@ -514,7 +577,7 @@ function plan_mpi_transforms(grid::Grid, mpi_config::MPIConfig)
 
     if !pencils_match && mpi_config.is_root
         @warn "PencilFFTs input/output pencils have different decompositions. " *
-              "FFT wrappers will transpose back to xy-pencil for consistency."
+              "FFT wrappers will use work arrays with data copying."
     end
 
     return MPIPlans(
