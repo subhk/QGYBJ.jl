@@ -52,7 +52,7 @@ const surface_layer_depth = 30.0  # Surface layer depth [m] (s = 30 m)
 
 # Flow parameters
 const U0_flow = 0.335        # Flow velocity scale [m/s] (U = 33.5 cm/s)
-const k_dipole = sqrt(2) * π / Lx  # κ = √2 π/L per Eq. (2) in Asselin et al. (2020)
+const k_dipole = sqrt(2) * π / Lx  # κ = 2π/(√2 L): rotated (x,y) coords for 70 km periodic domain
 const psi0 = U0_flow / k_dipole  # Streamfunction amplitude [m²/s]
 
 # Output settings
@@ -103,7 +103,7 @@ function main()
     # All arrays use pencil_xy - get local index range
     local_range = QGYBJplus.get_local_range_xy(G)
 
-    # Set up dipole: ψ = U κ⁻¹ sin(κx) cos(κy), κ = √2 π/L
+    # Set up dipole: ψ = U κ⁻¹ sin(κx) cos(κy)
     # This creates a barotropic dipole eddy with velocity scale U0_flow (Eq. 2 in paper)
     if is_root; println("\nSetting up dipole..."); end
     psi_phys = similar(S.psi)
@@ -111,10 +111,10 @@ function main()
     for k_local in axes(psi_phys_arr, 3)
         for j_local in axes(psi_phys_arr, 2)
             j_global = local_range[2][j_local]
-            y = (j_global - 1) * G.dy  # Physical y coordinate [m]
+            y = (j_global - 1) * G.dy - G.Ly / 2  # Centered y (rotated coords)
             for i_local in axes(psi_phys_arr, 1)
                 i_global = local_range[1][i_local]
-                x = (i_global - 1) * G.dx  # Physical x coordinate [m]
+                x = (i_global - 1) * G.dx - G.Lx / 2  # Centered x (rotated coords)
                 # Dimensional streamfunction [m²/s]
                 psi_phys_arr[i_local, j_local, k_local] = complex(psi0 * sin(k_dipole * x) * cos(k_dipole * y))
             end
@@ -137,26 +137,18 @@ function main()
     end
 
     # Set up wave IC: surface-confined, horizontally uniform (k=0 mode only)
-    # Wave envelope B has amplitude u0_wave [m/s] at surface, decaying with depth
+    # Initial condition: u(t=0) = u0 exp(-z^2/s^2), v(t=0) = 0 (Eq. 4 in paper)
     if is_root; println("Setting up waves..."); end
-    B_local = parent(S.B)
-    for k_local in axes(B_local, 3)
+    B_phys = similar(S.B)
+    B_phys_arr = parent(B_phys)
+    for k_local in axes(B_phys_arr, 3)
         k_global = local_range[3][k_local]
         depth = G.Lz - G.z[k_global]  # Distance from surface [m]
         wave_profile = exp(-(depth^2) / (surface_layer_depth^2))
-        for j_local in axes(B_local, 2)
-            j_global = local_range[2][j_local]
-            for i_local in axes(B_local, 1)
-                i_global = local_range[1][i_local]
-                if i_global == 1 && j_global == 1
-                    # B in spectral space: k=0 mode scaled by (nx*ny) for FFT normalization
-                    B_local[i_local, j_local, k_local] = u0_wave * wave_profile * (nx * ny)
-                else
-                    B_local[i_local, j_local, k_local] = 0.0
-                end
-            end
-        end
+        wave_value = complex(u0_wave * wave_profile)
+        B_phys_arr[:, :, k_local] .= wave_value
     end
+    QGYBJplus.fft_forward!(S.B, B_phys, plans)
 
     # Configure output
     output_config = QGYBJplus.OutputConfig(
@@ -164,7 +156,7 @@ function main()
         state_file_pattern = "state%04d.nc",
         psi_interval = save_interval_IP * T_inertial,
         wave_interval = save_interval_IP * T_inertial,
-        diagnostics_interval = T_inertial,
+        diagnostics_interval = diag_interval_IP * T_inertial,
         save_psi = true,
         save_waves = true,
         save_velocities = false,
@@ -173,7 +165,7 @@ function main()
     )
 
     # Compute diagnostics interval in steps
-    # diag_steps = max(1, round(Int, diag_interval_IP * T_inertial / dt))
+    diag_steps = max(1, round(Int, diag_interval_IP * T_inertial / dt))
 
     # Run simulation - all time-stepping handled automatically
     # This handles: leapfrog state management, initial projection step,
@@ -183,7 +175,7 @@ function main()
         mpi_config = mpi_config,
         workspace = workspace,
         print_progress = is_root,
-        diagnostics_interval = 10 #diag_steps
+        diagnostics_interval = diag_steps
     )
 
     if is_root
