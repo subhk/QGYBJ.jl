@@ -424,7 +424,7 @@ function write_parallel_state_file(manager::OutputManager, S::State, G::Grid, pl
     if parallel_config.use_mpi
         rank = MPI.Comm_rank(parallel_config.comm)
         if rank == 0
-            @info "Wrote parallel state file: $filename (t=$time)"
+            @info "Wrote state file: $filename (t=$time)"
         end
     else
         @info "Wrote state file: $filename (t=$time)"
@@ -647,8 +647,7 @@ function write_gathered_state_file(filepath, gathered_state, G::Grid, plans, tim
             ds.attrib["dt"] = params.dt
         end
     end
-
-    @info "Wrote gathered state file: $filepath (t=$time)"
+    # Note: Log message is handled by the calling function (write_parallel_state_file)
 end
 
 """
