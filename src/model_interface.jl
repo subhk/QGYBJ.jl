@@ -1078,10 +1078,11 @@ function run_simulation!(S::State, G::Grid, par::QGParams, plans;
     end
 
     # Print initial diagnostics (step 0)
-    if print_progress
+    # Note: All processes must participate in MPI reductions, so compute on all
+    if is_mpi || print_progress
         flow_KE_init = flow_kinetic_energy_global(S.u, S.v, mpi_config)
         wave_EB_init, wave_EA_init = wave_energy_global(S.B, S.A, mpi_config)
-        if is_root
+        if is_root && print_progress
             @printf("%8d  %10.2e  %12.4e  %12.4e  %12.4e\n",
                     0, 0.0, flow_KE_init, wave_EB_init, wave_EA_init)
         end
@@ -1099,13 +1100,14 @@ function run_simulation!(S::State, G::Grid, par::QGParams, plans;
         current_time = step * dt
 
         # Diagnostics output
-        if print_progress && step % diagnostics_interval == 0
-            # Compute global energies (MPI-reduced)
+        # Note: All processes must participate in MPI reductions
+        if step % diagnostics_interval == 0
+            # Compute global energies (MPI-reduced) - all processes participate
             flow_KE = flow_kinetic_energy_global(Sn.u, Sn.v, mpi_config)
             wave_EB, wave_EA = wave_energy_global(Sn.B, Sn.A, mpi_config)
 
             # Print diagnostics (only on root)
-            if is_root
+            if is_root && print_progress
                 @printf("%8d  %10.2e  %12.4e  %12.4e  %12.4e\n",
                         step, current_time, flow_KE, wave_EB, wave_EA)
             end
