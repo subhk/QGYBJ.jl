@@ -542,91 +542,51 @@ end
 
 # FFT operations for MPIPlans
 #
-# PencilFFTs handles 2D horizontal FFTs with potential pencil permutations.
-# The input/output pencils may have different memory layouts (permutations).
-# We use the plan's work arrays as intermediates to ensure correct transforms.
+# With permute_dims=Val(false), input and output have the same logical dimension order.
+# If pencils_match is true, all arrays use compatible pencil configurations.
 
 function fft_forward!(dst::PencilArray, src::PencilArray, plans::MPIPlans)
-    work_in = plans.work_arrays.input
-    work_out = plans.work_arrays.output
+    if plans.pencils_match
+        # Direct transform - pencils are compatible, zero-copy
+        mul!(dst, plans.forward, src)
+    else
+        # Pencils have different MPI decompositions
+        # Use work arrays as intermediates
+        work_in = plans.work_arrays.input
+        work_out = plans.work_arrays.output
 
-    # Copy src to work_in (both should have compatible layout via pencil_xy)
-    copyto!(parent(work_in), parent(src))
+        # Copy src to input work array (should have compatible pencil)
+        copyto!(parent(work_in), parent(src))
 
-    # Execute FFT - PencilFFTs handles any internal permutations
-    mul!(work_out, plans.forward, work_in)
+        # Execute FFT
+        mul!(work_out, plans.forward, work_in)
 
-    # Copy result back - work_out may have different permutation than dst
-    # Use element-wise copy via global indices to handle permutation
-    _copy_pencil_data!(dst, work_out)
-
+        # Copy result - this works if dst has the same local size as work_out
+        # With permute_dims=false and same global size, local sizes should match
+        copyto!(parent(dst), parent(work_out))
+    end
     return dst
 end
 
 function fft_backward!(dst::PencilArray, src::PencilArray, plans::MPIPlans)
-    work_in = plans.work_arrays.input
-    work_out = plans.work_arrays.output
+    if plans.pencils_match
+        # Direct transform - pencils are compatible, zero-copy
+        ldiv!(dst, plans.forward, src)
+    else
+        # Pencils have different MPI decompositions
+        work_in = plans.work_arrays.input
+        work_out = plans.work_arrays.output
 
-    # Copy src to work_out (spectral space uses output pencil)
-    _copy_pencil_data!(work_out, src)
+        # Copy src to output work array
+        copyto!(parent(work_out), parent(src))
 
-    # Execute inverse FFT - PencilFFTs handles internal permutations
-    ldiv!(work_in, plans.forward, work_out)
+        # Execute inverse FFT
+        ldiv!(work_in, plans.forward, work_out)
 
-    # Copy result back to dst
-    copyto!(parent(dst), parent(work_in))
-
+        # Copy result to dst
+        copyto!(parent(dst), parent(work_in))
+    end
     return dst
-end
-
-# Helper to copy data between PencilArrays that may have different permutations
-# Uses global indexing to correctly map data
-function _copy_pencil_data!(dst::PencilArray, src::PencilArray)
-    dst_parent = parent(dst)
-    src_parent = parent(src)
-
-    # Get the permutations
-    dst_perm = PencilArrays.permutation(PencilArrays.pencil(dst))
-    src_perm = PencilArrays.permutation(PencilArrays.pencil(src))
-
-    if dst_perm == src_perm
-        # Same permutation - direct copy
-        copyto!(dst_parent, src_parent)
-    else
-        # Different permutations - need to handle dimension reordering
-        # For (3,2,1) permutation: array[k,j,i] in memory = logical[i,j,k]
-        # For NoPermutation: array[i,j,k] in memory = logical[i,j,k]
-        _permuted_copy!(dst_parent, src_parent, dst_perm, src_perm)
-    end
-end
-
-# Copy with permutation handling
-function _permuted_copy!(dst::Array{T,3}, src::Array{T,3}, dst_perm, src_perm) where T
-    # Get the inverse permutation to map from one layout to another
-    # For simplicity, handle the common case: NoPermutation <-> Permutation{(3,2,1),3}
-
-    if src_perm == PencilArrays.NoPermutation() && dst_perm != PencilArrays.NoPermutation()
-        # src is (i,j,k), dst is (k,j,i) layout
-        @inbounds for k in axes(src, 3)
-            for j in axes(src, 2)
-                for i in axes(src, 1)
-                    dst[k, j, i] = src[i, j, k]
-                end
-            end
-        end
-    elseif dst_perm == PencilArrays.NoPermutation() && src_perm != PencilArrays.NoPermutation()
-        # src is (k,j,i), dst is (i,j,k) layout
-        @inbounds for k in axes(dst, 3)
-            for j in axes(dst, 2)
-                for i in axes(dst, 1)
-                    dst[i, j, k] = src[k, j, i]
-                end
-            end
-        end
-    else
-        # Fallback: try direct copy (may fail if shapes don't match)
-        copyto!(dst, src)
-    end
 end
 
 #=

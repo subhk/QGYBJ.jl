@@ -601,11 +601,12 @@ function _compute_vertical_velocity_2d!(S::State, G::Grid, plans, params, N2_pro
     fft_backward!(tmpw, wk, plans)
     tmpw_arr = parent(tmpw)
     w_arr = parent(S.w)
-    nx_local, ny_local, _ = size(tmpw_arr)
+    nx_local, ny_local, nz_local = size(tmpw_arr)
 
     # Note: fft_backward! is normalized (FFTW.ifft / PencilFFTs ldiv!)
     # No additional normalization needed here
-    @inbounds for k in 1:nz, j_local in 1:ny_local, i_local in 1:nx_local
+    # Use nz_local (not global nz) for MPI-distributed arrays
+    @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
         w_arr[i_local, j_local, k] = real(tmpw_arr[i_local, j_local, k])
     end
 end
