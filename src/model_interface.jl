@@ -19,6 +19,9 @@ using ..QGYBJplus: OutputManager, write_state_file, OutputConfig, MPIConfig
 using ..QGYBJplus.EnergyDiagnostics: EnergyDiagnosticsManager, should_output, record_energies!
 using ..QGYBJplus.EnergyDiagnostics: write_all_energy_files!, finalize!
 
+# Global energy diagnostics (MPI-aware)
+using ..QGYBJplus.Diagnostics: flow_kinetic_energy_global, wave_energy_global
+
 
 """
     QGYBJSimulation{T}
@@ -1076,8 +1079,8 @@ function run_simulation!(S::State, G::Grid, par::QGParams, plans;
 
     # Print initial diagnostics (step 0)
     if print_progress
-        flow_KE_init = PARENT.Diagnostics.flow_kinetic_energy_global(S.u, S.v, mpi_config)
-        wave_EB_init, wave_EA_init = PARENT.Diagnostics.wave_energy_global(S.B, S.A, mpi_config)
+        flow_KE_init = flow_kinetic_energy_global(S.u, S.v, mpi_config)
+        wave_EB_init, wave_EA_init = wave_energy_global(S.B, S.A, mpi_config)
         if is_root
             @printf("%8d  %10.2e  %12.4e  %12.4e  %12.4e\n",
                     0, 0.0, flow_KE_init, wave_EB_init, wave_EA_init)
@@ -1098,8 +1101,8 @@ function run_simulation!(S::State, G::Grid, par::QGParams, plans;
         # Diagnostics output
         if print_progress && step % diagnostics_interval == 0
             # Compute global energies (MPI-reduced)
-            flow_KE = PARENT.Diagnostics.flow_kinetic_energy_global(Sn.u, Sn.v, mpi_config)
-            wave_EB, wave_EA = PARENT.Diagnostics.wave_energy_global(Sn.B, Sn.A, mpi_config)
+            flow_KE = flow_kinetic_energy_global(Sn.u, Sn.v, mpi_config)
+            wave_EB, wave_EA = wave_energy_global(Sn.B, Sn.A, mpi_config)
 
             # Print diagnostics (only on root)
             if is_root
