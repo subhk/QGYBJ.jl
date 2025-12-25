@@ -1077,15 +1077,25 @@ function run_simulation!(S::State, G::Grid, par::QGParams, plans;
         println("-"^60)
     end
 
+    # Allocate temporary arrays for physical space diagnostics
+    # These are used to transform B and A from spectral to physical space
+    B_phys = similar(S.B)
+    A_phys = similar(S.A)
+
     # Print initial diagnostics (step 0)
     # Note: All processes must participate in MPI reductions, so compute on all
     if is_mpi || print_progress
-        # Use max values for cleaner diagnostics (MPI-reduced)
+        # Velocities u, v are already in physical space
         max_u = reduce_max_if_mpi(maximum(abs, parent(S.u)), mpi_config)
         max_v = reduce_max_if_mpi(maximum(abs, parent(S.v)), mpi_config)
         max_vel = max(max_u, max_v)
-        max_B = reduce_max_if_mpi(maximum(abs, parent(S.B)), mpi_config)
-        max_A = reduce_max_if_mpi(maximum(abs, parent(S.A)), mpi_config)
+
+        # Transform B and A to physical space for meaningful diagnostics
+        fft_backward!(B_phys, S.B, plans)
+        fft_backward!(A_phys, S.A, plans)
+        max_B = reduce_max_if_mpi(maximum(abs, parent(B_phys)), mpi_config)
+        max_A = reduce_max_if_mpi(maximum(abs, parent(A_phys)), mpi_config)
+
         if is_root && print_progress
             @printf("%8d  %10.2e  %12.4e  %12.4e  %12.4e\n",
                     0, 0.0, max_vel, max_B, max_A)
@@ -1106,12 +1116,16 @@ function run_simulation!(S::State, G::Grid, par::QGParams, plans;
         # Diagnostics output
         # Note: All processes must participate in MPI reductions
         if diagnostics_interval > 0 && step % diagnostics_interval == 0
-            # Compute max values (MPI-reduced) - all processes participate
+            # Velocities u, v are already in physical space
             max_u = reduce_max_if_mpi(maximum(abs, parent(Sn.u)), mpi_config)
             max_v = reduce_max_if_mpi(maximum(abs, parent(Sn.v)), mpi_config)
             max_vel = max(max_u, max_v)
-            max_B = reduce_max_if_mpi(maximum(abs, parent(Sn.B)), mpi_config)
-            max_A = reduce_max_if_mpi(maximum(abs, parent(Sn.A)), mpi_config)
+
+            # Transform B and A to physical space for meaningful diagnostics
+            fft_backward!(B_phys, Sn.B, plans)
+            fft_backward!(A_phys, Sn.A, plans)
+            max_B = reduce_max_if_mpi(maximum(abs, parent(B_phys)), mpi_config)
+            max_A = reduce_max_if_mpi(maximum(abs, parent(A_phys)), mpi_config)
 
             # Print diagnostics (only on root)
             if is_root && print_progress
