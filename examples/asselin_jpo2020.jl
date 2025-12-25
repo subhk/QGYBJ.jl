@@ -173,7 +173,7 @@ function main()
     )
 
     # Compute diagnostics interval in steps
-    diag_steps = max(1, round(Int, diag_interval_IP * T_inertial / dt))
+    # diag_steps = max(1, round(Int, diag_interval_IP * T_inertial / dt))
 
     # Run simulation - all time-stepping handled automatically
     # This handles: leapfrog state management, initial projection step,
@@ -183,7 +183,7 @@ function main()
         mpi_config = mpi_config,
         workspace = workspace,
         print_progress = is_root,
-        diagnostics_interval = diag_steps
+        diagnostics_interval = 10 #diag_steps
     )
 
     if is_root
