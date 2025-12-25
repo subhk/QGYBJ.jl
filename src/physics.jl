@@ -653,3 +653,107 @@ end
 Overload for Grid argument - extracts nx, ny from Grid.
 """
 @inline is_dealiased(i_global::Int, j_global::Int, G::Grid) = is_dealiased(i_global, j_global, G.nx, G.ny)
+
+#=
+================================================================================
+                    HYPERDIFFUSION COEFFICIENT HELPERS
+================================================================================
+Functions to compute appropriate hyperdiffusion coefficients for 4th order
+(biharmonic) horizontal hyperdiffusion.
+
+The biharmonic diffusion term is: -ν₄ ∇⁴q = -ν₄ (kₓ² + kᵧ²)² q̂
+
+For numerical stability, the hyperdiffusion coefficient should be scaled to
+provide a fixed e-folding time at the grid scale (smallest resolved scale).
+================================================================================
+=#
+
+"""
+    compute_hyperdiff_coeff(; dx, dy, dt, order=4, efold_steps=10, kmax_fraction=1.0)
+
+Compute hyperdiffusion coefficient for given grid spacing and desired damping rate.
+
+# Mathematical Background
+
+The n-th order hyperdiffusion operator is:
+    -ν_n ∇^n q = -ν_n (kₓ² + kᵧ²)^(n/2) q̂  in spectral space
+
+The damping rate at wavenumber k is: λ = ν_n × k^n
+
+For the grid scale (k_max = π/Δx), we want the amplitude to decay by
+factor e^(-1) after `efold_steps` time steps, giving:
+    ν_n = 1 / (efold_steps × dt × k_max^n)
+
+# Arguments
+- `dx, dy`: Grid spacing in x and y [m]
+- `dt`: Time step [s]
+- `order`: Order of hyperdiffusion (4 = biharmonic, 6 = hyper-6, etc.)
+- `efold_steps`: Number of time steps for e-folding at grid scale (default: 10)
+- `kmax_fraction`: Fraction of Nyquist wavenumber to target (default: 1.0)
+
+# Returns
+Hyperdiffusion coefficient ν_n with units [m^n / s]
+
+# Example
+```julia
+# For 4th order (biharmonic) hyperdiffusion on a 1km grid with dt=10s
+ν₄ = compute_hyperdiff_coeff(dx=1e3, dy=1e3, dt=10.0, order=4, efold_steps=5)
+
+# Use in default_params
+par = default_params(nx=128, ny=128, nz=64, Lx=128e3, Ly=128e3, Lz=3000.0,
+                     dt=10.0, nt=1000,
+                     νₕ₁=ν₄, νₕ₂=0.0, ilap1=2, ilap2=2)  # Pure 4th order
+```
+
+# Notes
+- Smaller `efold_steps` → stronger damping (more dissipative)
+- Larger `efold_steps` → weaker damping (less dissipative)
+- For stability, typically use efold_steps ∈ [5, 20]
+- The 4th order (biharmonic) is most common: order=4, ilap1=2
+"""
+function compute_hyperdiff_coeff(; dx::Real, dy::Real, dt::Real,
+                                  order::Int=4, efold_steps::Int=10,
+                                  kmax_fraction::Real=1.0)
+    # Grid-scale wavenumber (Nyquist)
+    dx_min = min(dx, dy)
+    k_max = kmax_fraction * π / dx_min
+
+    # Coefficient for e-folding in efold_steps at k_max
+    ν = 1.0 / (efold_steps * dt * k_max^order)
+
+    return ν
+end
+
+"""
+    compute_hyperdiff_params(; nx, ny, Lx, Ly, dt, order=4, efold_steps=10)
+
+Convenience function to compute hyperdiffusion coefficient from grid parameters.
+
+# Arguments
+- `nx, ny`: Grid points in x and y
+- `Lx, Ly`: Domain size in x and y [m]
+- `dt`: Time step [s]
+- `order`: Order of hyperdiffusion (4 = biharmonic, default)
+- `efold_steps`: E-folding time in steps (default: 10)
+
+# Returns
+Named tuple (ν₄=..., ilap=...) for use with default_params
+
+# Example
+```julia
+# Compute 4th order hyperdiffusion for Asselin example
+hd = compute_hyperdiff_params(nx=128, ny=128, Lx=70e3, Ly=70e3, dt=10.0, efold_steps=5)
+
+par = default_params(nx=128, ny=128, nz=64, Lx=70e3, Ly=70e3, Lz=3000.0,
+                     dt=10.0, nt=1000,
+                     νₕ₁=hd.ν, νₕ₂=0.0, ilap1=hd.ilap, ilap2=2)
+```
+"""
+function compute_hyperdiff_params(; nx::Int, ny::Int, Lx::Real, Ly::Real, dt::Real,
+                                   order::Int=4, efold_steps::Int=10)
+    dx = Lx / nx
+    dy = Ly / ny
+    ν = compute_hyperdiff_coeff(dx=dx, dy=dy, dt=dt, order=order, efold_steps=efold_steps)
+    ilap = order ÷ 2  # ilap = 2 for 4th order, 3 for 6th order, etc.
+    return (ν=ν, ilap=ilap, order=order)
+end
