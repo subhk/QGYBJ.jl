@@ -58,6 +58,7 @@ const psi0 = U0_flow / k_dipole  # Streamfunction amplitude [m²/s]
 # Output settings
 const output_dir = "output_asselin"
 const save_interval_IP = 1.0  # Save every 1 inertial period
+const diag_interval_IP = 0.5  # Print diagnostics every 0.5 inertial periods
 
 # ============================================================================
 #                       MAIN FUNCTION
@@ -171,14 +172,18 @@ function main()
         save_diagnostics = false
     )
 
+    # Compute diagnostics interval in steps
+    diag_steps = max(1, round(Int, diag_interval_IP * T_inertial / dt))
+
     # Run simulation - all time-stepping handled automatically
     # This handles: leapfrog state management, initial projection step,
-    # output file saving, and progress reporting
+    # output file saving, progress reporting, and energy diagnostics
     QGYBJplus.run_simulation!(S, G, par, plans;
         output_config = output_config,
         mpi_config = mpi_config,
         workspace = workspace,
-        print_progress = is_root
+        print_progress = is_root,
+        diagnostics_interval = diag_steps
     )
 
     if is_root

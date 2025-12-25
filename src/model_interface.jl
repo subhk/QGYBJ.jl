@@ -973,7 +973,8 @@ function run_simulation!(S::State, G::Grid, par::QGParams, plans;
                          workspace=nothing,
                          N2_profile=nothing,
                          print_progress::Bool=true,
-                         progress_interval::Int=0)
+                         progress_interval::Int=0,
+                         diagnostics_interval::Int=0)
 
     # Determine if running in MPI mode
     is_mpi = mpi_config !== nothing
@@ -1046,6 +1047,11 @@ function run_simulation!(S::State, G::Grid, par::QGParams, plans;
         progress_interval = max(1, nt ÷ 20)  # ~20 progress updates
     end
 
+    # Determine diagnostics interval (defaults to progress_interval if not set)
+    if diagnostics_interval <= 0
+        diagnostics_interval = progress_interval
+    end
+
     # Compute save intervals in steps
     psi_save_steps = output_config !== nothing && output_config.psi_interval > 0 ?
                      max(1, round(Int, output_config.psi_interval / dt)) : 0
@@ -1061,7 +1067,21 @@ function run_simulation!(S::State, G::Grid, par::QGParams, plans;
         if save_steps > 0
             println("  Saving every $save_steps steps")
         end
-        println("="^60 * "\n")
+        println("  Diagnostics every $diagnostics_interval steps")
+        println("="^60)
+        # Print diagnostics header
+        @printf("\n%8s  %10s  %12s  %12s  %12s\n", "Step", "Time", "Flow KE", "Wave |B|²", "Wave |A|²")
+        println("-"^60)
+    end
+
+    # Print initial diagnostics (step 0)
+    if print_progress
+        flow_KE_init = PARENT.Diagnostics.flow_kinetic_energy_global(S.u, S.v, mpi_config)
+        wave_EB_init, wave_EA_init = PARENT.Diagnostics.wave_energy_global(S.B, S.A, mpi_config)
+        if is_root
+            @printf("%8d  %10.2e  %12.4e  %12.4e  %12.4e\n",
+                    0, 0.0, flow_KE_init, wave_EB_init, wave_EA_init)
+        end
     end
 
     # Time integration loop
@@ -1075,10 +1095,17 @@ function run_simulation!(S::State, G::Grid, par::QGParams, plans;
 
         current_time = step * dt
 
-        # Progress output
-        if is_root && print_progress && step % progress_interval == 0
-            progress_pct = round(100 * step / nt, digits=1)
-            @printf("  Step %d/%d (%.1f%%) - t = %.2e\n", step, nt, progress_pct, current_time)
+        # Diagnostics output
+        if print_progress && step % diagnostics_interval == 0
+            # Compute global energies (MPI-reduced)
+            flow_KE = PARENT.Diagnostics.flow_kinetic_energy_global(Sn.u, Sn.v, mpi_config)
+            wave_EB, wave_EA = PARENT.Diagnostics.wave_energy_global(Sn.B, Sn.A, mpi_config)
+
+            # Print diagnostics (only on root)
+            if is_root
+                @printf("%8d  %10.2e  %12.4e  %12.4e  %12.4e\n",
+                        step, current_time, flow_KE, wave_EB, wave_EA)
+            end
         end
 
         # Save state
