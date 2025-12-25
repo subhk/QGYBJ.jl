@@ -407,51 +407,26 @@ struct MPIPlans{P, PI, PO}
 end
 
 """
-    init_mpi_state(grid::Grid, plans::MPIPlans, mpi_config::MPIConfig; T=Float64) -> State
-
-Initialize a State with MPI-distributed PencilArrays using FFT-compatible pencils.
-
-This is the **recommended** initialization for MPI simulations. It allocates:
-- Spectral arrays (q, psi, B, A, C) using the FFT output pencil
-- Physical arrays (u, v, w) using the FFT input pencil
-
-This ensures zero-copy FFT operations for maximum efficiency.
-
-# Initialization Order
-The correct order for MPI initialization is:
-1. `grid = init_mpi_grid(par, mpi_config)`
-2. `plans = plan_mpi_transforms(grid, mpi_config)`
-3. `state = init_mpi_state(grid, plans, mpi_config)`  # Uses plans for correct pencils
-"""
-function init_mpi_state(grid::Grid, plans::MPIPlans, mpi_config::MPIConfig; T=Float64)
-    # Use FFT plan pencils for efficient transforms (no extra copies)
-    input_pencil = plans.input_pencil    # For physical space arrays
-    output_pencil = plans.output_pencil  # For spectral space arrays
-
-    # Allocate spectral (complex) fields using output pencil
-    q   = PencilArray{Complex{T}}(undef, output_pencil); fill!(q, 0)
-    psi = PencilArray{Complex{T}}(undef, output_pencil); fill!(psi, 0)
-    A   = PencilArray{Complex{T}}(undef, output_pencil); fill!(A, 0)
-    B   = PencilArray{Complex{T}}(undef, output_pencil); fill!(B, 0)
-    C   = PencilArray{Complex{T}}(undef, output_pencil); fill!(C, 0)
-
-    # Allocate real-space (real) fields using input pencil
-    u = PencilArray{T}(undef, input_pencil); fill!(u, 0)
-    v = PencilArray{T}(undef, input_pencil); fill!(v, 0)
-    w = PencilArray{T}(undef, input_pencil); fill!(w, 0)
-
-    return State{T, typeof(u), typeof(q)}(q, B, psi, A, C, u, v, w)
-end
-
-"""
     init_mpi_state(grid::Grid, mpi_config::MPIConfig; T=Float64) -> State
+    init_mpi_state(grid::Grid, plans::MPIPlans, mpi_config::MPIConfig; T=Float64) -> State
 
 Initialize a State with MPI-distributed PencilArrays in xy-pencil configuration.
 
-**Note**: This method uses the grid's pencil_xy for all arrays. If FFT plan pencils
-differ, this may require extra memory copies during transforms. For optimal performance,
-use `init_mpi_state(grid, plans, mpi_config)` instead.
+Both methods allocate all arrays using the grid's pencil_xy for consistent memory layout.
+The FFT functions handle any necessary permutation conversions internally.
+
+# Example
+```julia
+G = init_mpi_grid(par, mpi_config)
+plans = plan_mpi_transforms(G, mpi_config)
+S = init_mpi_state(G, mpi_config)  # or init_mpi_state(G, plans, mpi_config)
+```
 """
+function init_mpi_state(grid::Grid, plans::MPIPlans, mpi_config::MPIConfig; T=Float64)
+    # Delegate to the standard version - all arrays use pencil_xy
+    return init_mpi_state(grid, mpi_config; T=T)
+end
+
 function init_mpi_state(grid::Grid, mpi_config::MPIConfig; T=Float64)
     decomp = grid.decomp
     if decomp === nothing
@@ -564,68 +539,92 @@ function _check_pencil_compatibility(input_pencil, output_pencil, pencil_xy)
 end
 
 # FFT operations for MPIPlans
-# Check if a PencilArray's pencil matches the expected pencil
-function _pencil_matches(arr::PencilArray, expected_pencil)
-    arr_pencil = PencilArrays.pencil(arr)
-    return range_local(arr_pencil) == range_local(expected_pencil)
-end
+#
+# PencilFFTs handles 2D horizontal FFTs with potential pencil permutations.
+# The input/output pencils may have different memory layouts (permutations).
+# We use the plan's work arrays as intermediates to ensure correct transforms.
 
 function fft_forward!(dst::PencilArray, src::PencilArray, plans::MPIPlans)
-    # Check if arrays have correct pencils for direct transform
-    src_ok = _pencil_matches(src, plans.input_pencil)
-    dst_ok = _pencil_matches(dst, plans.output_pencil)
+    work_in = plans.work_arrays.input
+    work_out = plans.work_arrays.output
 
-    if src_ok && dst_ok
-        # Direct transform - most efficient (zero-copy)
-        mul!(dst, plans.forward, src)
-    elseif src_ok
-        # Source OK, destination wrong pencil - transform to work array, then copy
-        work_out = plans.work_arrays.output
-        mul!(work_out, plans.forward, src)
-        parent(dst) .= parent(work_out)
-    elseif dst_ok
-        # Destination OK, source wrong pencil - copy to work array, then transform
-        work_in = plans.work_arrays.input
-        parent(work_in) .= parent(src)
-        mul!(dst, plans.forward, work_in)
-    else
-        # Both wrong pencils - use work arrays for both
-        work_in = plans.work_arrays.input
-        work_out = plans.work_arrays.output
-        parent(work_in) .= parent(src)
-        mul!(work_out, plans.forward, work_in)
-        parent(dst) .= parent(work_out)
-    end
+    # Copy src to work_in (both should have compatible layout via pencil_xy)
+    copyto!(parent(work_in), parent(src))
+
+    # Execute FFT - PencilFFTs handles any internal permutations
+    mul!(work_out, plans.forward, work_in)
+
+    # Copy result back - work_out may have different permutation than dst
+    # Use element-wise copy via global indices to handle permutation
+    _copy_pencil_data!(dst, work_out)
+
     return dst
 end
 
 function fft_backward!(dst::PencilArray, src::PencilArray, plans::MPIPlans)
-    # For inverse: src should be output_pencil (spectral), dst should be input_pencil (physical)
-    src_ok = _pencil_matches(src, plans.output_pencil)
-    dst_ok = _pencil_matches(dst, plans.input_pencil)
+    work_in = plans.work_arrays.input
+    work_out = plans.work_arrays.output
 
-    if src_ok && dst_ok
-        # Direct transform - most efficient (zero-copy)
-        ldiv!(dst, plans.forward, src)
-    elseif src_ok
-        # Source OK, destination wrong pencil - transform to work array, then copy
-        work_in = plans.work_arrays.input
-        ldiv!(work_in, plans.forward, src)
-        parent(dst) .= parent(work_in)
-    elseif dst_ok
-        # Destination OK, source wrong pencil - copy to work array, then transform
-        work_out = plans.work_arrays.output
-        parent(work_out) .= parent(src)
-        ldiv!(dst, plans.forward, work_out)
-    else
-        # Both wrong pencils - use work arrays for both
-        work_in = plans.work_arrays.input
-        work_out = plans.work_arrays.output
-        parent(work_out) .= parent(src)
-        ldiv!(work_in, plans.forward, work_out)
-        parent(dst) .= parent(work_in)
-    end
+    # Copy src to work_out (spectral space uses output pencil)
+    _copy_pencil_data!(work_out, src)
+
+    # Execute inverse FFT - PencilFFTs handles internal permutations
+    ldiv!(work_in, plans.forward, work_out)
+
+    # Copy result back to dst
+    copyto!(parent(dst), parent(work_in))
+
     return dst
+end
+
+# Helper to copy data between PencilArrays that may have different permutations
+# Uses global indexing to correctly map data
+function _copy_pencil_data!(dst::PencilArray, src::PencilArray)
+    dst_parent = parent(dst)
+    src_parent = parent(src)
+
+    # Get the permutations
+    dst_perm = PencilArrays.permutation(PencilArrays.pencil(dst))
+    src_perm = PencilArrays.permutation(PencilArrays.pencil(src))
+
+    if dst_perm == src_perm
+        # Same permutation - direct copy
+        copyto!(dst_parent, src_parent)
+    else
+        # Different permutations - need to handle dimension reordering
+        # For (3,2,1) permutation: array[k,j,i] in memory = logical[i,j,k]
+        # For NoPermutation: array[i,j,k] in memory = logical[i,j,k]
+        _permuted_copy!(dst_parent, src_parent, dst_perm, src_perm)
+    end
+end
+
+# Copy with permutation handling
+function _permuted_copy!(dst::Array{T,3}, src::Array{T,3}, dst_perm, src_perm) where T
+    # Get the inverse permutation to map from one layout to another
+    # For simplicity, handle the common case: NoPermutation <-> Permutation{(3,2,1),3}
+
+    if src_perm == PencilArrays.NoPermutation() && dst_perm != PencilArrays.NoPermutation()
+        # src is (i,j,k), dst is (k,j,i) layout
+        @inbounds for k in axes(src, 3)
+            for j in axes(src, 2)
+                for i in axes(src, 1)
+                    dst[k, j, i] = src[i, j, k]
+                end
+            end
+        end
+    elseif dst_perm == PencilArrays.NoPermutation() && src_perm != PencilArrays.NoPermutation()
+        # src is (k,j,i), dst is (i,j,k) layout
+        @inbounds for k in axes(dst, 3)
+            for j in axes(dst, 2)
+                for i in axes(dst, 1)
+                    dst[i, j, k] = src[k, j, i]
+                end
+            end
+        end
+    else
+        # Fallback: try direct copy (may fail if shapes don't match)
+        copyto!(dst, src)
+    end
 end
 
 #=
