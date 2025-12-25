@@ -140,7 +140,7 @@ The exports are organized by functionality:
 
 # Public API - Core functionality
 export QGParams, Grid, State,
-       init_grid, init_state,
+       init_grid, init_state, copy_state,
        plan_transforms!, setup_parallel_transforms, fft_forward!, fft_backward!,
        compute_wavenumbers!,
        # Local-to-global index mapping for PencilArrays compatibility
