@@ -489,7 +489,7 @@ function compute_and_output_diagnostics!(sim::QGYBJSimulation{T}) where T
     # Transform full complex B to physical space, then extract real part
     Br_complex = _allocate_fft_dst(sim.state.B, sim.plans)
     fft_backward!(Br_complex, sim.state.B, sim.plans)
-    Br = real.(Br_complex)
+    Br = real.(parent(Br_complex))
     diagnostics["wave_min"] = reduce_min_if_mpi(minimum(Br), sim.parallel_config)
     diagnostics["wave_max"] = reduce_max_if_mpi(maximum(Br), sim.parallel_config)
 
@@ -1097,8 +1097,9 @@ function run_simulation!(S::State, G::Grid, par::QGParams, plans;
 
     # Allocate temporary arrays for physical space diagnostics
     # These are used to transform B and A from spectral to physical space
-    B_phys = similar(S.B)
-    A_phys = similar(S.A)
+    # Must use _allocate_fft_dst for correct pencil allocation in MPI case
+    B_phys = _allocate_fft_dst(S.B, plans)
+    A_phys = _allocate_fft_dst(S.A, plans)
 
     # Print initial diagnostics (step 0)
     # Note: All processes must participate in MPI reductions, so compute on all
