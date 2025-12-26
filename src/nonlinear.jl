@@ -493,8 +493,8 @@ function refraction_waqg!(rBRk, rBIk, BRk, BIk, ψₖ, G::Grid, plans; Lmask=not
     ζₖ_arr = parent(ζₖ)
   
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
-        i_global = local_to_global(i_local, 2, G)
-        j_global = local_to_global(j_local, 3, G)
+        i_global = local_to_global(i_local, 2, ψₖ)
+        j_global = local_to_global(j_local, 3, ψₖ)
         kₓ = G.kx[i_global]
         kᵧ = G.ky[j_global]
         kₕ² = kₓ^2 + kᵧ^2
@@ -532,8 +532,8 @@ function refraction_waqg!(rBRk, rBIk, BRk, BIk, ψₖ, G::Grid, plans; Lmask=not
     Just apply dealiasing mask. =#
     
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
-        i_global = local_to_global(i_local, 2, G)
-        j_global = local_to_global(j_local, 3, G)
+        i_global = local_to_global(i_local, 2, rBRk)
+        j_global = local_to_global(j_local, 3, rBRk)
         if !should_keep(i_global, j_global)
             rBRk_arr[k, i_local, j_local] = 0  # Dealiased
             rBIk_arr[k, i_local, j_local] = 0
@@ -562,8 +562,8 @@ function refraction_waqg_B!(rBk, Bk, ψₖ, G::Grid, plans; Lmask=nothing)
     ζₖ_arr = parent(ζₖ)
 
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
-        i_global = local_to_global(i_local, 2, G)
-        j_global = local_to_global(j_local, 3, G)
+        i_global = local_to_global(i_local, 2, ψₖ)
+        j_global = local_to_global(j_local, 3, ψₖ)
         kₓ = G.kx[i_global]
         kᵧ = G.ky[j_global]
         kₕ² = kₓ^2 + kᵧ^2
@@ -589,8 +589,8 @@ function refraction_waqg_B!(rBk, Bk, ψₖ, G::Grid, plans; Lmask=nothing)
     rBk_arr = parent(rBk)
 
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
-        i_global = local_to_global(i_local, 2, G)
-        j_global = local_to_global(j_local, 3, G)
+        i_global = local_to_global(i_local, 2, rBk)
+        j_global = local_to_global(j_local, 3, rBk)
         if !should_keep(i_global, j_global)
             rBk_arr[k, i_local, j_local] = 0
         end
