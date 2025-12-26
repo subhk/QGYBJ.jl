@@ -145,6 +145,7 @@ export QGParams, Grid, State,
        compute_wavenumbers!,
        # Local-to-global index mapping for PencilArrays compatibility
        get_local_range, local_to_global, get_kx, get_ky, get_kh2, get_local_dims, is_parallel_array,
+       z_is_local,
        invert_q_to_psi!, compute_velocities!, compute_vertical_velocity!, compute_ybj_vertical_velocity!, compute_total_velocities!, compute_wave_velocities!,
        default_params, setup_model, setup_model_with_profile,
        a_ell_ut, a_ell_from_N2, dealias_mask, is_dealiased,

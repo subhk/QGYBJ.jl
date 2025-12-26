@@ -53,7 +53,7 @@ module Diagnostics
 
 using ..QGYBJplus: Grid
 using ..QGYBJplus: plan_transforms!, fft_forward!, fft_backward!
-using ..QGYBJplus: local_to_global
+using ..QGYBJplus: local_to_global, z_is_local
 using ..QGYBJplus: transpose_to_z_pencil!, transpose_to_xy_pencil!
 using ..QGYBJplus: allocate_z_pencil
 using ..QGYBJplus: allocate_fft_backward_dst  # Centralized FFT allocation helper
@@ -132,7 +132,7 @@ Matches `omega_eqn_rhs` computation in the Fortran implementation.
 """
 function omega_eqn_rhs!(rhs, psi, G::Grid, plans; Lmask=nothing, workspace=nothing)
     # Check if we need 2D decomposition with transposes
-    need_transpose = G.decomp !== nothing && hasfield(typeof(G.decomp), :pencil_z)
+    need_transpose = G.decomp !== nothing && hasfield(typeof(G.decomp), :pencil_z) && !z_is_local(G)
 
     if need_transpose
         _omega_eqn_rhs_2d!(rhs, psi, G, plans, Lmask, workspace)

@@ -60,7 +60,7 @@ module YBJNormal
 
 using ..QGYBJplus: Grid, QGParams
 using ..QGYBJplus: N2_ut
-using ..QGYBJplus: local_to_global, get_local_dims
+using ..QGYBJplus: local_to_global, get_local_dims, z_is_local
 using ..QGYBJplus: transpose_to_z_pencil!, transpose_to_xy_pencil!
 using ..QGYBJplus: local_to_global_z, allocate_z_pencil
 
@@ -106,7 +106,7 @@ Matches `sumB` in derivatives.f90.
 """
 function sumB!(B::AbstractArray{<:Complex,3}, G::Grid; Lmask=nothing, workspace=nothing)
     # Check if we need 2D decomposition with transposes
-    need_transpose = G.decomp !== nothing && hasfield(typeof(G.decomp), :pencil_z)
+    need_transpose = G.decomp !== nothing && hasfield(typeof(G.decomp), :pencil_z) && !z_is_local(G)
 
     if need_transpose
         _sumB_2d!(B, G, Lmask, workspace)
@@ -242,7 +242,7 @@ Transpose operations are handled internally if needed.
 function compute_sigma(par::QGParams, G::Grid,
                        nBRk, nBIk, rBRk, rBIk; Lmask=nothing, workspace=nothing, N2_profile=nothing)
     # Check if we need 2D decomposition with transposes
-    need_transpose = G.decomp !== nothing && hasfield(typeof(G.decomp), :pencil_z)
+    need_transpose = G.decomp !== nothing && hasfield(typeof(G.decomp), :pencil_z) && !z_is_local(G)
 
     if need_transpose
         return _compute_sigma_2d(par, G, nBRk, nBIk, rBRk, rBIk, Lmask, workspace, N2_profile)
@@ -421,7 +421,7 @@ function compute_A!(A::AbstractArray{<:Complex,3}, C::AbstractArray{<:Complex,3}
                     sigma::AbstractArray{<:Complex,2}, par::QGParams, G::Grid;
                     Lmask=nothing, workspace=nothing, N2_profile=nothing)
     # Check if we need 2D decomposition with transposes
-    need_transpose = G.decomp !== nothing && hasfield(typeof(G.decomp), :pencil_z)
+    need_transpose = G.decomp !== nothing && hasfield(typeof(G.decomp), :pencil_z) && !z_is_local(G)
 
     if need_transpose
         _compute_A_2d!(A, C, BRk, BIk, sigma, par, G, Lmask, workspace, N2_profile)

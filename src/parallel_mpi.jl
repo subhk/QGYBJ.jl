@@ -194,34 +194,53 @@ struct PencilDecomp{P1, P2, P3}
 end
 
 """
-    create_pencil_decomposition(nx, ny, nz, mpi_config) -> PencilDecomp
+    create_pencil_decomposition(nx, ny, nz, mpi_config; decomp_dims=(2,3)) -> PencilDecomp
 
 Create a 2D pencil decomposition for 3D data.
+
+`decomp_dims` selects which dimensions are distributed across the 2D MPI
+topology. For example:
+- `(2, 3)` distributes y and z (x local)
+- `(1, 2)` distributes x and y (z local)
 """
-function create_pencil_decomposition(nx::Int, ny::Int, nz::Int, mpi_config::MPIConfig)
+function create_pencil_decomposition(nx::Int, ny::Int, nz::Int, mpi_config::MPIConfig; decomp_dims=(2,3))
     topo = mpi_config.topology
     px, py = topo
+    dims = (nx, ny, nz)
+
+    length(decomp_dims) == 2 || error("decomp_dims must have length 2 (got $decomp_dims)")
+    all(1 .<= decomp_dims .<= 3) || error("decomp_dims entries must be in 1:3 (got $decomp_dims)")
+    decomp_dims[1] != decomp_dims[2] || error("decomp_dims entries must be distinct (got $decomp_dims)")
 
     # Validate topology against grid dimensions
-    if ny < px
-        error("Grid dimension ny=$ny is smaller than process topology px=$px.")
+    if dims[decomp_dims[1]] < px
+        error("Grid dimension for dim=$(decomp_dims[1]) is smaller than process topology px=$px.")
     end
-    if nz < py
-        error("Grid dimension nz=$nz is smaller than process topology py=$py.")
+    if dims[decomp_dims[2]] < py
+        error("Grid dimension for dim=$(decomp_dims[2]) is smaller than process topology py=$py.")
     end
 
     if mpi_config.is_root
-        @info "Topology validation passed" nx ny nz topology=topo
+        @info "Topology validation passed" nx ny nz topology=topo decomp_dims=decomp_dims
     end
 
     # Create 2D MPI topology
     mpi_topo = MPITopology(mpi_config.comm, topo)
 
-    # Create pencil configurations as a LINKED CHAIN for transpose compatibility
-    # PencilArrays requires pencils to be linked (parent-child) for transpose! to work
-    pencil_xy = Pencil(mpi_topo, (nx, ny, nz), (2, 3))  # x local (base pencil)
-    pencil_xz = Pencil(pencil_xy; decomp_dims=(1, 3))   # y local (linked to xy for transpose)
-    pencil_z = Pencil(pencil_xz; decomp_dims=(1, 2))    # z local (linked to xz for transpose)
+    if decomp_dims == (2, 3)
+        # Create pencil configurations as a LINKED CHAIN for transpose compatibility
+        # PencilArrays requires pencils to be linked (parent-child) for transpose! to work
+        pencil_xy = Pencil(mpi_topo, (nx, ny, nz), (2, 3))  # x local (base pencil)
+        pencil_xz = Pencil(pencil_xy; decomp_dims=(1, 3))   # y local (linked to xy for transpose)
+        pencil_z = Pencil(pencil_xz; decomp_dims=(1, 2))    # z local (linked to xz for transpose)
+    elseif decomp_dims == (1, 2)
+        # z-local decomposition: distribute x and y only
+        pencil_xy = Pencil(mpi_topo, (nx, ny, nz), (1, 2))
+        pencil_xz = pencil_xy
+        pencil_z = pencil_xy
+    else
+        error("Unsupported decomp_dims=$decomp_dims. Supported: (2,3) or (1,2).")
+    end
 
     # Get local index ranges
     local_range_xy = range_local(pencil_xy)
@@ -229,7 +248,11 @@ function create_pencil_decomposition(nx::Int, ny::Int, nz::Int, mpi_config::MPIC
     local_range_z = range_local(pencil_z)
 
     if mpi_config.is_root
-        @info "Pencil decompositions created" xy_decomp=(2,3) xz_decomp=(1,3) z_decomp=(1,2)
+        if decomp_dims == (2, 3)
+            @info "Pencil decompositions created" xy_decomp=(2,3) xz_decomp=(1,3) z_decomp=(1,2)
+        else
+            @info "Pencil decompositions created" xy_decomp=decomp_dims xz_decomp=decomp_dims z_decomp=decomp_dims
+        end
     end
 
     return PencilDecomp(
@@ -321,16 +344,17 @@ end
 =#
 
 """
-    init_mpi_grid(params::QGParams, mpi_config::MPIConfig) -> Grid
+    init_mpi_grid(params::QGParams, mpi_config::MPIConfig; decomp_dims=(2,3)) -> Grid
 
-Initialize a Grid with MPI-distributed arrays using 2D PencilArrays decomposition.
+Initialize a Grid with MPI-distributed arrays using a 2D PencilArrays decomposition.
+Use `decomp_dims=(1,2)` to keep z local (distribute x/y only).
 """
-function init_mpi_grid(params::QGParams, mpi_config::MPIConfig)
+function init_mpi_grid(params::QGParams, mpi_config::MPIConfig; decomp_dims=(2,3))
     T = Float64
     nx, ny, nz = params.nx, params.ny, params.nz
 
     # Create 2D pencil decomposition
-    decomp = create_pencil_decomposition(nx, ny, nz, mpi_config)
+    decomp = create_pencil_decomposition(nx, ny, nz, mpi_config; decomp_dims=decomp_dims)
 
     # Horizontal grid spacing
     dx = params.Lx / nx
@@ -742,6 +766,19 @@ Use this when indexing arrays allocated with the FFT output pencil.
 """
 function get_local_range_spectral(plans::MPIPlans)
     return range_local(plans.output_pencil)
+end
+
+"""
+    z_is_local(grid::Grid) -> Bool
+
+Return true if the z-dimension is fully local on each rank.
+"""
+function z_is_local(grid::Grid)
+    decomp = grid.decomp
+    if decomp === nothing
+        return true
+    end
+    return decomp.local_range_xy[3] == 1:grid.nz
 end
 
 function get_local_range_z(grid::Grid)

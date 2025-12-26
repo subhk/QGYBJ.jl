@@ -77,7 +77,7 @@ Vertical derivatives use second-order finite differences.
 module Operators
 
 using LinearAlgebra
-using ..QGYBJplus: Grid, State, local_to_global
+using ..QGYBJplus: Grid, State, local_to_global, z_is_local
 using ..QGYBJplus: fft_backward!, plan_transforms!
 using ..QGYBJplus: transpose_to_z_pencil!, transpose_to_xy_pencil!
 using ..QGYBJplus: local_to_global_z, allocate_z_pencil
@@ -317,7 +317,7 @@ function compute_vertical_velocity!(S::State, G::Grid, plans, params;
     end
 
     # Check if we need 2D decomposition with transposes
-    need_transpose = G.decomp !== nothing && hasfield(typeof(G.decomp), :pencil_z)
+    need_transpose = G.decomp !== nothing && hasfield(typeof(G.decomp), :pencil_z) && !z_is_local(G)
 
     if need_transpose
         _compute_vertical_velocity_2d!(S, G, plans, params, N2_profile, workspace, dealias_mask)
@@ -697,7 +697,7 @@ function compute_ybj_vertical_velocity!(S::State, G::Grid, plans, params; N2_pro
     end
 
     # Check if we need 2D decomposition with transposes
-    need_transpose = G.decomp !== nothing && hasfield(typeof(G.decomp), :pencil_z)
+    need_transpose = G.decomp !== nothing && hasfield(typeof(G.decomp), :pencil_z) && !z_is_local(G)
 
     if need_transpose
         _compute_ybj_vertical_velocity_2d!(S, G, plans, params, N2_profile, workspace, skip_inversion)

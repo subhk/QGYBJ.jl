@@ -45,7 +45,7 @@ from quadratic nonlinearities. The Lmask array encodes which modes to keep.
 
 module Nonlinear
 
-using ..QGYBJplus: Grid, local_to_global
+using ..QGYBJplus: Grid, local_to_global, z_is_local
 using ..QGYBJplus: fft_forward!, fft_backward!
 using ..QGYBJplus: transpose_to_z_pencil!, transpose_to_xy_pencil!
 using ..QGYBJplus: allocate_z_pencil
@@ -887,7 +887,7 @@ function dissipation_q_nv!(dqk, qok, par, G::Grid; workspace=nothing)
     nz = G.nz
 
     # Check if we need 2D decomposition transpose
-    need_transpose = G.decomp !== nothing && hasfield(typeof(G.decomp), :pencil_z)
+    need_transpose = G.decomp !== nothing && hasfield(typeof(G.decomp), :pencil_z) && !z_is_local(G)
 
     if need_transpose
         _dissipation_q_nv_2d!(dqk, qok, par, G, workspace)
