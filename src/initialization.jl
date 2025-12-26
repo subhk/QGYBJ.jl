@@ -97,13 +97,10 @@ Based on the generate_fields_stag routine from Fortran code.
 function init_analytical_psi!(psik, G::Grid, amplitude::Real, plans)
     @info "Initializing analytical stream function (amplitude=$amplitude)"
 
-    # Get local dimensions from psik (works for both Array and PencilArray)
-    psik_arr = parent(psik)
-    nz_local, nx_local, ny_local = size(psik_arr)
-
     # Initialize in real space with LOCAL dimensions (input pencil for MPI)
     psir = _allocate_fft_dst(psik, plans)
     psir_arr = parent(psir)
+    nz_local, nx_local, ny_local = size(psir_arr)
 
     dx = G.Lx / G.nx
     dy = G.Ly / G.ny
@@ -267,15 +264,12 @@ Initialize wave field (L+A) with analytical expression.
 function init_analytical_waves!(Bk, G::Grid, amplitude::Real, plans)
     @info "Initializing analytical wave field (amplitude=$amplitude)"
 
-    # Get local dimensions from Bk (works for both Array and PencilArray)
-    Bk_arr = parent(Bk)
-    nz_local, nx_local, ny_local = size(Bk_arr)
-
     # Initialize in real space with LOCAL dimensions (input pencil for MPI)
     Br = _allocate_fft_dst(Bk, plans)
     Bi = _allocate_fft_dst(Bk, plans)
     Br_arr = parent(Br)
     Bi_arr = parent(Bi)
+    nz_local, nx_local, ny_local = size(Br_arr)
 
     dx = G.Lx / G.nx
     dy = G.Ly / G.ny
