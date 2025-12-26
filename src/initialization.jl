@@ -101,9 +101,8 @@ function init_analytical_psi!(psik, G::Grid, amplitude::Real, plans)
     psik_arr = parent(psik)
     nz_local, nx_local, ny_local = size(psik_arr)
 
-    # Initialize in real space with LOCAL dimensions
-    # Use similar() to get correct array type (Array or PencilArray)
-    psir = similar(psik, Float64)
+    # Initialize in real space with LOCAL dimensions (input pencil for MPI)
+    psir = _allocate_fft_dst(psik, plans)
     psir_arr = parent(psir)
 
     dx = G.Lx / G.nx
@@ -272,10 +271,9 @@ function init_analytical_waves!(Bk, G::Grid, amplitude::Real, plans)
     Bk_arr = parent(Bk)
     nz_local, nx_local, ny_local = size(Bk_arr)
 
-    # Initialize in real space with LOCAL dimensions
-    # Use similar() to get correct array type (Array or PencilArray)
-    Br = similar(Bk, Float64)
-    Bi = similar(Bk, Float64)
+    # Initialize in real space with LOCAL dimensions (input pencil for MPI)
+    Br = _allocate_fft_dst(Bk, plans)
+    Bi = _allocate_fft_dst(Bk, plans)
     Br_arr = parent(Br)
     Bi_arr = parent(Bi)
 

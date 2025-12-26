@@ -298,8 +298,8 @@ function convol_waqg!(nqk, nBRk, nBIk, u, v, qk, BRk, BIk, G::Grid, plans; Lmask
     uterm_arr = parent(uterm_k); vterm_arr = parent(vterm_k)
 
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
-        i_global = local_to_global(i_local, 2, uterm)
-        j_global = local_to_global(j_local, 3, uterm)
+        i_global = local_to_global(i_local, 2, uterm_k)
+        j_global = local_to_global(j_local, 3, uterm_k)
         kₓ = G.kx[i_global]
         kᵧ = G.ky[j_global]
         if should_keep(i_global, j_global)
@@ -321,8 +321,8 @@ function convol_waqg!(nqk, nBRk, nBIk, u, v, qk, BRk, BIk, G::Grid, plans; Lmask
     uterm_arr = parent(uterm_k); vterm_arr = parent(vterm_k)
 
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
-        i_global = local_to_global(i_local, 2, uterm)
-        j_global = local_to_global(j_local, 3, uterm)
+        i_global = local_to_global(i_local, 2, uterm_k)
+        j_global = local_to_global(j_local, 3, uterm_k)
     
         kₓ = G.kx[i_global]
         kᵧ = G.ky[j_global]
@@ -344,8 +344,8 @@ function convol_waqg!(nqk, nBRk, nBIk, u, v, qk, BRk, BIk, G::Grid, plans; Lmask
     uterm_arr = parent(uterm_k); vterm_arr = parent(vterm_k)
 
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
-        i_global = local_to_global(i_local, 2, uterm)
-        j_global = local_to_global(j_local, 3, uterm)
+        i_global = local_to_global(i_local, 2, uterm_k)
+        j_global = local_to_global(j_local, 3, uterm_k)
     
         kₓ = G.kx[i_global]
         kᵧ = G.ky[j_global]
@@ -379,22 +379,24 @@ function _convol_advect!(nχk, u, v, χk, G::Grid, plans; Lmask=nothing, use_rea
     fft_backward!(χᵣ, χk, plans)
     χᵣ_arr = parent(χᵣ)
 
-    uterm = similar(χk); vterm = similar(χk)
-    uterm_arr = parent(uterm); vterm_arr = parent(vterm)
+    uterm_r = _allocate_fft_dst(χk, plans)
+    vterm_r = _allocate_fft_dst(χk, plans)
+    uterm_r_arr = parent(uterm_r); vterm_r_arr = parent(vterm_r)
+    uterm_k = similar(χk); vterm_k = similar(χk)
 
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
         χval = use_real ? real(χᵣ_arr[k, i_local, j_local]) : χᵣ_arr[k, i_local, j_local]
-        uterm_arr[k, i_local, j_local] = u_arr[k, i_local, j_local] * χval
-        vterm_arr[k, i_local, j_local] = v_arr[k, i_local, j_local] * χval
+        uterm_r_arr[k, i_local, j_local] = u_arr[k, i_local, j_local] * χval
+        vterm_r_arr[k, i_local, j_local] = v_arr[k, i_local, j_local] * χval
     end
 
-    fft_forward!(uterm, uterm, plans)
-    fft_forward!(vterm, vterm, plans)
+    fft_forward!(uterm_k, uterm_r, plans)
+    fft_forward!(vterm_k, vterm_r, plans)
 
-    uterm_arr = parent(uterm); vterm_arr = parent(vterm)
+    uterm_arr = parent(uterm_k); vterm_arr = parent(vterm_k)
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
-        i_global = local_to_global(i_local, 2, uterm)
-        j_global = local_to_global(j_local, 3, uterm)
+        i_global = local_to_global(i_local, 2, uterm_k)
+        j_global = local_to_global(j_local, 3, uterm_k)
         if should_keep(i_global, j_global)
             kₓ = G.kx[i_global]
             kᵧ = G.ky[j_global]
@@ -708,7 +710,7 @@ function compute_qw!(qʷₖ, BRk, BIk, par, G::Grid, plans; Lmask=nothing)
     #= Compute (i/2)J(B*, B) term
     J(B*, B) = 2i(BRₓBIᵧ - BRᵧBIₓ)  [purely imaginary]
     So (i/2)J(B*, B) = i² × (BRₓBIᵧ - BRᵧBIₓ) = -(BRₓBIᵧ - BRᵧBIₓ) = BRᵧBIₓ - BRₓBIᵧ =#
-    qʷᵣ = similar(qʷₖ)
+    qʷᵣ = _allocate_fft_dst(qʷₖ, plans)
     qʷᵣ_arr = parent(qʷᵣ)
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
         qʷᵣ_arr[k, i_local, j_local] = real(BRᵧᵣ_arr[k, i_local, j_local])*real(BIₓᵣ_arr[k, i_local, j_local]) -
@@ -721,7 +723,7 @@ function compute_qw!(qʷₖ, BRk, BIk, par, G::Grid, plans; Lmask=nothing)
     fft_backward!(BIᵣ, BIk, plans)
 
     BRᵣ_arr = parent(BRᵣ); BIᵣ_arr = parent(BIᵣ)
-    mag² = similar(BRk)
+    mag² = _allocate_fft_dst(BRk, plans)
     mag²_arr = parent(mag²)
     
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
@@ -812,7 +814,7 @@ function compute_qw_complex!(qʷₖ, Bk, par, G::Grid, plans; Lmask=nothing)
     end
 
     # |B|^2 term
-    mag² = similar(Bk)
+    mag² = _allocate_fft_dst(Bk, plans)
     mag²_arr = parent(mag²)
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
         mag²_arr[k, i_local, j_local] = real(conj(Bᵣ_arr[k, i_local, j_local]) * Bᵣ_arr[k, i_local, j_local])
