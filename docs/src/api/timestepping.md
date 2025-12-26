@@ -217,12 +217,12 @@ plans = QGYBJplus.plan_mpi_transforms(grid, mpi_config)
 workspace = QGYBJplus.init_mpi_workspace(grid, mpi_config)
 
 a_ell = a_ell_ut(params, grid)
-L = dealias_mask(params, grid)
+L = dealias_mask(grid)
 
 # Create states
-Snm1 = QGYBJplus.init_mpi_state(grid, mpi_config)
-Sn = QGYBJplus.init_mpi_state(grid, mpi_config)
-Snp1 = QGYBJplus.init_mpi_state(grid, mpi_config)
+Snm1 = QGYBJplus.init_mpi_state(grid, plans, mpi_config)
+Sn = QGYBJplus.init_mpi_state(grid, plans, mpi_config)
+Snp1 = QGYBJplus.init_mpi_state(grid, plans, mpi_config)
 
 # Initialize
 init_random_psi!(Sn, grid, params, plans; a=a_ell)

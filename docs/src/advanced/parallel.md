@@ -74,11 +74,9 @@ params = default_params(Lx=1000e3, Ly=1000e3, Lz=5000.0, nx=256, ny=256, nz=128)
 
 # Initialize distributed grid and state
 grid = QGYBJplus.init_mpi_grid(params, mpi_config)
-state = QGYBJplus.init_mpi_state(grid, mpi_config)
-workspace = QGYBJplus.init_mpi_workspace(grid, mpi_config)
-
-# Plan parallel FFTs
 plans = QGYBJplus.plan_mpi_transforms(grid, mpi_config)
+state = QGYBJplus.init_mpi_state(grid, plans, mpi_config)
+workspace = QGYBJplus.init_mpi_workspace(grid, mpi_config)
 
 # Get physics coefficients
 a_vec = a_ell_ut(params, grid)
@@ -333,13 +331,11 @@ function main()
         ybj_plus = true
     )
 
-    # Initialize distributed grid, state, workspace
+    # Initialize distributed grid, plans, state, workspace
     grid = QGYBJplus.init_mpi_grid(params, mpi_config)
-    state = QGYBJplus.init_mpi_state(grid, mpi_config)
-    workspace = QGYBJplus.init_mpi_workspace(grid, mpi_config)
-
-    # FFT plans
     plans = QGYBJplus.plan_mpi_transforms(grid, mpi_config)
+    state = QGYBJplus.init_mpi_state(grid, plans, mpi_config)
+    workspace = QGYBJplus.init_mpi_workspace(grid, mpi_config)
 
     # Physics setup
     a_vec = a_ell_ut(params, grid)
@@ -530,7 +526,7 @@ The following MPI functions are provided:
 ### Setup Functions
 - `setup_mpi_environment` - Initialize MPI environment and configuration
 - `init_mpi_grid` - Create grid with 2D pencil decomposition
-- `init_mpi_state` - Create distributed state arrays
+- `init_mpi_state` - Create distributed state arrays (use plans to place spectral fields on the FFT output pencil)
 - `init_mpi_workspace` - Allocate workspace for z-pencil operations
 - `plan_mpi_transforms` - Create PencilFFT plans
 - `copy_state` - Copy State preserving PencilArray topology (use instead of `deepcopy`)

@@ -290,9 +290,9 @@ params = default_params(
     nx=256, ny=256, nz=128
 )
 grid = QGYBJplus.init_mpi_grid(params, mpi_config)
-state = QGYBJplus.init_mpi_state(grid, mpi_config)
-workspace = QGYBJplus.init_mpi_workspace(grid, mpi_config)
 plans = QGYBJplus.plan_mpi_transforms(grid, mpi_config)
+state = QGYBJplus.init_mpi_state(grid, plans, mpi_config)
+workspace = QGYBJplus.init_mpi_workspace(grid, mpi_config)
 
 # Run with: mpiexec -n 16 julia simulation.jl
 

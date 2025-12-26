@@ -182,7 +182,8 @@ end
 state = init_state(grid)
 
 # Initialize with MPI (parallel mode)
-state = QGYBJplus.init_mpi_state(grid, mpi_config)
+plans = QGYBJplus.plan_mpi_transforms(grid, mpi_config)
+state = QGYBJplus.init_mpi_state(grid, plans, mpi_config)
 ```
 
 ### Field Access
@@ -322,7 +323,7 @@ has_nan = any(isnan, parent(state.psi))
 | Operation | Serial | Parallel |
 |:----------|:-------|:---------|
 | Grid initialization | `init_grid(params)` | `init_mpi_grid(params, mpi_config)` |
-| State initialization | `init_state(grid)` | `init_mpi_state(grid, mpi_config)` |
+| State initialization | `init_state(grid)` | `init_mpi_state(grid, plans, mpi_config)` |
 | Array type | `Array{T,3}` | `PencilArray{T,3}` |
 | Index access | Direct `arr[k,i,j]` | Via `parent(arr)[k,i,j]` |
 | Wavenumber lookup | Direct `grid.kx[i]` | `grid.kx[local_to_global(i,2,grid)]` |

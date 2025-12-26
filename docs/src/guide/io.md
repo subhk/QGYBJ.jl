@@ -256,7 +256,8 @@ mpi_config = QGYBJplus.setup_mpi_environment()
 
 # Setup distributed grid and state
 grid = QGYBJplus.init_mpi_grid(params, mpi_config)
-state = QGYBJplus.init_mpi_state(grid, mpi_config)
+plans = QGYBJplus.plan_mpi_transforms(grid, mpi_config)
+state = QGYBJplus.init_mpi_state(grid, plans, mpi_config)
 
 # Create output manager with parallel config
 output_config = OutputConfig(

@@ -80,9 +80,9 @@ params = default_params(
     Lx=1000e3, Ly=1000e3, Lz=5000.0  # 1000km × 1000km × 5km
 )
 grid = QGYBJplus.init_mpi_grid(params, mpi_config)
-state = QGYBJplus.init_mpi_state(grid, mpi_config)
-workspace = QGYBJplus.init_mpi_workspace(grid, mpi_config)
 plans = QGYBJplus.plan_mpi_transforms(grid, mpi_config)
+state = QGYBJplus.init_mpi_state(grid, plans, mpi_config)
+workspace = QGYBJplus.init_mpi_workspace(grid, mpi_config)
 
 # Run time stepping...
 

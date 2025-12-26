@@ -77,7 +77,8 @@ using MPI, PencilArrays, PencilFFTs, QGYBJplus
 MPI.Init()
 mpi_config = setup_mpi_environment()
 G = init_mpi_grid(par, mpi_config)
-S = init_mpi_state(G, mpi_config)
+plans = plan_mpi_transforms(G, mpi_config)
+S = init_mpi_state(G, plans, mpi_config)
 ```
 
 See individual pages for detailed API documentation.
