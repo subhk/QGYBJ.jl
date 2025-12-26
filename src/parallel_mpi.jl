@@ -1001,8 +1001,7 @@ Initialize a PencilArray with deterministic random values.
 """
 function init_mpi_random_field!(arr::PencilArray, grid::Grid,
                                 amplitude::Real, seed_offset::Int=0)
-    decomp = grid.decomp
-    local_range = decomp.local_range_xy
+    local_range = range_local(pencil(arr))
     parent_arr = parent(arr)
 
     for k_local in axes(parent_arr, 1)
