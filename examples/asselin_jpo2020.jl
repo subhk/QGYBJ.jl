@@ -180,7 +180,7 @@ function main()
 
             A_z_arr = parent(A_z)
             B_z_arr = parent(B_z)
-            nx_local, ny_local, nz_local = size(A_z_arr)
+            nz_local, nx_local, ny_local = size(A_z_arr)
 
             for j_local in 1:ny_local, i_local in 1:nx_local
                 i_global = QGYBJplus.local_to_global_z(i_local, 2, G)
