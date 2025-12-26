@@ -106,8 +106,7 @@ function main()
     )
 
     # Initialize distributed grid, plans, and state
-    # Use decomp_dims=(1,2) to keep z local and distribute x/y only
-    G = QGYBJplus.init_mpi_grid(par, mpi_config; decomp_dims=(1, 2))
+    G = QGYBJplus.init_mpi_grid(par, mpi_config)
     plans = QGYBJplus.plan_mpi_transforms(G, mpi_config)
     S = QGYBJplus.init_mpi_state(G, mpi_config)
     workspace = QGYBJplus.init_mpi_workspace(G, mpi_config)

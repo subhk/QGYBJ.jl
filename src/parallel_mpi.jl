@@ -202,6 +202,9 @@ Create a 2D pencil decomposition for 3D data.
 topology. For example:
 - `(2, 3)` distributes y and z (x local)
 - `(1, 2)` distributes x and y (z local)
+
+Note: `decomp_dims=(1,2)` is not compatible with the current PencilFFTs
+backend, which requires decomposition on the last two dimensions.
 """
 function create_pencil_decomposition(nx::Int, ny::Int, nz::Int, mpi_config::MPIConfig; decomp_dims=(2,3))
     topo = mpi_config.topology
@@ -562,6 +565,10 @@ function plan_mpi_transforms(grid::Grid, mpi_config::MPIConfig)
     end
 
     pencil_xy = decomp.pencil_xy
+    if PencilArrays.decomposition(pencil_xy) != (2, 3)
+        error("PencilFFTs requires decomp_dims=(2,3) for 3D FFT plans. " *
+              "Use decomp_dims=(2,3) or switch FFT backend.")
+    end
 
     transform = (
         PencilFFTs.Transforms.FFT(),
