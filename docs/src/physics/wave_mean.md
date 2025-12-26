@@ -148,7 +148,7 @@ Waves are funneled into anticyclones, enhancing deep mixing.
 ### Computing Wave Feedback
 
 ```julia
-# In nonlinear.jl: compute_qw!
+# In nonlinear.jl: compute_qw! (BR/BI form)
 function compute_qw!(qwk, BRk, BIk, par, G, plans; Lmask=nothing)
     # 1. Compute derivatives of BR and BI
     # BRx = ∂BR/∂x, BRy = ∂BR/∂y, etc.
@@ -174,6 +174,12 @@ function compute_qw!(qwk, BRk, BIk, par, G, plans; Lmask=nothing)
 end
 ```
 
+For the complex envelope form used in YBJ+ time stepping, use:
+
+```julia
+compute_qw_complex!(qwk, Bk, par, G, plans; Lmask=L)
+```
+
 ### Usage in Time Stepping
 
 The wave feedback enters via q* = q - qw:
@@ -182,6 +188,12 @@ The wave feedback enters via q* = q - qw:
 # After computing q at new time step
 if wave_feedback_enabled
     compute_qw!(qwk, BRk, BIk, par, G, plans; Lmask=L)
+    q_arr .-= qwk_arr  # q* = q - qw
+end
+
+# Complex B form (YBJ+ path)
+if wave_feedback_enabled
+    compute_qw_complex!(qwk, Bk, par, G, plans; Lmask=L)
     q_arr .-= qwk_arr  # q* = q - qw
 end
 

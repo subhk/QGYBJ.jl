@@ -63,9 +63,8 @@ jacobian_spectral!
 ### Wave Advection and Refraction
 
 The wave nonlinear terms are documented in the [Time Stepping API](timestepping.md):
-- `convol_waqg!` - Computes ``J(\psi, B)`` (advection of wave envelope by streamfunction)
-- `refraction_waqg!` - Computes ``B \zeta`` (wave refraction by vorticity)
-- `compute_qw!` - Computes wave feedback on mean flow ``q^w``
+- `convol_waqg_B!` / `refraction_waqg_B!` / `compute_qw_complex!` - Complex B (YBJ+) operators
+- `convol_waqg!` / `refraction_waqg!` / `compute_qw!` - BR/BI-decomposed operators
 
 ## Velocity Computation
 

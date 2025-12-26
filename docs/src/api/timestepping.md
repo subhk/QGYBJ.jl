@@ -91,7 +91,12 @@ Each time step computes the following tendencies:
 F_q = -J(\psi, q) + \nu_z \frac{\partial^2 q}{\partial z^2}
 ```
 
-**Wave Envelope (real/imaginary parts):**
+**Wave Envelope (complex form, YBJ+):**
+```math
+F_B = -J(\psi, B) + i\,\alpha_{\text{disp}}\,k_h^2 A - \frac{i}{2}\zeta B
+```
+
+**Equivalent real/imaginary parts:**
 ```math
 F_{BR} = -J(\psi, BR) - \frac{k_h^2}{2}A_I + \frac{1}{2}BI \times \zeta
 ```
@@ -103,12 +108,26 @@ F_{BI} = -J(\psi, BI) + \frac{k_h^2}{2}A_R - \frac{1}{2}BR \times \zeta
 
 ```@docs
 convol_waqg!
+convol_waqg_q!
+convol_waqg_B!
 refraction_waqg!
+refraction_waqg_B!
+compute_qw!
+compute_qw_complex!
 ```
 
-**Advection:** `convol_waqg!` computes J(ψ, q), J(ψ, BR), J(ψ, BI)
+**Advection:**
+- `convol_waqg_q!` computes J(ψ, q)
+- `convol_waqg_B!` computes J(ψ, B) for the complex YBJ+ envelope
+- `convol_waqg!` computes J(ψ, q), J(ψ, BR), J(ψ, BI) for explicit BR/BI decomposition
 
-**Refraction:** `refraction_waqg!` computes B × ζ where ζ = ∇²ψ
+**Refraction:**
+- `refraction_waqg_B!` computes ζ × B for complex B
+- `refraction_waqg!` computes BR × ζ and BI × ζ for the decomposed form
+
+**Wave feedback:**
+- `compute_qw_complex!` computes qʷ directly from complex B
+- `compute_qw!` computes qʷ from BR/BI
 
 ### Vertical Diffusion
 
@@ -326,8 +345,9 @@ end
 All time stepping functions documented above:
 - `first_projection_step!` - Forward Euler initialization step
 - `leapfrog_step!` - Main leapfrog integration with Robert-Asselin filter
-- `convol_waqg!` - Nonlinear advection computation
-- `refraction_waqg!` - Wave refraction term
+- `convol_waqg_q!` / `convol_waqg_B!` - Complex-form advection for q and B
+- `refraction_waqg_B!` - Complex-form wave refraction term
+- `convol_waqg!` / `refraction_waqg!` - BR/BI-decomposed advection/refraction
 - `dissipation_q_nv!` - Vertical diffusion
 - `int_factor` - Integrating factor for hyperdiffusion
-- `compute_qw!` - Wave feedback term (see [Physics API](physics.md))
+- `compute_qw_complex!` / `compute_qw!` - Wave feedback term (see [Physics API](physics.md))

@@ -127,8 +127,8 @@ This term represents focusing of wave energy by the background vorticity field.
 ### Code Implementation
 
 ```julia
-# Compute refraction term: (1/2) * B × ζ where ζ = -kh²ψ
-refraction_waqg!(rBRk, rBIk, BRk, BIk, psik, grid, plans; Lmask=L)
+# Compute refraction term: (1/2) * B × ζ where ζ = -kh²ψ (complex B form)
+refraction_waqg_B!(rBk, Bk, psik, grid, plans; Lmask=L)
 ```
 
 ## YBJ vs YBJ+
@@ -208,15 +208,15 @@ E_B, E_A = wave_energy(state.B, state.A)
 
 The YBJ+ implementation uses these core functions:
 - `invert_B_to_A!` - Solve L⁺ operator for wave amplitude A from envelope B
-- `refraction_waqg!` - Compute wave refraction by vorticity
-- `convol_waqg!` - Compute wave advection by geostrophic flow
+- `refraction_waqg_B!` - Compute wave refraction by vorticity (complex B)
+- `convol_waqg_B!` - Compute wave advection by geostrophic flow (complex B)
 
 See the [Physics API Reference](../api/physics.md) for detailed documentation.
 
 ### Code Locations
 
 - `elliptic.jl`: B → A inversion (`invert_B_to_A!`)
-- `nonlinear.jl`: Refraction (`refraction_waqg!`), Advection (`convol_waqg!`)
+- `nonlinear.jl`: Refraction (`refraction_waqg_B!`), Advection (`convol_waqg_B!`)
 - `ybj_normal.jl`: Normal YBJ (non-plus) operators
 
 ## References
