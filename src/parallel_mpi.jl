@@ -604,11 +604,11 @@ function plan_mpi_transforms(grid::Grid, mpi_config::MPIConfig)
     input_pencil = PencilArrays.pencil(work_in)
     output_pencil = PencilArrays.pencil(work_out)
 
-    pencils_match = _check_pencil_compatibility(input_pencil, output_pencil, pencil_xy)
+    pencils_match = _check_pencil_compatibility(input_pencil, output_pencil)
 
     if !pencils_match && mpi_config.is_root
-        @warn "PencilFFTs input/output pencils have different decompositions. " *
-              "FFT wrappers will use transposes between pencils."
+        @info "PencilFFTs input/output pencils differ; store spectral arrays on plans.output_pencil " *
+              "to avoid extra transposes in FFT wrappers." maxlog=1
     end
 
     return MPIPlans(
@@ -619,23 +619,14 @@ function plan_mpi_transforms(grid::Grid, mpi_config::MPIConfig)
     )
 end
 
-function _check_pencil_compatibility(input_pencil, output_pencil, pencil_xy)
-    in_range = range_local(input_pencil)
-    xy_range = range_local(pencil_xy)
-    if in_range != xy_range
-        return false
-    end
-    out_range = range_local(output_pencil)
-    if out_range != xy_range
-        return false
-    end
-    return true
+function _check_pencil_compatibility(input_pencil, output_pencil)
+    return range_local(input_pencil) == range_local(output_pencil)
 end
 
 # FFT operations for MPIPlans
 #
 # With permute_dims=Val(false), input and output have the same logical dimension order.
-# If pencils_match is true, all arrays use compatible pencil configurations.
+# If pencils_match is true, input/output pencils share the same local ranges.
 
 function fft_forward!(dst::PencilArray, src::PencilArray, plans::MPIPlans)
     src_is_input = _pencil_matches(src, plans.input_pencil)
