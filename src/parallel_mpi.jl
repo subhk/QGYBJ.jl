@@ -174,8 +174,8 @@ multiple pencil configurations for different operations.
 
 # Fields
 - `pencil_xy`: Pencil configuration for horizontal operations (decomp_dims=(2,3), z local)
-- `pencil_xz`: Same layout as `pencil_xy` (kept for compatibility)
-- `pencil_z`: Same layout as `pencil_xy` (kept for compatibility)
+- `pencil_xz`: Intermediate transpose pencil (decomp_dims=(1,3))
+- `pencil_z`: Pencil with z local (same layout as `pencil_xy`)
 - `local_range_xy`: Local index ranges in xy-pencil configuration
 - `local_range_xz`: Local index ranges in xz-pencil configuration
 - `local_range_z`: Local index ranges in z-pencil configuration
@@ -232,9 +232,11 @@ function create_pencil_decomposition(nx::Int, ny::Int, nz::Int, mpi_config::MPIC
     mpi_topo = MPITopology(mpi_config.comm, topo)
 
     if decomp_dims == (2, 3)
-        # z local, x/y distributed. Vertical operations are local so no z-pencil needed.
+        # z local, x/y distributed. Vertical operations are local on this pencil.
         pencil_xy = Pencil(mpi_topo, (nz, nx, ny), (2, 3))
-        pencil_xz = pencil_xy
+        # Intermediate pencil for two-step transposes between (2,3) and (1,2).
+        pencil_xz = Pencil(pencil_xy; decomp_dims=(1, 3))
+        # z-local pencil (same layout as xy for our (z, x, y) storage order).
         pencil_z = pencil_xy
     else
         error("Unsupported decomp_dims=$decomp_dims. Supported: (2,3).")
@@ -246,7 +248,7 @@ function create_pencil_decomposition(nx::Int, ny::Int, nz::Int, mpi_config::MPIC
     local_range_z = range_local(pencil_z)
 
     if mpi_config.is_root
-        @info "Pencil decompositions created" xy_decomp=decomp_dims xz_decomp=decomp_dims z_decomp=decomp_dims
+        @info "Pencil decompositions created" xy_decomp=decomp_dims xz_decomp=(1, 3) z_decomp=decomp_dims
     end
 
     return PencilDecomp(

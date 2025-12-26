@@ -145,9 +145,9 @@ The decomposition is stored in `grid.decomp`:
 decomp = grid.decomp
 
 # Three pencil configurations
-decomp.pencil_xy  # decomp_dims=(2,3): x,y distributed, z local - for FFTs
-decomp.pencil_xz  # same layout as pencil_xy (z local)
-decomp.pencil_z   # same layout as pencil_xy (z local)
+decomp.pencil_xy  # decomp_dims=(2,3): x,y distributed, z local - FFT input
+decomp.pencil_xz  # decomp_dims=(1,3): intermediate transpose pencil
+decomp.pencil_z   # z-local pencil (same layout as pencil_xy)
 
 # Local index ranges for each configuration
 decomp.local_range_xy  # (z_start:z_end, x_start:x_end, y_start:y_end)
@@ -161,9 +161,10 @@ decomp.topology     # (px, py) process grid
 
 ### How Transposes Work
 
-With the `(z, x, y)` storage order and `decomp_dims=(2,3)`, z is fully local.
-FFT and vertical operations therefore use the same pencil layout, and the
-transpose helpers are effectively no-ops in the current configuration.
+With the `(z, x, y)` storage order and `decomp_dims=(2,3)`, z is fully local
+on the FFT input pencil. Vertical operations therefore run without transposes
+when the data already lives on `pencil_xy`. Arrays on the FFT output pencil
+will still use the two-step transpose helpers to return to the z-local layout.
 
 **Example:** Inverting q to ψ still uses the same API (transposes are skipped):
 
