@@ -167,8 +167,8 @@ function jacobian_spectral!(dstk, φₖ, χₖ, G::Grid, plans; Lmask=nothing)
 
     For real fields: IFFT(im*k*φ̂) is real (up to roundoff), so we use real()
     to extract the physical derivative. =#
-    J = similar(φₖ)
-    J_arr = parent(J)
+    Jᵣ = _allocate_fft_dst(φₖ, plans)
+    J_arr = parent(Jᵣ)
 
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
         J_arr[k, i_local, j_local] = (real(φₓᵣ[k, i_local, j_local])*real(χᵧᵣ[k, i_local, j_local]) -
@@ -176,7 +176,7 @@ function jacobian_spectral!(dstk, φₖ, χₖ, G::Grid, plans; Lmask=nothing)
     end
 
     #= Step 4: Transform back to spectral space and apply dealiasing =#
-    fft_forward!(dstk, J, plans)
+    fft_forward!(dstk, Jᵣ, plans)
 
     # Apply 2/3 dealiasing mask to remove aliased modes from quadratic nonlinearity
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
@@ -280,20 +280,22 @@ function convol_waqg!(nqk, nBRk, nBIk, u, v, qk, BRk, BIk, G::Grid, plans; Lmask
     qᵣ_arr = parent(qᵣ); BRᵣ_arr = parent(BRᵣ); BIᵣ_arr = parent(BIᵣ)
 
     #= ---- J(ψ, q): Advection of QGPV ---- =#
-    # Compute products u*q and v*q in real space
-    uterm = similar(qk); vterm = similar(qk)
-    uterm_arr = parent(uterm); vterm_arr = parent(vterm)
+    # Compute products u*q and v*q in real space (input pencil)
+    uterm_r = _allocate_fft_dst(qk, plans)
+    vterm_r = _allocate_fft_dst(qk, plans)
+    uterm_r_arr = parent(uterm_r); vterm_r_arr = parent(vterm_r)
+    uterm_k = similar(qk); vterm_k = similar(qk)
   
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
-        uterm_arr[k, i_local, j_local] = u_arr[k, i_local, j_local]*real(qᵣ_arr[k, i_local, j_local])
-        vterm_arr[k, i_local, j_local] = v_arr[k, i_local, j_local]*real(qᵣ_arr[k, i_local, j_local])
+        uterm_r_arr[k, i_local, j_local] = u_arr[k, i_local, j_local]*real(qᵣ_arr[k, i_local, j_local])
+        vterm_r_arr[k, i_local, j_local] = v_arr[k, i_local, j_local]*real(qᵣ_arr[k, i_local, j_local])
     end
 
     # Transform to spectral and compute divergence
-    fft_forward!(uterm, uterm, plans)
-    fft_forward!(vterm, vterm, plans)
+    fft_forward!(uterm_k, uterm_r, plans)
+    fft_forward!(vterm_k, vterm_r, plans)
   
-    uterm_arr = parent(uterm); vterm_arr = parent(vterm)
+    uterm_arr = parent(uterm_k); vterm_arr = parent(vterm_k)
 
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
         i_global = local_to_global(i_local, 2, uterm)
@@ -310,13 +312,13 @@ function convol_waqg!(nqk, nBRk, nBIk, u, v, qk, BRk, BIk, G::Grid, plans; Lmask
 
     #= ---- J(ψ, BR): Advection of wave real part ---- =#
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
-        uterm_arr[k, i_local, j_local] = u_arr[k, i_local, j_local]*real(BRᵣ_arr[k, i_local, j_local])
-        vterm_arr[k, i_local, j_local] = v_arr[k, i_local, j_local]*real(BRᵣ_arr[k, i_local, j_local])
+        uterm_r_arr[k, i_local, j_local] = u_arr[k, i_local, j_local]*real(BRᵣ_arr[k, i_local, j_local])
+        vterm_r_arr[k, i_local, j_local] = v_arr[k, i_local, j_local]*real(BRᵣ_arr[k, i_local, j_local])
     end
-    fft_forward!(uterm, uterm, plans)
-    fft_forward!(vterm, vterm, plans)
+    fft_forward!(uterm_k, uterm_r, plans)
+    fft_forward!(vterm_k, vterm_r, plans)
   
-    uterm_arr = parent(uterm); vterm_arr = parent(vterm)
+    uterm_arr = parent(uterm_k); vterm_arr = parent(vterm_k)
 
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
         i_global = local_to_global(i_local, 2, uterm)
@@ -333,13 +335,13 @@ function convol_waqg!(nqk, nBRk, nBIk, u, v, qk, BRk, BIk, G::Grid, plans; Lmask
 
     #= ---- J(ψ, BI): Advection of wave imaginary part ---- =#
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
-        uterm_arr[k, i_local, j_local] = u_arr[k, i_local, j_local]*real(BIᵣ_arr[k, i_local, j_local])
-        vterm_arr[k, i_local, j_local] = v_arr[k, i_local, j_local]*real(BIᵣ_arr[k, i_local, j_local])
+        uterm_r_arr[k, i_local, j_local] = u_arr[k, i_local, j_local]*real(BIᵣ_arr[k, i_local, j_local])
+        vterm_r_arr[k, i_local, j_local] = v_arr[k, i_local, j_local]*real(BIᵣ_arr[k, i_local, j_local])
     end
-    fft_forward!(uterm, uterm, plans)
-    fft_forward!(vterm, vterm, plans)
+    fft_forward!(uterm_k, uterm_r, plans)
+    fft_forward!(vterm_k, vterm_r, plans)
   
-    uterm_arr = parent(uterm); vterm_arr = parent(vterm)
+    uterm_arr = parent(uterm_k); vterm_arr = parent(vterm_k)
 
     @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
         i_global = local_to_global(i_local, 2, uterm)
