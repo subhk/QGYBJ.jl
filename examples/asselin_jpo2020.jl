@@ -119,15 +119,15 @@ function main()
     if is_root; println("\nSetting up dipole..."); end
     psi_phys = similar(S.psi)
     psi_phys_arr = parent(psi_phys)
-    for k_local in axes(psi_phys_arr, 3)
-        for j_local in axes(psi_phys_arr, 2)
-            j_global = local_range[2][j_local]
+    for k_local in axes(psi_phys_arr, 1)
+        for j_local in axes(psi_phys_arr, 3)
+            j_global = local_range[3][j_local]
             y = (j_global - 1) * G.dy - G.Ly / 2  # Centered y (rotated coords)
-            for i_local in axes(psi_phys_arr, 1)
-                i_global = local_range[1][i_local]
+            for i_local in axes(psi_phys_arr, 2)
+                i_global = local_range[2][i_local]
                 x = (i_global - 1) * G.dx - G.Lx / 2  # Centered x (rotated coords)
                 # Dimensional streamfunction [m²/s]
-                psi_phys_arr[i_local, j_local, k_local] = complex(psi0 * sin(k_dipole * x) * cos(k_dipole * y))
+                psi_phys_arr[k_local, i_local, j_local] = complex(psi0 * sin(k_dipole * x) * cos(k_dipole * y))
             end
         end
     end
@@ -136,13 +136,13 @@ function main()
     # Compute q = -kh² × ψ (spectral space operation)
     q_local = parent(S.q)
     psi_local = parent(S.psi)
-    for k_local in axes(q_local, 3)
-        for j_local in axes(q_local, 2)
-            j_global = local_range[2][j_local]
-            for i_local in axes(q_local, 1)
-                i_global = local_range[1][i_local]
+    for k_local in axes(q_local, 1)
+        for j_local in axes(q_local, 3)
+            j_global = local_range[3][j_local]
+            for i_local in axes(q_local, 2)
+                i_global = local_range[2][i_local]
                 kh2 = G.kx[i_global]^2 + G.ky[j_global]^2
-                q_local[i_local, j_local, k_local] = -kh2 * psi_local[i_local, j_local, k_local]
+                q_local[k_local, i_local, j_local] = -kh2 * psi_local[k_local, i_local, j_local]
             end
         end
     end
@@ -152,12 +152,12 @@ function main()
     if is_root; println("Setting up waves..."); end
     A_phys = similar(S.A)
     A_phys_arr = parent(A_phys)
-    for k_local in axes(A_phys_arr, 3)
-        k_global = local_range[3][k_local]
+    for k_local in axes(A_phys_arr, 1)
+        k_global = local_range[1][k_local]
         depth = G.Lz - G.z[k_global]  # Distance from surface [m]
         wave_profile = exp(-(depth^2) / (surface_layer_depth^2))
         wave_value = complex(u0_wave * wave_profile)
-        A_phys_arr[:, :, k_local] .= wave_value
+        A_phys_arr[k_local, :, :] .= wave_value
     end
     QGYBJplus.fft_forward!(S.A, A_phys, plans)
 
@@ -165,7 +165,7 @@ function main()
     a_ell = QGYBJplus.a_ell_ut(par, G)
     function apply_Lplus!(Bk, Ak, G, par, a; workspace=nothing)
         nz = G.nz
-        need_transpose = G.decomp !== nothing && hasfield(typeof(G.decomp), :pencil_z)
+        need_transpose = G.decomp !== nothing && hasfield(typeof(G.decomp), :pencil_z) && !QGYBJplus.z_is_local(G)
 
         ρ_ut = isdefined(QGYBJplus, :rho_ut) ? QGYBJplus.rho_ut(par, G) : ones(eltype(a), nz)
         ρ_st = isdefined(QGYBJplus, :rho_st) ? QGYBJplus.rho_st(par, G) : ones(eltype(a), nz)
