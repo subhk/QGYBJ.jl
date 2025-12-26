@@ -223,26 +223,30 @@ function first_projection_step!(S::State, G::Grid, par::QGParams, plans; a, deal
     L = isnothing(dealias_mask) ? trues(G.nx, G.ny) : dealias_mask
 
     # Allocate tendency arrays (same size as local arrays)
-    nqk  = similar(S.q)    # J(ψ, q) advection of PV
-    nBRk = similar(S.B)    # J(ψ, BR) advection of wave real part
-    nBIk = similar(S.B)    # J(ψ, BI) advection of wave imaginary part
-    rBRk = similar(S.B)    # BR × ζ refraction real part
-    rBIk = similar(S.B)    # BI × ζ refraction imaginary part
-    dqk  = similar(S.B)    # Vertical diffusion of q
+    nqk = similar(S.q)   # J(ψ, q) advection of PV
+    dqk = similar(S.B)   # Vertical diffusion of q
+    if par.ybj_plus
+        nBk = similar(S.B)   # J(ψ, B) advection (complex)
+        rBk = similar(S.B)   # ζ × B refraction (complex)
+    else
+        nBRk = similar(S.B)  # J(ψ, BR) advection of wave real part
+        nBIk = similar(S.B)  # J(ψ, BI) advection of wave imaginary part
+        rBRk = similar(S.B)  # BR × ζ refraction real part
+        rBIk = similar(S.B)  # BI × ζ refraction imaginary part
+    end
 
     # For normal YBJ, remove vertical mean of B before any diagnostics/tendencies.
     if !par.ybj_plus
         sumB!(S.B, G; Lmask=L)
-    end
 
-    #= Split B into real and imaginary parts for computation
-    The wave field B is complex; we work with BR = Re(B), BI = Im(B) =#
-    BRk = similar(S.B); BIk = similar(S.B)
-    BRk_arr = parent(BRk); BIk_arr = parent(BIk)
+        # Split B into real and imaginary parts for computation
+        BRk = similar(S.B); BIk = similar(S.B)
+        BRk_arr = parent(BRk); BIk_arr = parent(BIk)
 
-    @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
-        BRk_arr[i,j,k] = Complex(real(B_arr[i,j,k]), 0)
-        BIk_arr[i,j,k] = Complex(imag(B_arr[i,j,k]), 0)
+        @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
+            BRk_arr[i,j,k] = Complex(real(B_arr[i,j,k]), 0)
+            BIk_arr[i,j,k] = Complex(imag(B_arr[i,j,k]), 0)
+        end
     end
 
     #= Step 1: Compute diagnostic fields ψ, velocities, and A =#
@@ -267,11 +271,20 @@ function first_projection_step!(S::State, G::Grid, par::QGParams, plans; a, deal
 
     #= Step 2: Compute nonlinear tendencies =#
 
-    # Advection: J(ψ, q), J(ψ, BR), J(ψ, BI)
-    convol_waqg!(nqk, nBRk, nBIk, S.u, S.v, S.q, BRk, BIk, G, plans; Lmask=L)
+    if par.ybj_plus
+        # Advection: J(ψ, q), J(ψ, B)
+        convol_waqg_q!(nqk, S.u, S.v, S.q, G, plans; Lmask=L)
+        convol_waqg_B!(nBk, S.u, S.v, S.B, G, plans; Lmask=L)
 
-    # Wave refraction: B × ζ where ζ = ∇²ψ
-    refraction_waqg!(rBRk, rBIk, BRk, BIk, S.psi, G, plans; Lmask=L)
+        # Wave refraction: B × ζ where ζ = ∇²ψ
+        refraction_waqg_B!(rBk, S.B, S.psi, G, plans; Lmask=L)
+    else
+        # Advection: J(ψ, q), J(ψ, BR), J(ψ, BI)
+        convol_waqg!(nqk, nBRk, nBIk, S.u, S.v, S.q, BRk, BIk, G, plans; Lmask=L)
+
+        # Wave refraction: B × ζ where ζ = ∇²ψ
+        refraction_waqg!(rBRk, rBIk, BRk, BIk, S.psi, G, plans; Lmask=L)
+    end
 
     # Vertical diffusion: νz ∂²q/∂z² (handles 2D decomposition transposes internally)
     dissipation_q_nv!(dqk, S.q, par, G; workspace=workspace)
@@ -283,7 +296,12 @@ function first_projection_step!(S::State, G::Grid, par::QGParams, plans; a, deal
 
     # linear: No nonlinear advection
     if par.linear
-        nqk .= 0; nBRk .= 0; nBIk .= 0
+        nqk .= 0
+        if par.ybj_plus
+            nBk .= 0
+        else
+            nBRk .= 0; nBIk .= 0
+        end
     end
 
     # no_dispersion: Waves don't disperse (A = 0)
@@ -293,7 +311,12 @@ function first_projection_step!(S::State, G::Grid, par::QGParams, plans; a, deal
 
     # passive_scalar: Waves are passive tracers (no dispersion, no refraction)
     if par.passive_scalar
-        S.A .= 0; S.C .= 0; rBRk .= 0; rBIk .= 0
+        S.A .= 0; S.C .= 0
+        if par.ybj_plus
+            rBk .= 0
+        else
+            rBRk .= 0; rBIk .= 0
+        end
     end
 
     # fixed_flow: Mean flow doesn't evolve
