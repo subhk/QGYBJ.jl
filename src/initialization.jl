@@ -499,7 +499,7 @@ Normalize field to have specified total energy.
 """
 function normalize_field_energy!(field, G::Grid, target_energy::Real, plans)
     # Convert to real space to compute energy
-    field_r = similar(field, Float64)
+    field_r = _allocate_fft_dst(field, plans)
     fft_backward!(field_r, field, plans)
     
     # Compute current energy
