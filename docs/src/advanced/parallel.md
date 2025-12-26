@@ -527,6 +527,20 @@ MPIPreferences.use_system_binary()
 - Ensure ALL ranks call collective operations (gather, reduce, barrier)
 - Check for mismatched send/receive
 
+### Pencil Topology Mismatch Error
+
+If you see `ArgumentError: pencil topologies must be the same`, this is caused by using `deepcopy(state)` instead of `copy_state(state)`:
+
+```julia
+# WRONG: breaks PencilArray topology
+Snm1 = deepcopy(S)   # ERROR: Creates new PencilArrays with different pencil objects
+
+# CORRECT: preserves pencil topology
+Snm1 = copy_state(S)  # Uses similar() to preserve array structure
+```
+
+This is critical for leapfrog time-stepping which requires three State objects. The `copy_state` function uses `similar()` internally, which preserves the PencilArray decomposition.
+
 ### Debugging
 
 ```julia
@@ -551,6 +565,7 @@ The following MPI functions are provided:
 - `init_mpi_state` - Create distributed state arrays
 - `init_mpi_workspace` - Allocate workspace for z-pencil operations
 - `plan_mpi_transforms` - Create PencilFFT plans
+- `copy_state` - Copy State preserving PencilArray topology (use instead of `deepcopy`)
 
 ### Communication Functions
 - `gather_to_root` - Collect distributed array to rank 0
