@@ -347,7 +347,7 @@ end
     init_mpi_grid(params::QGParams, mpi_config::MPIConfig; decomp_dims=(2,3)) -> Grid
 
 Initialize a Grid with MPI-distributed arrays using a 2D PencilArrays decomposition.
-Use `decomp_dims=(1,2)` to keep z local (distribute x/y only).
+Note: the current PencilFFTs backend requires `decomp_dims=(2,3)` for FFT plans.
 """
 function init_mpi_grid(params::QGParams, mpi_config::MPIConfig; decomp_dims=(2,3))
     T = Float64
