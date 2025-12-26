@@ -257,8 +257,8 @@ using QGYBJplus
 MPI.Init()
 mpi_config = QGYBJplus.setup_mpi_environment()
 grid = QGYBJplus.init_mpi_grid(params, mpi_config)  # Creates grid with decomposition
-state = QGYBJplus.init_mpi_state(grid, mpi_config)
 plans = QGYBJplus.plan_mpi_transforms(grid, mpi_config)
+state = QGYBJplus.init_mpi_state(grid, plans, mpi_config)
 ```
 
 This function now only issues a deprecation warning and returns the grid unchanged.

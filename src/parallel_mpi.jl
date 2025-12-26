@@ -33,8 +33,8 @@ USAGE:
     MPI.Init()
     mpi_config = QGYBJplus.setup_mpi_environment()
     grid = QGYBJplus.init_mpi_grid(params, mpi_config)
-    state = QGYBJplus.init_mpi_state(grid, mpi_config)
     plans = QGYBJplus.plan_mpi_transforms(grid, mpi_config)
+    state = QGYBJplus.init_mpi_state(grid, plans, mpi_config)
 """
 
 using MPI
