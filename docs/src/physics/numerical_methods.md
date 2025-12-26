@@ -25,19 +25,36 @@ The model uses a **pseudo-spectral** approach in the horizontal:
 
 #### Dealiasing
 
-Nonlinear products create aliasing errors. We use the **2/3 rule**:
+Nonlinear products create aliasing errors. We use the **radial 2/3 rule**:
 
 ```math
-k_{max} = \frac{2}{3} \cdot \frac{N}{2}
+k_{max} = \frac{\min(N_x, N_y)}{3}
 ```
 
-Modes with `|k| > k_max` are set to zero after each nonlinear term.
+Modes with ``k_x^2 + k_y^2 > k_{max}^2`` are set to zero after each nonlinear term. The radial cutoff ensures isotropic treatment of modes.
 
 ```julia
-# Apply dealiasing mask
-mask = dealias_mask(grid)
+# Apply dealiasing mask (radial cutoff)
+mask = dealias_mask(grid)  # Returns 2D array of 0s and 1s
 @. field_k *= mask
 ```
+
+#### Hyperdiffusion Helper Functions
+
+For dimensional simulations, use the helper functions to compute appropriate hyperdiffusion coefficients:
+
+```julia
+# Compute 4th order hyperdiffusion for 10-step e-folding at grid scale
+hd = compute_hyperdiff_params(
+    nx=128, ny=128, Lx=70e3, Ly=70e3, dt=10.0,
+    order=4, efold_steps=10
+)
+
+# Returns: (ν=..., ilap=2, order=4)
+# ν is in m⁴/s for 4th order (biharmonic ∇⁴)
+```
+
+The coefficient is computed such that the grid-scale mode decays by a factor of ``e`` in the specified number of time steps.
 
 ### Vertical: Finite Differences
 
