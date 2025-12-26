@@ -214,16 +214,10 @@ function compute_velocities!(S::State, G::Grid; plans=nothing, params=nothing, c
         plans = plan_transforms!(G)
     end
 
-    # For MPI plans, allocate destination on input_pencil (physical space)
-    # Source (uk, vk) is on output_pencil (spectral space)
-    if hasfield(typeof(plans), :input_pencil) && plans.input_pencil !== nothing
-        tmpu = PencilArray{eltype(ψk)}(undef, plans.input_pencil)
-        tmpv = PencilArray{eltype(ψk)}(undef, plans.input_pencil)
-    else
-        # Serial case: same dimensions work
-        tmpu = similar(ψk)
-        tmpv = similar(ψk)
-    end
+    # Allocate destination arrays on correct pencil for fft_backward!
+    # For MPI: must be on input_pencil (physical space), not output_pencil
+    tmpu = _allocate_fft_dst(uk, plans)
+    tmpv = _allocate_fft_dst(vk, plans)
     fft_backward!(tmpu, uk, plans)
     fft_backward!(tmpv, vk, plans)
 
@@ -474,7 +468,7 @@ function _compute_vertical_velocity_direct!(S::State, G::Grid, plans, params, N2
     end
 
     # Transform to real space
-    tmpw = similar(wk)
+    tmpw = _allocate_fft_dst(wk, plans)
     fft_backward!(tmpw, wk, plans)
     tmpw_arr = parent(tmpw)
 
@@ -622,7 +616,7 @@ function _compute_vertical_velocity_2d!(S::State, G::Grid, plans, params, N2_pro
     transpose_to_xy_pencil!(wk, wk_z, G)
 
     # Step 5: Transform to real space
-    tmpw = similar(wk)
+    tmpw = _allocate_fft_dst(wk, plans)
     fft_backward!(tmpw, wk, plans)
     tmpw_arr = parent(tmpw)
     w_arr = parent(S.w)
@@ -814,8 +808,8 @@ function _compute_ybj_vertical_velocity_direct!(S::State, G::Grid, plans, params
     # expression. Must transform derivatives to physical space first, then combine.
 
     # Transform horizontal derivatives to physical space
-    dAz_dx_phys = similar(dAz_dxₖ)
-    dAz_dy_phys = similar(dAz_dyₖ)
+    dAz_dx_phys = _allocate_fft_dst(dAz_dxₖ, plans)
+    dAz_dy_phys = _allocate_fft_dst(dAz_dyₖ, plans)
     fft_backward!(dAz_dx_phys, dAz_dxₖ, plans)
     fft_backward!(dAz_dy_phys, dAz_dyₖ, plans)
     dAz_dx_phys_arr = parent(dAz_dx_phys)
@@ -927,8 +921,8 @@ function _compute_ybj_vertical_velocity_2d!(S::State, G::Grid, plans, params, N2
     # Must transform derivatives to physical space first, then combine.
 
     # Transform horizontal derivatives to physical space
-    dAz_dx_phys = similar(dAz_dxₖ)
-    dAz_dy_phys = similar(dAz_dyₖ)
+    dAz_dx_phys = _allocate_fft_dst(dAz_dxₖ, plans)
+    dAz_dy_phys = _allocate_fft_dst(dAz_dyₖ, plans)
     fft_backward!(dAz_dx_phys, dAz_dxₖ, plans)
     fft_backward!(dAz_dy_phys, dAz_dyₖ, plans)
     dAz_dx_phys_arr = parent(dAz_dx_phys)
