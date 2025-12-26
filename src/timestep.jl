@@ -427,14 +427,18 @@ function first_projection_step!(S::State, G::Grid, par::QGParams, plans; a, deal
         qwk = similar(S.q)
         qwk_arr = parent(qwk)
 
-        # Rebuild BR/BI from updated B
-        @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
-            BRk_arr[i,j,k] = Complex(real(B_arr[i,j,k]), 0)
-            BIk_arr[i,j,k] = Complex(imag(B_arr[i,j,k]), 0)
-        end
+        if par.ybj_plus
+            compute_qw_complex!(qwk, S.B, par, G, plans; Lmask=L)
+        else
+            # Rebuild BR/BI from updated B
+            @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
+                BRk_arr[i,j,k] = Complex(real(B_arr[i,j,k]), 0)
+                BIk_arr[i,j,k] = Complex(imag(B_arr[i,j,k]), 0)
+            end
 
-        # Compute qʷ from B
-        compute_qw!(qwk, BRk, BIk, par, G, plans; Lmask=L)
+            # Compute qʷ from B
+            compute_qw!(qwk, BRk, BIk, par, G, plans; Lmask=L)
+        end
 
         # Subtract from q
         @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
