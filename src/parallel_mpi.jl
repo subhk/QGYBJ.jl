@@ -295,21 +295,7 @@ function transpose_to_xy_pencil!(dst::PencilArray, src::PencilArray, decomp::Pen
     return dst
 end
 
-function _transpose_output_to_input!(dst::PencilArray, src::PencilArray, plans::MPIPlans)
-    T = eltype(src)
-    buffer_xz = _get_plan_transpose_buffer(plans, T)
-    transpose!(buffer_xz, src)
-    transpose!(dst, buffer_xz)
-    return dst
-end
-
-function _transpose_input_to_output!(dst::PencilArray, src::PencilArray, plans::MPIPlans)
-    T = eltype(src)
-    buffer_xz = _get_plan_transpose_buffer(plans, T)
-    transpose!(buffer_xz, src)
-    transpose!(dst, buffer_xz)
-    return dst
-end
+# Note: _transpose_output_to_input! and _transpose_input_to_output! are defined after MPIPlans struct
 
 # Grid-based versions
 function transpose_to_z_pencil!(dst, src, grid::Grid)
@@ -443,6 +429,23 @@ function _get_plan_transpose_buffer(plans::MPIPlans, ::Type{T}) where T
         _plan_transpose_buffer_cache[key] = PencilArray{T}(undef, pencil_xz)
     end
     return _plan_transpose_buffer_cache[key]::PencilArray{T}
+end
+
+# Plan-based transpose functions (defined after MPIPlans)
+function _transpose_output_to_input!(dst::PencilArray, src::PencilArray, plans::MPIPlans)
+    T = eltype(src)
+    buffer_xz = _get_plan_transpose_buffer(plans, T)
+    transpose!(buffer_xz, src)
+    transpose!(dst, buffer_xz)
+    return dst
+end
+
+function _transpose_input_to_output!(dst::PencilArray, src::PencilArray, plans::MPIPlans)
+    T = eltype(src)
+    buffer_xz = _get_plan_transpose_buffer(plans, T)
+    transpose!(buffer_xz, src)
+    transpose!(dst, buffer_xz)
+    return dst
 end
 
 """
