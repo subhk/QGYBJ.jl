@@ -77,20 +77,20 @@ end
     # Small grid should work
     par_small = default_params(nx=4, ny=4, nz=4, Lx=TEST_Lx, Ly=TEST_Ly, Lz=TEST_Lz)
     G_small, S_small, plans_small, a_small = setup_model(par_small)
-    @test size(S_small.q) == (4, 4, 4)
+    @test size(S_small.q) == (par_small.nz, par_small.nx, par_small.ny)
 end
 
 @testset "QGYBJplus basic API" begin
     par = default_params(nx=8, ny=8, nz=8, Lx=TEST_Lx, Ly=TEST_Ly, Lz=TEST_Lz, stratification=:constant_N)
     G, S, plans, a = setup_model(par)
-    @test size(S.q) == (par.nx, par.ny, par.nz)
+    @test size(S.q) == (par.nz, par.nx, par.ny)
 
     # Invert q->psi (all zeros)
     invert_q_to_psi!(S, G; a, par=par)
     @test all(isfinite, real.(S.psi))
 
     # Put a simple B mode and invert to A (YBJ+)
-    S.B[2,2,3] = 1 + 0im
+    S.B[3, 2, 2] = 1 + 0im
     invert_B_to_A!(S, G, par, a)
     @test all(isfinite, real.(S.A))
 
@@ -127,12 +127,12 @@ end
     end
 
     # kh=0 psi inversion should zero the whole vertical column for that (i,j)
-    S.q[1,1,3] = 1 + 0im
+    S.q[3, 1, 1] = 1 + 0im
     invert_q_to_psi!(S, G; a, par=par)
-    @test all(iszero, S.psi[1,1,:])
+    @test all(iszero, S.psi[:, 1, 1])
 
     # Run one normal-branch step to ensure it executes
-    S.B[3,3,4] = 0.5 + 0.2im
+    S.B[4, 3, 3] = 0.5 + 0.2im
     first_projection_step!(S, G, par, plans; a, dealias_mask=L)
     Snp1 = deepcopy(S); Snm1 = deepcopy(S)
 
@@ -159,7 +159,7 @@ Tests for key physics operators that were identified as error-prone:
     G, S, plans, a = setup_model(par)
 
     # Set a non-trivial B field (single mode)
-    S.B[3, 3, 8] = 1.0 + 0.5im
+    S.B[8, 3, 3] = 1.0 + 0.5im
 
     # Invert to get A
     invert_B_to_A!(S, G, par, a)
@@ -219,7 +219,7 @@ end
     N2_profile = [1.0 * exp(-G.z[k] / (TEST_Lz / 4)) for k in 1:par.nz]
 
     # Set up a simple flow
-    S.psi[3, 3, 8] = 1.0 + 0im
+    S.psi[8, 3, 3] = 1.0 + 0im
     invert_q_to_psi!(S, G; a, par=par)
 
     # Compute velocities with N² profile
@@ -232,7 +232,7 @@ end
 
     # Compute velocities without N² profile (should default to N²=1)
     S2 = deepcopy(S)
-    S2.psi[3, 3, 8] = 1.0 + 0im
+    S2.psi[8, 3, 3] = 1.0 + 0im
     compute_velocities!(S2, G; plans, params=par)
 
     # Results should be different when using variable vs constant N²
@@ -247,7 +247,7 @@ end
     G, S, plans, a = setup_model(par)
 
     # Set a non-trivial B field and compute A
-    S.B[3, 3, 8] = 1.0 + 0.5im
+    S.B[8, 3, 3] = 1.0 + 0.5im
     invert_B_to_A!(S, G, par, a)
 
     # The A field should be non-zero after inversion
@@ -271,7 +271,7 @@ end
     L = dealias_mask(G)
 
     # Set initial wave field
-    S.B[3, 3, 4] = 1.0 + 0.5im
+    S.B[4, 3, 3] = 1.0 + 0.5im
 
     # A should initially be zero
     @test all(iszero, S.A)
