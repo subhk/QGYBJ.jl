@@ -112,7 +112,7 @@ function main()
     workspace = QGYBJplus.init_mpi_workspace(G, mpi_config)
 
     # Local index ranges (physical vs spectral pencils)
-    local_range_phys = QGYBJplus.get_local_range_xy(G)
+    local_range_phys = QGYBJplus.get_local_range_physical(plans)
     local_range_spec = QGYBJplus.get_local_range_spectral(plans)
 
     # Set up dipole: ψ = U κ⁻¹ sin(κx) cos(κy)

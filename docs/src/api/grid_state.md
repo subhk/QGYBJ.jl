@@ -103,13 +103,13 @@ kh2_val = get_kh2(i, j, k, arr, grid)  # Get kh² for local indices
 When using parallel decomposition, local indices must be mapped to global indices:
 
 ```julia
-# Get local index ranges
+# Get local index ranges (xy-pencil / FFT input)
 local_range = get_local_range(grid)   # (k_range, i_range, j_range)
 
-# Map local to global indices (xy-pencil)
-i_global = local_to_global(i_local, 2, grid)  # x dimension
-j_global = local_to_global(j_local, 3, grid)  # y dimension
-k_global = local_to_global(k_local, 1, grid)  # z dimension
+# Map local to global indices for a given array's pencil
+i_global = local_to_global(i_local, 2, field)  # x dimension
+j_global = local_to_global(j_local, 3, field)  # y dimension
+k_global = local_to_global(k_local, 1, field)  # z dimension
 
 # Map local to global indices (z-pencil)
 i_global = local_to_global_z(i_local, 2, grid)

@@ -30,9 +30,9 @@ Different operations require data arranged differently. QGYBJplus uses **three p
 
 | Configuration | `decomp_dims` | Distribution | Local Dim | Use Case |
 |:--------------|:--------------|:-------------|:----------|:---------|
-| **xy-pencil** | (2, 3) | y,z distributed | x | Horizontal FFTs |
-| **xz-pencil** | (1, 3) | x,z distributed | y | Intermediate transpose |
-| **z-pencil** | (1, 2) | x,y distributed | **z** | Vertical operations |
+| **xy-pencil** | (2, 3) | x,y distributed (z local) | z | Physical space / FFT input |
+| **xz-pencil** | (1, 3) | x,z distributed (y local) | y | Intermediate transpose |
+| **z-pencil** | (1, 2) | x,y distributed (z local) | **z** | Vertical operations |
 
 **Why three configurations?**
 - Horizontal FFTs need consecutive x-data → xy-pencil
@@ -40,6 +40,12 @@ Different operations require data arranged differently. QGYBJplus uses **three p
 - **PencilArrays constraint**: Transpose requires decomp_dims to differ by at most ONE dimension
 - Since (2,3)→(1,2) differs by TWO dimensions, we need intermediate xz-pencil (1,3)
 - **Two-step transpose** automatically switches between configurations
+
+**FFT plan pencils**
+- `plan_mpi_transforms` creates an FFT input pencil and output pencil.
+- Physical arrays live on the FFT input pencil (the grid's `pencil_xy`).
+- Spectral arrays live on the FFT output pencil (`plans.output_pencil`), which may differ in local ranges.
+- With `decomp_dims=(2,3)`, z is fully local so `pencil_xz` and `pencil_z` are aliases of `pencil_xy` and vertical operations can run without transposes.
 
 ## Requirements
 
@@ -215,8 +221,8 @@ for k_local in axes(arr, 1)
     for j_local in axes(arr, 3)
         for i_local in axes(arr, 2)
             # Map to global indices for wavenumber lookup
-            i_global = local_to_global(i_local, 2, grid)
-            j_global = local_to_global(j_local, 3, grid)
+            i_global = local_to_global(i_local, 2, arr)
+            j_global = local_to_global(j_local, 3, arr)
 
             kx = grid.kx[i_global]
             ky = grid.ky[j_global]
@@ -236,8 +242,9 @@ j_global = local_to_global_z(j_local, 3, grid)
 
 ```julia
 # Get local index ranges
-local_range = get_local_range(grid)       # xy-pencil
-local_range_z = get_local_range_z(grid)   # z-pencil
+local_range_phys = get_local_range_physical(plans)  # FFT input pencil
+local_range_spec = get_local_range_spectral(plans)  # FFT output pencil
+local_range_z = get_local_range_z(grid)             # z-pencil
 
 # Get local dimensions of an array
 nz_local, nx_local, ny_local = get_local_dims(arr)
@@ -542,7 +549,7 @@ The following MPI functions are provided:
 - `transpose_to_xy_pencil!` - Two-step transpose: z(1,2) → xz(1,3) → xy(2,3)
 
 ### Index Mapping Functions
-- `local_to_global` - Map local index to global (xy-pencil), with dimension argument
+- `local_to_global` - Map local index to global for the array's pencil, with dimension argument
 - `local_to_global_z` - Map local index to global (z-pencil)
 - `range_local` - Get local index range (from PencilArrays)
 - `range_remote` - Get remote (global) index range (from PencilArrays)
