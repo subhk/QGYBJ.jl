@@ -15,6 +15,22 @@ using ..QGYBJplus: plan_transforms!, fft_forward!, fft_backward!, compute_wavenu
 using ..QGYBJplus: local_to_global
 
 """
+    _allocate_fft_dst(spectral_arr, plans)
+
+Allocate a destination array for fft_backward! that is on the correct pencil.
+
+For MPI plans with input_pencil, allocates on input_pencil (physical space).
+For serial plans, uses similar() which works correctly.
+"""
+function _allocate_fft_dst(spectral_arr, plans)
+    if hasfield(typeof(plans), :input_pencil) && plans.input_pencil !== nothing
+        return PencilArray{eltype(spectral_arr)}(undef, plans.input_pencil)
+    else
+        return similar(spectral_arr)
+    end
+end
+
+"""
     initialize_from_config(config::ModelConfig, G::Grid, S::State, plans; params=nothing, N2_profile=nothing)
 
 Initialize model state from configuration.
