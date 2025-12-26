@@ -644,21 +644,45 @@ function leapfrog_step!(Snp1::State, Sn::State, Snm1::State,
 
     #= Step 3: Apply physics switches =#
     if par.inviscid; dqk .= 0; end
-    if par.linear; nqk .= 0; nBRk .= 0; nBIk .= 0; end
+    if par.linear
+        nqk .= 0
+        if par.ybj_plus
+            nBk .= 0
+        else
+            nBRk .= 0; nBIk .= 0
+        end
+    end
     if par.no_dispersion; Sn.A .= 0; Sn.C .= 0; end
-    if par.passive_scalar; Sn.A .= 0; Sn.C .= 0; rBRk .= 0; rBIk .= 0; end
+    if par.passive_scalar
+        Sn.A .= 0; Sn.C .= 0
+        if par.ybj_plus
+            rBk .= 0
+        else
+            rBRk .= 0; rBIk .= 0
+        end
+    end
     if par.fixed_flow; nqk .= 0; end
 
     #= Step 4: Leapfrog update with integrating factors =#
     qtemp = similar(Sn.q)
-    BRtemp = similar(Sn.B); BItemp = similar(Sn.B)
     qtemp_arr = parent(qtemp)
-    BRtemp_arr = parent(BRtemp); BItemp_arr = parent(BItemp)
+    if par.ybj_plus
+        Btemp = similar(Sn.B)
+        Btemp_arr = parent(Btemp)
+    else
+        BRtemp = similar(Sn.B); BItemp = similar(Sn.B)
+        BRtemp_arr = parent(BRtemp); BItemp_arr = parent(BItemp)
+    end
 
     # Get parent arrays for tendency terms
     nqk_arr = parent(nqk)
-    nBRk_arr = parent(nBRk); nBIk_arr = parent(nBIk)
-    rBRk_arr = parent(rBRk); rBIk_arr = parent(rBIk)
+    if par.ybj_plus
+        nBk_arr = parent(nBk)
+        rBk_arr = parent(rBk)
+    else
+        nBRk_arr = parent(nBRk); nBIk_arr = parent(nBIk)
+        rBRk_arr = parent(rBRk); rBIk_arr = parent(rBIk)
+    end
     dqk_arr = parent(dqk)
 
     # Precompute dispersion coefficients for each vertical level
@@ -697,24 +721,37 @@ function leapfrog_step!(Snp1::State, Sn::State, Snm1::State,
                                2*par.dt*(-nqk_arr[i,j,k] + dqk_arr[i,j,k])*exp(-λₑ)
             end
 
-            #= Update B (real and imaginary parts)
-            Using YBJ+ equation: ∂B/∂t + J(ψ,B) = i·αdisp·kₕ²·A - (i/2)ζ·B
-            BR^(n+1) = BR^(n-1)×e^(-2λdt) - 2dt×[J(ψ,BR) + αdisp·kₕ²·AI - (1/2)ζ·BI]×e^(-λdt)
-            BI^(n+1) = BI^(n-1)×e^(-2λdt) - 2dt×[J(ψ,BI) - αdisp·kₕ²·AR + (1/2)ζ·BR]×e^(-λdt) =#
-            # Use depth-varying N²(z) for dispersion coefficient
-            # Use global z-index for correct N² lookup in 2D decomposition
-            k_global = local_to_global(k, 3, G)
-            αdisp = αdisp_profile[k_global]
-            BRtemp_arr[i,j,k] = Complex(real(Bnm1_arr[i,j,k]),0)*exp(-2λʷ) -
-                           2*par.dt*( nBRk_arr[i,j,k] +
-                                     αdisp*kₕ²*Complex(imag(An_arr[i,j,k]),0) -
-                                     0.5*rBIk_arr[i,j,k] )*exp(-λʷ)
-            BItemp_arr[i,j,k] = Complex(imag(Bnm1_arr[i,j,k]),0)*exp(-2λʷ) -
-                           2*par.dt*( nBIk_arr[i,j,k] -
-                                     αdisp*kₕ²*Complex(real(An_arr[i,j,k]),0) +
-                                     0.5*rBRk_arr[i,j,k] )*exp(-λʷ)
+            if par.ybj_plus
+                #= Update B (complex)
+                ∂B/∂t + J(ψ,B) = i·αdisp·kₕ²·A - (i/2)ζ·B =#
+                k_global = local_to_global(k, 3, G)
+                αdisp = αdisp_profile[k_global]
+                Btemp_arr[i,j,k] = Bnm1_arr[i,j,k]*exp(-2λʷ) +
+                               2*par.dt*( -nBk_arr[i,j,k] +
+                                          im*αdisp*kₕ²*An_arr[i,j,k] -
+                                          0.5im*rBk_arr[i,j,k] )*exp(-λʷ)
+            else
+                #= Update B (real and imaginary parts)
+                BR^(n+1) = BR^(n-1)×e^(-2λdt) - 2dt×[J(ψ,BR) + αdisp·kₕ²·AI - (1/2)ζ·BI]×e^(-λdt)
+                BI^(n+1) = BI^(n-1)×e^(-2λdt) - 2dt×[J(ψ,BI) - αdisp·kₕ²·AR + (1/2)ζ·BR]×e^(-λdt) =#
+                k_global = local_to_global(k, 3, G)
+                αdisp = αdisp_profile[k_global]
+                BRtemp_arr[i,j,k] = Complex(real(Bnm1_arr[i,j,k]),0)*exp(-2λʷ) -
+                               2*par.dt*( nBRk_arr[i,j,k] +
+                                          αdisp*kₕ²*Complex(imag(An_arr[i,j,k]),0) -
+                                          0.5*rBIk_arr[i,j,k] )*exp(-λʷ)
+                BItemp_arr[i,j,k] = Complex(imag(Bnm1_arr[i,j,k]),0)*exp(-2λʷ) -
+                               2*par.dt*( nBIk_arr[i,j,k] -
+                                          αdisp*kₕ²*Complex(real(An_arr[i,j,k]),0) +
+                                          0.5*rBRk_arr[i,j,k] )*exp(-λʷ)
+            end
         else
-            qtemp_arr[i,j,k] = 0; BRtemp_arr[i,j,k] = 0; BItemp_arr[i,j,k] = 0
+            qtemp_arr[i,j,k] = 0
+            if par.ybj_plus
+                Btemp_arr[i,j,k] = 0
+            else
+                BRtemp_arr[i,j,k] = 0; BItemp_arr[i,j,k] = 0
+            end
         end
     end
 
@@ -736,8 +773,12 @@ function leapfrog_step!(Snp1::State, Sn::State, Snm1::State,
             qn_arr[i,j,k] = qn_arr[i,j,k] + γ*( qnm1_arr[i,j,k] - 2qn_arr[i,j,k] + qtemp_arr[i,j,k] )
 
             # Filter B - store in Sn so it becomes new Snm1 after rotation
-            Bnp1 = Complex(real(BRtemp_arr[i,j,k]),0) + im*Complex(real(BItemp_arr[i,j,k]),0)
-            Bn_arr[i,j,k] = Bn_arr[i,j,k] + γ*( Bnm1_arr[i,j,k] - 2Bn_arr[i,j,k] + Bnp1 )
+            if par.ybj_plus
+                Bn_arr[i,j,k] = Bn_arr[i,j,k] + γ*( Bnm1_arr[i,j,k] - 2Bn_arr[i,j,k] + Btemp_arr[i,j,k] )
+            else
+                Bnp1 = Complex(real(BRtemp_arr[i,j,k]),0) + im*Complex(real(BItemp_arr[i,j,k]),0)
+                Bn_arr[i,j,k] = Bn_arr[i,j,k] + γ*( Bnm1_arr[i,j,k] - 2Bn_arr[i,j,k] + Bnp1 )
+            end
         else
             qn_arr[i,j,k] = 0; Bn_arr[i,j,k] = 0
         end
@@ -746,7 +787,11 @@ function leapfrog_step!(Snp1::State, Sn::State, Snm1::State,
     #= Step 6: Accept the new solution =#
     @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
         qnp1_arr[i,j,k] = qtemp_arr[i,j,k]
-        Bnp1_arr[i,j,k] = Complex(real(BRtemp_arr[i,j,k]),0) + im*Complex(real(BItemp_arr[i,j,k]),0)
+        if par.ybj_plus
+            Bnp1_arr[i,j,k] = Btemp_arr[i,j,k]
+        else
+            Bnp1_arr[i,j,k] = Complex(real(BRtemp_arr[i,j,k]),0) + im*Complex(real(BItemp_arr[i,j,k]),0)
+        end
     end
 
     #= Step 7: Wave feedback on mean flow =#
@@ -755,15 +800,19 @@ function leapfrog_step!(Snp1::State, Sn::State, Snm1::State,
         qwk = similar(Snp1.q)
         qwk_arr = parent(qwk)
 
-        # Rebuild BR/BI from updated B
-        BRk2 = similar(Snp1.B); BIk2 = similar(Snp1.B)
-        BRk2_arr = parent(BRk2); BIk2_arr = parent(BIk2)
-        @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
-            BRk2_arr[i,j,k] = Complex(real(Bnp1_arr[i,j,k]),0)
-            BIk2_arr[i,j,k] = Complex(imag(Bnp1_arr[i,j,k]),0)
-        end
+        if par.ybj_plus
+            compute_qw_complex!(qwk, Snp1.B, par, G, plans; Lmask=L)
+        else
+            # Rebuild BR/BI from updated B
+            BRk2 = similar(Snp1.B); BIk2 = similar(Snp1.B)
+            BRk2_arr = parent(BRk2); BIk2_arr = parent(BIk2)
+            @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
+                BRk2_arr[i,j,k] = Complex(real(Bnp1_arr[i,j,k]),0)
+                BIk2_arr[i,j,k] = Complex(imag(Bnp1_arr[i,j,k]),0)
+            end
 
-        compute_qw!(qwk, BRk2, BIk2, par, G, plans; Lmask=L)
+            compute_qw!(qwk, BRk2, BIk2, par, G, plans; Lmask=L)
+        end
 
         @inbounds for k in 1:nz_local, j in 1:ny_local, i in 1:nx_local
             i_global = local_to_global(i, 1, G)
