@@ -469,21 +469,43 @@ end
     init_mpi_state(grid::Grid, mpi_config::MPIConfig; T=Float64) -> State
     init_mpi_state(grid::Grid, plans::MPIPlans, mpi_config::MPIConfig; T=Float64) -> State
 
-Initialize a State with MPI-distributed PencilArrays in xy-pencil configuration.
+Initialize a State with MPI-distributed PencilArrays.
 
-Both methods allocate all arrays using the grid's pencil_xy for consistent memory layout.
-The FFT functions handle any necessary permutation conversions internally.
+- `init_mpi_state(grid, mpi_config)` allocates all arrays on the grid's pencil_xy.
+- `init_mpi_state(grid, plans, mpi_config)` allocates spectral arrays on the FFT
+  plan's output pencil and physical arrays on the FFT input pencil to avoid
+  extra transposes in the FFT wrappers.
 
 # Example
 ```julia
 G = init_mpi_grid(par, mpi_config)
 plans = plan_mpi_transforms(G, mpi_config)
-S = init_mpi_state(G, mpi_config)  # or init_mpi_state(G, plans, mpi_config)
+S = init_mpi_state(G, plans, mpi_config)  # spectral on output pencil
 ```
 """
 function init_mpi_state(grid::Grid, plans::MPIPlans, mpi_config::MPIConfig; T=Float64)
-    # Delegate to the standard version - all arrays use pencil_xy
-    return init_mpi_state(grid, mpi_config; T=T)
+    decomp = grid.decomp
+    if decomp === nothing
+        error("Grid does not have MPI decomposition. Use init_mpi_grid() first.")
+    end
+
+    # Spectral fields live on FFT output pencil; physical fields on input pencil.
+    spectral_pencil = plans.output_pencil
+    physical_pencil = plans.input_pencil
+
+    # Allocate spectral (complex) fields
+    q   = PencilArray{Complex{T}}(undef, spectral_pencil); fill!(q, 0)
+    psi = PencilArray{Complex{T}}(undef, spectral_pencil); fill!(psi, 0)
+    A   = PencilArray{Complex{T}}(undef, spectral_pencil); fill!(A, 0)
+    B   = PencilArray{Complex{T}}(undef, spectral_pencil); fill!(B, 0)
+    C   = PencilArray{Complex{T}}(undef, spectral_pencil); fill!(C, 0)
+
+    # Allocate real-space (real) fields
+    u = PencilArray{T}(undef, physical_pencil); fill!(u, 0)
+    v = PencilArray{T}(undef, physical_pencil); fill!(v, 0)
+    w = PencilArray{T}(undef, physical_pencil); fill!(w, 0)
+
+    return State{T, typeof(u), typeof(q)}(q, B, psi, A, C, u, v, w)
 end
 
 function init_mpi_state(grid::Grid, mpi_config::MPIConfig; T=Float64)
