@@ -187,7 +187,45 @@ Spectral space → Real space
 dealias_mask
 ```
 
-Creates dealiasing mask using 2/3 rule.
+Creates a radial dealiasing mask using the 2/3 rule: modes with ``k_h^2 > k_{max}^2`` where ``k_{max} = \min(n_x, n_y) / 3`` are zeroed.
+
+### Hyperdiffusion Parameters
+
+Helper functions for computing scale-selective hyperdiffusion coefficients:
+
+```@docs
+compute_hyperdiff_coeff
+compute_hyperdiff_params
+```
+
+**4th Order Hyperdiffusion (Biharmonic):**
+
+The model supports 4th order horizontal hyperdiffusion (∇⁴ operator) for scale-selective damping of grid-scale noise while preserving large scales:
+
+```julia
+# Compute coefficient for 10-step e-folding at grid scale
+hd = compute_hyperdiff_params(
+    nx=128, ny=128, Lx=70e3, Ly=70e3, dt=10.0,
+    order=4, efold_steps=10
+)
+
+# Use in parameters
+par = default_params(
+    nx=128, ny=128, nz=64,
+    Lx=70e3, Ly=70e3, Lz=3000.0,
+    νₕ₁=hd.ν, ilap1=hd.ilap,  # 4th order hyperdiffusion
+    νₕ₂=0.0                    # Disable 2nd hyperviscosity slot
+)
+```
+
+**Damping Rate:**
+
+The damping rate at wavenumber ``k`` is:
+- 2nd order (∇²): ``\lambda = \nu_2 k^2``
+- 4th order (∇⁴): ``\lambda = \nu_4 k^4``
+- 8th order (∇⁸): ``\lambda = \nu_8 k^8``
+
+Higher orders provide more scale-selective damping, concentrating dissipation at the smallest scales.
 
 ## YBJ Normal Mode Functions
 

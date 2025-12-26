@@ -118,24 +118,54 @@ State
 
 ### Fields
 
+**Prognostic Fields (evolved in time):**
+
 | Field | Type | Description |
 |:------|:-----|:------------|
-| `q` | Array{ComplexF64,3} | Potential vorticity (spectral) |
-| `q_old` | Array{ComplexF64,3} | Previous PV for leapfrog |
-| `psi` | Array{ComplexF64,3} | Streamfunction (spectral) |
-| `B` | Array{ComplexF64,3} | Wave envelope (spectral) |
-| `B_old` | Array{ComplexF64,3} | Previous wave envelope for leapfrog |
+| `q` | Array{ComplexF64,3} | QG potential vorticity (spectral) |
+| `B` | Array{ComplexF64,3} | YBJ+ wave envelope B = L⁺A (spectral) |
+
+**Diagnostic Fields (computed from prognostic):**
+
+| Field | Type | Description |
+|:------|:-----|:------------|
+| `psi` | Array{ComplexF64,3} | Streamfunction ψ (spectral) |
 | `A` | Array{ComplexF64,3} | Wave amplitude (spectral) |
-| `C` | Array{ComplexF64,3} | Vertical derivative dA/dz |
-| `u` | Array{Float64,3} | Zonal velocity (physical) |
-| `v` | Array{Float64,3} | Meridional velocity (physical) |
-| `w` | Array{Float64,3} | Vertical velocity (physical) |
+| `C` | Array{ComplexF64,3} | Vertical derivative ∂A/∂z (spectral) |
+
+**Velocity Fields (real space):**
+
+| Field | Type | Description |
+|:------|:-----|:------------|
+| `u` | Array{Float64,3} | Zonal velocity u = -∂ψ/∂y |
+| `v` | Array{Float64,3} | Meridional velocity v = ∂ψ/∂x |
+| `w` | Array{Float64,3} | Vertical velocity (from omega equation) |
+
+!!! note "Leapfrog Time-Stepping"
+    The leapfrog scheme uses separate State objects (Snm1, Sn, Snp1) rather than
+    storing previous time levels within a single State struct. This design allows
+    proper handling of MPI parallel arrays (PencilArrays).
 
 ### Constructors
 
 ```julia
 # Create empty state from grid
 state = init_state(grid)
+
+# Copy state (preserves PencilArray topology for MPI)
+state_copy = copy_state(state)
+```
+
+### Copying States
+
+For MPI parallel runs, always use `copy_state` instead of `deepcopy`:
+
+```julia
+# CORRECT: preserves pencil topology
+Snm1 = copy_state(S)
+
+# WRONG: breaks PencilArray transpose operations
+Snm1 = deepcopy(S)  # Causes "pencil topologies must be the same" error
 ```
 
 ### Accessing Fields
