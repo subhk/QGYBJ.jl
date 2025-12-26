@@ -784,7 +784,7 @@ function _read_initial_psi_parallel(filename::String, G::Grid, plans, parallel_c
     MPI.Barrier(parallel_config.comm)
 
     # Scatter from rank 0 to all processes
-    psik_local = QGYBJplus.scatter_from_root(psik_global, G, parallel_config)
+    psik_local = QGYBJplus.scatter_from_root(psik_global, G, parallel_config; plans=plans)
 
     return psik_local
 end
@@ -883,7 +883,7 @@ function _read_initial_waves_parallel(filename::String, G::Grid, plans, parallel
     MPI.Barrier(parallel_config.comm)
 
     # Scatter from rank 0 to all processes
-    Bk_local = QGYBJplus.scatter_from_root(Bk_global, G, parallel_config)
+    Bk_local = QGYBJplus.scatter_from_root(Bk_global, G, parallel_config; plans=plans)
 
     return Bk_local
 end

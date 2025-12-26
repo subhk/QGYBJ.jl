@@ -871,28 +871,37 @@ function gather_to_root(arr::AbstractArray, grid::Grid, mpi_config::MPIConfig)
 end
 
 """
-    scatter_from_root(arr, grid::Grid, mpi_config::MPIConfig)
+    scatter_from_root(arr, grid::Grid, mpi_config::MPIConfig; pencil=nothing, plans=nothing)
 
 Scatter an array from root to all processes as PencilArrays.
+
+By default, scatters to `grid.decomp.pencil_xy`. Pass `plans` (MPIPlans) to
+scatter directly to the FFT output pencil for spectral fields.
 """
-function scatter_from_root(arr, grid::Grid, mpi_config::MPIConfig)
+function scatter_from_root(arr, grid::Grid, mpi_config::MPIConfig; pencil=nothing, plans=nothing)
     decomp = grid.decomp
-    pencil_xy = decomp.pencil_xy
+    target_pencil = if plans !== nothing
+        plans.output_pencil
+    elseif pencil !== nothing
+        pencil
+    else
+        decomp.pencil_xy
+    end
 
     T = mpi_config.is_root ? eltype(arr) : ComplexF64
     T = MPI.bcast(T, 0, mpi_config.comm)
 
-    distributed = PencilArray{T}(undef, pencil_xy)
+    distributed = PencilArray{T}(undef, target_pencil)
     parent_arr = parent(distributed)
 
     if mpi_config.is_root
-        cart_comm = PencilArrays.get_comm(pencil_xy)
-        topo = PencilArrays.topology(pencil_xy)
+        cart_comm = PencilArrays.get_comm(target_pencil)
+        topo = PencilArrays.topology(target_pencil)
         for coords in CartesianIndices(size(topo))
             coords_tuple = Tuple(coords)
             coords_zero = collect(coords_tuple .- 1)
             rank = MPI.Cart_rank(cart_comm, coords_zero)
-            rank_range = range_remote(pencil_xy, coords_tuple)
+            rank_range = range_remote(target_pencil, coords_tuple)
             portion = arr[rank_range[1], rank_range[2], rank_range[3]]
 
             if rank == mpi_config.rank
