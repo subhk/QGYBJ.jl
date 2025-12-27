@@ -568,7 +568,8 @@ function refraction_waqg_B!(rBk, Bk, ψₖ, G::Grid, plans; Lmask=nothing)
 
     ψ_arr = parent(ψₖ)
     rBk_arr = parent(rBk)
-    nz_local, nx_local, ny_local = size(ψ_arr)
+    # Spectral array dimensions
+    nz_spec, nx_spec, ny_spec = size(ψ_arr)
 
     use_inline_dealias = isnothing(Lmask)
     @inline should_keep(i_g, j_g) = use_inline_dealias ? PARENT.is_dealiased(i_g, j_g, nx, ny) : Lmask[i_g, j_g]
@@ -576,7 +577,7 @@ function refraction_waqg_B!(rBk, Bk, ψₖ, G::Grid, plans; Lmask=nothing)
     ζₖ = similar(ψₖ)
     ζₖ_arr = parent(ζₖ)
 
-    @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
+    @inbounds for k in 1:nz_spec, j_local in 1:ny_spec, i_local in 1:nx_spec
         i_global = local_to_global(i_local, 2, ψₖ)
         j_global = local_to_global(j_local, 3, ψₖ)
         kₓ = G.kx[i_global]
@@ -596,14 +597,16 @@ function refraction_waqg_B!(rBk, Bk, ψₖ, G::Grid, plans; Lmask=nothing)
     rBᵣ = similar(Bᵣ)
     rBᵣ_arr = parent(rBᵣ)
 
-    @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
+    # Use physical array dimensions (may differ from spectral in 2D decomposition)
+    nz_phys, nx_phys, ny_phys = size(ζᵣ_arr)
+    @inbounds for k in 1:nz_phys, j_local in 1:ny_phys, i_local in 1:nx_phys
         rBᵣ_arr[k, i_local, j_local] = real(ζᵣ_arr[k, i_local, j_local]) * Bᵣ_arr[k, i_local, j_local]
     end
 
     fft_forward!(rBk, rBᵣ, plans)
     rBk_arr = parent(rBk)
 
-    @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
+    @inbounds for k in 1:nz_spec, j_local in 1:ny_spec, i_local in 1:nx_spec
         i_global = local_to_global(i_local, 2, rBk)
         j_global = local_to_global(j_local, 3, rBk)
         if !should_keep(i_global, j_global)
@@ -723,7 +726,9 @@ function compute_qw!(qʷₖ, BRk, BIk, par, G::Grid, plans; Lmask=nothing)
     So (i/2)J(B*, B) = i² × (BRₓBIᵧ - BRᵧBIₓ) = -(BRₓBIᵧ - BRᵧBIₓ) = BRᵧBIₓ - BRₓBIᵧ =#
     qʷᵣ = _allocate_fft_dst(qʷₖ, plans)
     qʷᵣ_arr = parent(qʷᵣ)
-    @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
+    # Use physical array dimensions (may differ from spectral in 2D decomposition)
+    nz_phys, nx_phys, ny_phys = size(qʷᵣ_arr)
+    @inbounds for k in 1:nz_phys, j_local in 1:ny_phys, i_local in 1:nx_phys
         qʷᵣ_arr[k, i_local, j_local] = real(BRᵧᵣ_arr[k, i_local, j_local])*real(BIₓᵣ_arr[k, i_local, j_local]) -
                                         real(BRₓᵣ_arr[k, i_local, j_local])*real(BIᵧᵣ_arr[k, i_local, j_local])
     end
@@ -736,8 +741,9 @@ function compute_qw!(qʷₖ, BRk, BIk, par, G::Grid, plans; Lmask=nothing)
     BRᵣ_arr = parent(BRᵣ); BIᵣ_arr = parent(BIᵣ)
     mag² = _allocate_fft_dst(BRk, plans)
     mag²_arr = parent(mag²)
-    
-    @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
+
+    # Physical array dimensions (already defined above as nz_phys, nx_phys, ny_phys)
+    @inbounds for k in 1:nz_phys, j_local in 1:ny_phys, i_local in 1:nx_phys
         mag²_arr[k, i_local, j_local] = real(BRᵣ_arr[k, i_local, j_local])^2 + real(BIᵣ_arr[k, i_local, j_local])^2
     end
 
@@ -818,7 +824,9 @@ function compute_qw_complex!(qʷₖ, Bk, par, G::Grid, plans; Lmask=nothing)
     # (i/2)J(B*, B) term in physical space
     qʷᵣ = similar(Bᵣ)
     qʷᵣ_arr = parent(qʷᵣ)
-    @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
+    # Use physical array dimensions (may differ from spectral in 2D decomposition)
+    nz_phys, nx_phys, ny_phys = size(qʷᵣ_arr)
+    @inbounds for k in 1:nz_phys, j_local in 1:ny_phys, i_local in 1:nx_phys
         Jval = conj(Bₓᵣ_arr[k, i_local, j_local]) * Bᵧᵣ_arr[k, i_local, j_local] -
                conj(Bᵧᵣ_arr[k, i_local, j_local]) * Bₓᵣ_arr[k, i_local, j_local]
         qʷᵣ_arr[k, i_local, j_local] = real(0.5im * Jval)
@@ -827,7 +835,8 @@ function compute_qw_complex!(qʷₖ, Bk, par, G::Grid, plans; Lmask=nothing)
     # |B|^2 term
     mag² = _allocate_fft_dst(Bk, plans)
     mag²_arr = parent(mag²)
-    @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
+    # Physical array dimensions (already defined above as nz_phys, nx_phys, ny_phys)
+    @inbounds for k in 1:nz_phys, j_local in 1:ny_phys, i_local in 1:nx_phys
         mag²_arr[k, i_local, j_local] = real(conj(Bᵣ_arr[k, i_local, j_local]) * Bᵣ_arr[k, i_local, j_local])
     end
 
