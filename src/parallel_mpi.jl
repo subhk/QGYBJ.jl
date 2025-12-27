@@ -298,7 +298,9 @@ function _get_transpose_buffer(src::PencilArray, dst::PencilArray, ::Type{T}) wh
             error("Cannot construct intermediate pencil between decompositions " *
                   "$src_decomp and $dst_decomp.")
         end
-        mid_pencil = Pencil(src_p, decomp_dims=mid_decomp, permute=permutation(src_p))
+        topo = PencilArrays.topology(src_p)
+        dims = PencilArrays.size_global(src_p)
+        mid_pencil = Pencil(topo, dims, mid_decomp; permute=permutation(src_p))
         _transpose_buffer_cache[key] = PencilArray{T}(undef, mid_pencil)
     end
     return _transpose_buffer_cache[key]::PencilArray{T}
