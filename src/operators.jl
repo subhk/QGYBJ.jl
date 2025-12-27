@@ -222,7 +222,10 @@ function compute_velocities!(S::State, G::Grid; plans=nothing, params=nothing, c
     # - We do: IFFT → multiply → FFT → divide by N
     # - The division compensates for unnormalized FFT output
     # Here we're only doing IFFT, so no extra division.
-    @inbounds for k in 1:nz_local, j_local in 1:ny_local, i_local in 1:nx_local
+    #
+    # Use physical array dimensions (may differ from spectral in 2D decomposition)
+    nz_phys, nx_phys, ny_phys = size(tmpu_arr)
+    @inbounds for k in 1:nz_phys, j_local in 1:ny_phys, i_local in 1:nx_phys
         u_arr[k, i_local, j_local] = real(tmpu_arr[k, i_local, j_local])
         v_arr[k, i_local, j_local] = real(tmpv_arr[k, i_local, j_local])
     end
