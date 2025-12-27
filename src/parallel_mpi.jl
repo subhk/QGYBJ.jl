@@ -656,8 +656,8 @@ function plan_mpi_transforms(grid::Grid, mpi_config::MPIConfig)
     pencils_match = _check_pencil_compatibility(input_pencil, output_pencil)
 
     if !pencils_match && mpi_config.is_root
-        @info "PencilFFTs input/output pencils differ; store spectral arrays on plans.output_pencil " *
-              "to avoid extra transposes in FFT wrappers." maxlog=1
+        @debug "PencilFFTs input/output pencils differ; store spectral arrays on plans.output_pencil " *
+               "to avoid extra transposes in FFT wrappers." maxlog=1
     end
 
     return MPIPlans(
