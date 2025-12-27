@@ -17,26 +17,43 @@ Complete API reference for QGYBJ+.jl.
 ## Module Structure
 
 ```
-QGYBJplus
+QGYBJplus/src/
+├── QGYBJplus.jl       # Main module, exports
 ├── Core Types
-│   ├── QGParams      # Model parameters
-│   ├── Grid          # Spatial grid and wavenumbers
-│   └── State         # Prognostic/diagnostic fields
+│   ├── parameters.jl  # QGParams struct
+│   ├── grid.jl        # Grid struct, wavenumbers
+│   └── config.jl      # Configuration types
 ├── Physics
-│   ├── elliptic.jl   # Tridiagonal inversions
-│   ├── nonlinear.jl  # Jacobians, refraction, qw
-│   ├── operators.jl  # Velocities
-│   └── transforms.jl # FFT wrappers
+│   ├── physics.jl     # Stratification N², a_ell coefficients
+│   ├── elliptic.jl    # Tridiagonal inversions (q→ψ, B→A)
+│   ├── nonlinear.jl   # Jacobians, refraction, qw feedback
+│   ├── operators.jl   # Velocity computation
+│   └── ybj_normal.jl  # Normal YBJ operators
+├── Transforms
+│   ├── transforms.jl  # FFT planning (serial)
+│   └── parallel_mpi.jl # MPI 2D decomposition, transposes
 ├── Time Stepping
-│   └── timestep.jl   # Leapfrog with Robert-Asselin
-├── YBJ Normal Mode
-│   └── ybj_normal.jl # sumB!, compute_sigma, compute_A!
+│   └── timestep.jl    # Leapfrog with Robert-Asselin
+├── Initialization
+│   ├── initconds.jl       # Random/analytic initial conditions
+│   ├── initialization.jl  # Field initialization helpers
+│   └── stratification.jl  # Stratification profiles
 ├── Diagnostics
-│   └── diagnostics.jl # Energy, omega equation
+│   ├── diagnostics.jl        # Energy, omega equation
+│   └── energy_diagnostics.jl # Separate energy output files
+├── I/O
+│   └── netcdf_io.jl   # NetCDF read/write
+├── High-Level Interface
+│   ├── model_interface.jl # QGYBJSimulation, run_simulation!
+│   └── runtime.jl         # Setup helpers
 ├── Particles
-│   └── particles/    # Lagrangian tracking
-└── I/O
-    └── netcdf_io.jl  # NetCDF output
+│   ├── particle_advection.jl  # Core advection
+│   ├── particle_config.jl     # Configuration types
+│   ├── particle_io.jl         # Trajectory I/O
+│   ├── interpolation_schemes.jl # Trilinear, tricubic, etc.
+│   └── halo_exchange.jl       # MPI halo exchange
+└── Utilities
+    └── pretty_printing.jl # Display formatting
 ```
 
 ## Naming Conventions
