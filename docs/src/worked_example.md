@@ -1,4 +1,8 @@
-## Worked Example
+# [Worked Example](@id worked_example)
+
+```@meta
+CurrentModule = QGYBJplus
+```
 
 This walkthrough sets up a small QG–YBJ+ simulation, runs it for a short time,
 and inspects some outputs.
