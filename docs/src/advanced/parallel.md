@@ -563,3 +563,30 @@ The following MPI functions are provided:
 - `allocate_xy_pencil` - Allocate array in xy-pencil layout (for FFTs)
 - `allocate_xz_pencil` - Allocate array in xz-pencil layout (intermediate)
 - `allocate_z_pencil` - Allocate array in z-pencil layout (for vertical ops)
+- `allocate_fft_backward_dst` - Allocate physical array for `fft_backward!` output
+
+### Range Helper Functions
+- `get_local_range_physical(plans)` - Get local index ranges for physical arrays (FFT input pencil)
+- `get_local_range_spectral(plans)` - Get local index ranges for spectral arrays (FFT output pencil)
+
+These are critical for 2D decomposition where spectral and physical arrays have different local dimensions.
+
+```julia
+# Example usage in MPI code
+local_range_phys = get_local_range_physical(plans)
+local_range_spec = get_local_range_spectral(plans)
+
+# Loop over spectral array
+for k_local in axes(spectral_arr, 1)
+    k_global = local_range_spec[1][k_local]
+    # ...
+end
+
+# After fft_backward!, loop over physical array with its dimensions
+phys = allocate_fft_backward_dst(spectral_arr, plans)
+fft_backward!(phys, spectral_arr, plans)
+nz_phys, nx_phys, ny_phys = size(parent(phys))
+for k in 1:nz_phys, j in 1:ny_phys, i in 1:nx_phys
+    # ...
+end
+```

@@ -292,6 +292,27 @@ arr_xy = QGYBJplus.allocate_xy_pencil(grid, ComplexF64)
 
 # Allocate in z-pencil (for vertical operations)
 arr_z = QGYBJplus.allocate_z_pencil(grid, ComplexF64)
+
+# Allocate FFT backward destination (handles spectral→physical pencil difference)
+phys_arr = QGYBJplus.allocate_fft_backward_dst(spectral_arr, plans)
+```
+
+### FFT Backward Destination Allocation
+
+In 2D MPI decomposition, spectral arrays (FFT output pencil) and physical arrays (FFT input pencil) may have different local dimensions. Use `allocate_fft_backward_dst` to correctly allocate the destination for `fft_backward!`:
+
+```julia
+# Allocate physical-space destination for backward FFT
+phys = allocate_fft_backward_dst(spectral_arr, plans)
+
+# Now safe to transform
+fft_backward!(phys, spectral_arr, plans)
+
+# Loop over physical array with correct dimensions
+nz_phys, nx_phys, ny_phys = size(parent(phys))
+for k in 1:nz_phys, j in 1:ny_phys, i in 1:nx_phys
+    # Access phys[k, i, j]
+end
 ```
 
 ## Utility Functions
@@ -355,4 +376,10 @@ get_local_dims
 get_kx
 get_ky
 get_kh2
+```
+
+### FFT Array Allocation
+
+```@docs
+allocate_fft_backward_dst
 ```

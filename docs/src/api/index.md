@@ -79,6 +79,49 @@ mpi_config = setup_mpi_environment()
 G = init_mpi_grid(par, mpi_config)
 plans = plan_mpi_transforms(G, mpi_config)
 S = init_mpi_state(G, plans, mpi_config)
+workspace = init_mpi_workspace(G, mpi_config)
 ```
+
+## Key Functions by Category
+
+### Initialization
+| Function | Description |
+|:---------|:------------|
+| `default_params` | Create model parameters |
+| `init_grid` / `init_mpi_grid` | Initialize grid |
+| `init_state` / `init_mpi_state` | Initialize state arrays |
+| `plan_transforms!` / `plan_mpi_transforms` | Create FFT plans |
+| `init_mpi_workspace` | Allocate z-pencil workspace |
+
+### Physics
+| Function | Description |
+|:---------|:------------|
+| `invert_q_to_psi!` | Solve elliptic PV inversion |
+| `invert_B_to_A!` | Solve YBJ+ wave inversion |
+| `compute_velocities!` | Compute u, v from ψ |
+| `jacobian_spectral!` | Compute Jacobian J(a,b) |
+
+### Time Stepping
+| Function | Description |
+|:---------|:------------|
+| `first_projection_step!` | Forward Euler initialization |
+| `leapfrog_step!` | Leapfrog with Robert-Asselin filter |
+
+### Parallel Utilities
+| Function | Description |
+|:---------|:------------|
+| `allocate_fft_backward_dst` | Allocate physical array for FFT output |
+| `get_local_range_physical` | Get physical array local ranges |
+| `get_local_range_spectral` | Get spectral array local ranges |
+| `transpose_to_z_pencil!` | Transpose to z-local layout |
+| `transpose_to_xy_pencil!` | Transpose back to xy layout |
+
+### Diagnostics
+| Function | Description |
+|:---------|:------------|
+| `flow_kinetic_energy` | Compute mean flow KE |
+| `wave_energy` | Compute wave energy |
+| `slice_horizontal` | Extract horizontal slice |
+| `omega_eqn_rhs!` | Compute omega equation RHS |
 
 See individual pages for detailed API documentation.
